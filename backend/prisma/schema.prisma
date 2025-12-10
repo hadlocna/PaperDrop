@@ -70,10 +70,7 @@ model Message {
   senderId     String    @map("sender_id")
   deviceId     String    @map("device_id")
   contentType  String    @map("content_type")
-  content      String // Schema change: Json -> String for SQLite compatibility (Prisma handles JSON as String in SQLite roughly or unsupported) -> actually JSON IS supported in recent Prisma versions for SQLite but let's check.
-                  // Actually Prisma supports Json in SQLite since v2.23.
-                  // So I will keep it as Json? No, let's verify. 
-                  // "JSON type is supported by the SQLite connector" -> Yes.
+  content      String    @map("content") // SQLite stores JSON as text
   status       String?   @default("queued")
   errorMessage String?   @map("error_message")
   scheduledAt  DateTime? @map("scheduled_at")
@@ -93,7 +90,7 @@ model Template {
   id          String    @id @default(uuid())
   name        String
   description String?
-  layout      String    // Keeping as String/Json. SQLite text.
+  layout      String    @map("layout")
   isSystem    Boolean?  @default(false) @map("is_system")
   createdBy   String?   @map("created_by")
   createdAt   DateTime? @default(now()) @map("created_at")
