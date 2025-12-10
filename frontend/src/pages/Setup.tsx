@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
 import { client as api } from '../api/client';
 
 export function Setup() {
-    const [deviceCode, setDeviceCode] = useState('');
+    const [searchParams] = useSearchParams();
+    const [deviceCode, setDeviceCode] = useState(searchParams.get('code') || '');
     const [friendlyName, setFriendlyName] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
