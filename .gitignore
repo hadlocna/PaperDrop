@@ -1,0 +1,23 @@
+# OS
+.DS_Store
+.idea
+.vscode
+
+# Node
+node_modules
+dist
+build
+.env
+npm-debug.log
+yarn-error.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+.env
+
+# PaperDrop
+*.sqlite

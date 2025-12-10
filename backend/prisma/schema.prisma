@@ -1,0 +1,124 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String         @id @default(uuid())
+  email           String         @unique
+  name            String
+  passwordHash    String?        @map("password_hash")
+  authProvider    String         @map("auth_provider")
+  authProviderId  String?        @map("auth_provider_id")
+  createdAt       DateTime?      @default(now()) @map("created_at")
+  updatedAt       DateTime?      @default(now()) @map("updated_at")
+  
+  // Relations
+  devices         Device[]       // Devices owned by user
+  deviceAccess    DeviceAccess[] // Devices accessible to user
+  messages        Message[]      // Messages sent by user
+  createdTemplates Template[]    // Templates created by user
+  automations     Automation[]   // Automations created by user
+
+  @@map("users")
+}
+
+model Device {
+  id              String         @id @default(uuid())
+  deviceCode      String         @unique @map("device_code")
+  deviceSecret    String         @map("device_secret")
+  ownerId         String?        @map("owner_id")
+  friendlyName    String?        @default("My PaperDrop") @map("friendly_name")
+  status          String?        @default("setup_pending")
+  firmwareVersion String?        @map("firmware_version")
+  lastSeenAt      DateTime?      @map("last_seen_at")
+  createdAt       DateTime?      @default(now()) @map("created_at")
+  updatedAt       DateTime?      @default(now()) @map("updated_at")
+
+  // Relations
+  owner           User?          @relation(fields: [ownerId], references: [id])
+  deviceAccess    DeviceAccess[]
+  messages        Message[]
+  automations     Automation[]
+
+  @@index([deviceCode])
+  @@map("devices")
+}
+
+model DeviceAccess {
+  id        String    @id @default(uuid())
+  deviceId  String    @map("device_id")
+  userId    String    @map("user_id")
+  role      String    @default("sender")
+  createdAt DateTime? @default(now()) @map("created_at")
+
+  // Relations
+  device    Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, userId])
+  @@index([userId])
+  @@map("device_access")
+}
+
+model Message {
+  id           String    @id @default(uuid())
+  senderId     String    @map("sender_id")
+  deviceId     String    @map("device_id")
+  contentType  String    @map("content_type")
+  content      String // Schema change: Json -> String for SQLite compatibility (Prisma handles JSON as String in SQLite roughly or unsupported) -> actually JSON IS supported in recent Prisma versions for SQLite but let's check.
+                  // Actually Prisma supports Json in SQLite since v2.23.
+                  // So I will keep it as Json? No, let's verify. 
+                  // "JSON type is supported by the SQLite connector" -> Yes.
+  status       String?   @default("queued")
+  errorMessage String?   @map("error_message")
+  scheduledAt  DateTime? @map("scheduled_at")
+  sentAt       DateTime? @map("sent_at")
+  printedAt    DateTime? @map("printed_at")
+  createdAt    DateTime? @default(now()) @map("created_at")
+
+  // Relations
+  sender       User      @relation(fields: [senderId], references: [id])
+  device       Device    @relation(fields: [deviceId], references: [id])
+
+  @@index([deviceId, status])
+  @@map("messages")
+}
+
+model Template {
+  id          String    @id @default(uuid())
+  name        String
+  description String?
+  layout      String    // Keeping as String/Json. SQLite text.
+  isSystem    Boolean?  @default(false) @map("is_system")
+  createdBy   String?   @map("created_by")
+  createdAt   DateTime? @default(now()) @map("created_at")
+
+  // Relations
+  user        User?     @relation(fields: [createdBy], references: [id])
+
+  @@map("templates")
+}
+
+model Automation {
+  id            String    @id @default(uuid())
+  userId        String    @map("user_id")
+  deviceId      String    @map("device_id")
+  name          String
+  triggerType   String    @map("trigger_type")
+  triggerConfig String    @map("trigger_config") 
+  actionConfig  String    @map("action_config")
+  enabled       Boolean?  @default(true)
+  createdAt     DateTime? @default(now()) @map("created_at")
+  updatedAt     DateTime? @default(now()) @map("updated_at")
+
+  // Relations
+  user          User      @relation(fields: [userId], references: [id])
+  device        Device    @relation(fields: [deviceId], references: [id])
+
+  @@map("automations")
+}
