@@ -13,6 +13,13 @@ export function Setup() {
     const { user } = useAuth();
     const navigate = useNavigate();
 
+    // Optional: Auto-focus or streamline if code is present
+    useEffect(() => {
+        if (deviceCode && !friendlyName) {
+            setFriendlyName("My PaperDrop"); // Default name to speed up flow
+        }
+    }, [deviceCode]);
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);

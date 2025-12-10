@@ -1,8 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { client } from '../api/client';
-import { useAuth } from '../context/AuthContext';
-import { AlertCircle } from 'lucide-react';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 
 export function Login() {
     const [email, setEmail] = useState('');
@@ -11,7 +8,11 @@ export function Login() {
     const [loading, setLoading] = useState(false);
 
     const navigate = useNavigate();
+    const location = useLocation();
     const { login } = useAuth();
+
+    // The page we were trying to access before being redirected to login
+    const from = location.state?.from?.pathname + (location.state?.from?.search || '') || '/';
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -25,7 +26,7 @@ export function Login() {
             });
 
             login(data);
-            navigate('/');
+            navigate(from, { replace: true });
         } catch (err: any) {
             setError(err.response?.data?.error || 'Login failed');
         } finally {
@@ -86,7 +87,11 @@ export function Login() {
                     <div className="text-center mt-4">
                         <p className="text-sm text-neutral-600">
                             Don't have an account?{' '}
-                            <Link to="/register" className="text-primary-600 hover:text-primary-700 font-medium">
+                            <Link
+                                to="/register"
+                                state={location.state}
+                                className="text-primary-600 hover:text-primary-700 font-medium"
+                            >
                                 Register
                             </Link>
                         </p>
