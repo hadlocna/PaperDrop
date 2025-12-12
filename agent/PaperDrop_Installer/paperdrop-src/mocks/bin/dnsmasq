@@ -1,0 +1,5 @@
+#!/bin/bash
+# Log that this command was called and with what arguments
+echo "$(date) - MOCK dnsmasq called with: $@" >> /var/log/paperdrop-mocks.log
+# Return success exit code so Python thinks it worked
+exit 0

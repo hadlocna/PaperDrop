@@ -18,3 +18,13 @@ export const claimDevice = async (deviceCode: string, userId: string) => {
     const response = await client.post('/devices/claim', { deviceCode, userId });
     return response.data;
 };
+
+export const updateDevice = async (deviceId: string, data: any) => {
+    const response = await client.patch(`/devices/${deviceId}`, data);
+    return response.data;
+};
+
+export const unclaimDevice = async (deviceId: string, userId: string) => {
+    const response = await client.delete(`/devices/${deviceId}/access/${userId}`);
+    return response.data;
+};

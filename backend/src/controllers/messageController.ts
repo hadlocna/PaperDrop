@@ -4,7 +4,7 @@ import { broadcastToDevice } from '../websocket/deviceHandler';
 
 export const sendMessage = async (req: Request, res: Response) => {
     try {
-        const { senderId, deviceId, content, contentType } = req.body;
+        const { senderId, deviceId, content, contentType, scheduledAt } = req.body;
 
         if (!senderId || !deviceId || !content) {
             return res.status(400).json({ error: 'Missing required fields' });
@@ -35,26 +35,29 @@ export const sendMessage = async (req: Request, res: Response) => {
                 deviceId,
                 content: JSON.stringify(content), // Storing as JSON string for SQLite compatibility
                 contentType: contentType || 'text',
-                status: 'queued'
+                status: scheduledAt ? 'scheduled' : 'queued',
+                scheduledAt: scheduledAt ? new Date(scheduledAt) : null
             }
         });
 
-        // Broadcast to device via WebSocket
-        const broadcastResult = broadcastToDevice(deviceId, {
-            type: 'new_message',
-            message: {
-                id: message.id,
-                content: content,
-                contentType: message.contentType,
-                createdAt: message.createdAt
-            }
-        });
-
-        if (broadcastResult) {
-            await prisma.message.update({
-                where: { id: message.id },
-                data: { status: 'sent', sentAt: new Date() }
+        // Broadcast to device via WebSocket ONLY if not scheduled
+        if (!message.scheduledAt) {
+            const broadcastResult = broadcastToDevice(deviceId, {
+                type: 'new_message',
+                message: {
+                    id: message.id,
+                    content: content,
+                    contentType: message.contentType,
+                    createdAt: message.createdAt
+                }
             });
+
+            if (broadcastResult) {
+                await prisma.message.update({
+                    where: { id: message.id },
+                    data: { status: 'sent', sentAt: new Date() }
+                });
+            }
         }
 
         res.status(201).json(message);

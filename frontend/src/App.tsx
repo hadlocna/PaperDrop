@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Register } from './pages/Register';
 import { Login } from './pages/Login';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -7,8 +7,6 @@ import { Setup } from './pages/Setup';
 import { Compose } from './pages/Compose';
 import { History } from './pages/History';
 import { DeviceSettings } from './pages/DeviceSettings';
-
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
     const { user, isLoading } = useAuth();

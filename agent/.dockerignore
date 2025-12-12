@@ -1,0 +1,7 @@
+__pycache__
+*.pyc
+debug_prints/
+local_config/
+.DS_Store
+.git
+.env

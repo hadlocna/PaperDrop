@@ -21,3 +21,4 @@ venv/
 
 # PaperDrop
 *.sqlite
+.packer_cache

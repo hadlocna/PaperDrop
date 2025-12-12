@@ -1,0 +1,65 @@
+{
+    "variables": {
+        "wifi_ssid": "PaperDrop_Setup",
+        "wifi_password": "paperdrop123"
+    },
+    "builders": [
+        {
+            "type": "arm",
+            "file_urls": [
+                "file:///build/base.img"
+            ],
+            "file_checksum_type": "none",
+            "file_target_extension": "img",
+            "file_unarchive_cmd": [
+                "cp",
+                "$ARCHIVE_PATH",
+                "$TARGET_PATH"
+            ],
+            "image_build_method": "resize",
+            "image_path": "paperdrop-agent.img",
+            "image_size": "4G",
+            "image_type": "dos",
+            "image_partitions": [
+                {
+                    "name": "boot",
+                    "type": "c",
+                    "start_sector": "16384",
+                    "filesystem": "fat",
+                    "size": "512M",
+                    "mountpoint": "/boot"
+                },
+                {
+                    "name": "root",
+                    "type": "83",
+                    "start_sector": "1064960",
+                    "filesystem": "ext4",
+                    "size": "0",
+                    "mountpoint": "/"
+                }
+            ],
+            "qemu_binary_source_path": "/usr/bin/qemu-aarch64-static",
+            "qemu_binary_destination_path": "/usr/bin/qemu-aarch64-static"
+        }
+    ],
+    "provisioners": [
+        {
+            "type": "shell",
+            "inline": [
+                "mkdir -p /opt/paperdrop"
+            ]
+        },
+        {
+            "type": "file",
+            "source": "src/",
+            "destination": "/tmp/paperdrop_src"
+        },
+        {
+            "type": "shell",
+            "script": "setup.sh",
+            "environment_vars": [
+                "DEBIAN_FRONTEND=noninteractive"
+            ]
+        }
+    ]
+}

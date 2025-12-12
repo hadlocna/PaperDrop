@@ -1,0 +1,40 @@
+# Dockerfile.integration
+FROM python:3.11-slim-bookworm
+
+# Install real networking tools so the OS looks right
+# (We will override them with mocks, but having them installed ensures libs exist)
+RUN apt-get update && apt-get install -y \
+    hostapd \
+    dnsmasq \
+    wireless-tools \
+    sudo \
+    curl \
+    iproute2 \
+    procps \
+    # Build deps for Pillow
+    build-essential \
+    libjpeg-dev \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/paperdrop
+
+# Copy app code
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY . .
+
+# Copy our mock binaries
+COPY ./mocks/bin /usr/local/mock-bin
+RUN chmod +x /usr/local/mock-bin/*
+
+# CRITICAL: Put mocks first in the PATH so Python uses them instead of real ones
+ENV PATH="/usr/local/mock-bin:${PATH}"
+ENV PAPERDROP_ENV=integration
+ENV PYTHONUNBUFFERED=1
+
+# Create dummy wifi config file directory
+RUN mkdir -p /etc/paperdrop
+
+CMD ["python", "agent.py"]

@@ -19,10 +19,10 @@ class ScheduledMessageProcessor {
 
     async process() {
         try {
-            // Find messages due for delivery that are still queued
+            // Find messages due for delivery that are scheduled
             const dueMessages = await prisma.message.findMany({
                 where: {
-                    status: 'queued',
+                    status: 'scheduled',
                     scheduledAt: {
                         lte: new Date(),
                         not: null
@@ -36,11 +36,13 @@ class ScheduledMessageProcessor {
             for (const message of dueMessages) {
                 // Attempt delivery
                 const payload = {
-                    type: 'print_job',
-                    message_id: message.id,
-                    content_type: message.contentType,
-                    content: JSON.parse(message.content), // Assuming JSON string in DB
-                    sender_name: message.sender.name
+                    type: 'new_message',
+                    message: {
+                        id: message.id,
+                        content: JSON.parse(message.content), // Assuming JSON string in DB
+                        contentType: message.contentType,
+                        createdAt: message.createdAt
+                    }
                 };
 
                 const success = broadcastToDevice(message.deviceId, payload);

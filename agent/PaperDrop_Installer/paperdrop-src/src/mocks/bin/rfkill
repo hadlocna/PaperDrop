@@ -1,0 +1,3 @@
+#!/bin/bash
+echo "$(date) - MOCK rfkill called with: $@" >> /var/log/paperdrop-mocks.log
+exit 0

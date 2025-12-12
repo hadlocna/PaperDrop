@@ -27,12 +27,24 @@ export const setupWebSocket = (server: Server) => {
             return;
         }
 
-        // Verify device
-        const device = await prisma.device.findUnique({
+        // Verify or Create device
+        let device = await prisma.device.findUnique({
             where: { deviceCode }
         });
 
-        if (!device || device.deviceSecret !== deviceSecret) {
+        if (!device) {
+            console.log(`New device verified: ${deviceCode}`);
+            // Create new device
+            device = await prisma.device.create({
+                data: {
+                    deviceCode,
+                    deviceSecret,
+                    status: 'online',
+                    friendlyName: 'New Printer',
+                    lastSeenAt: new Date()
+                }
+            });
+        } else if (device.deviceSecret !== deviceSecret) {
             console.log(`Connection rejected: Invalid credentials for ${deviceCode}`);
             ws.close(4001, 'Invalid authentication');
             return;

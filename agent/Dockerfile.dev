@@ -1,0 +1,23 @@
+# Dockerfile.dev
+FROM python:3.11-slim-bookworm
+
+WORKDIR /app
+
+# Install build deps required for Pillow/image processing
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libjpeg-dev \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Set env to trigger the Mock printer
+ENV PAPERDROP_ENV=development
+ENV PYTHONUNBUFFERED=1
+
+COPY . .
+
+# Run the agent module
+CMD ["python", "agent.py"]
