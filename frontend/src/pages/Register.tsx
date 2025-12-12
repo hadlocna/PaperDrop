@@ -1,13 +1,10 @@
+
 import { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { registerUser } from '../api/client';
 
 export const Register = () => {
     const navigate = useNavigate();
-    const location = useLocation();
-
-    // The page we were trying to access before being redirected to login/register
-    const from = location.state?.from?.pathname + (location.state?.from?.search || '') || '/';
 
     const [formData, setFormData] = useState({
         email: '',
@@ -32,7 +29,7 @@ export const Register = () => {
             // NOTE: The current backend likely just creates user. Best flow: Auto-login after register.
             // If backend doesn't return token on register, we must call login.
             // Let's assume we navigate to login to be safe, preserving state.
-            navigate('/login', { state: { from: location.state?.from } });
+            navigate('/login');
 
         } catch (err: any) {
             setError(err.response?.data?.error || 'Registration failed');

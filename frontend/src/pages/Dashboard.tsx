@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { CanvasComposer } from '../components/CanvasComposer';
 import { ActivityFeed } from '../components/ActivityFeed';
 import { useAuth } from '../context/AuthContext';
 import { client as api } from '../api/client';
-import { Printer, Calendar as CalendarIcon, X } from 'lucide-react';
+import { X } from 'lucide-react';
 
 interface Device {
     id: string;

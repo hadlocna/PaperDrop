@@ -35,21 +35,7 @@ export function Compose() {
         setError('');
 
         try {
-            const payload = mode === 'text'
-                ? {
-                    contentType: 'text',
-                    content: { body: message, timestamp: true }
-                }
-                : {
-                    contentType: 'image',
-                    content: { content: selectedImage } // agent expects content to be base64 string directly or wrapped?
-                    // Previous agent analysis: 
-                    // if content_type == 'image': print_handler.print_image(msg_obj.get('content'))
-                    // So we should send { content: base64 } or just base64 string as 'content'?
-                    // print_handler.print_message uses msg_obj.get('content') -> body.
-                    // print_handler.print_image uses msg_obj.get('content'). 
-                    // So for consistency: content: selectedImage
-                };
+
 
             // Refined payload logic based on server storing JSON
             let apiContent;

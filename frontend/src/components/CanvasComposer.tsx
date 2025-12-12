@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import Draggable from 'react-draggable';
 import html2canvas from 'html2canvas';
-import { Image as ImageIcon, Type as TypeIcon, X as XIcon, Eye as EyeIcon, Move as MoveIcon, Clock } from 'lucide-react';
+import { Image as ImageIcon, Type as TypeIcon, X as XIcon, Eye as EyeIcon, Clock } from 'lucide-react';
 import { applyDithering } from '../utils/dithering';
 
 interface CanvasElement {
@@ -22,7 +22,7 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
     const [elements, setElements] = useState<CanvasElement[]>([]);
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const canvasRef = useRef<HTMLDivElement>(null);
-    const inputRef = useRef<HTMLInputElement>(null); // For image input using label trigger
+
 
     const addText = () => {
         const newElement: CanvasElement = {
@@ -126,10 +126,7 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                     style={{
                         width: '384px',
                         minHeight: '300px',
-                        height: elements.length === 0 ? '300px' : 'auto' // Grow? Or fixed? Let's keep it min 300 for now.
-                        // Actually, auto height is tricky with html2canvas if we want drag boundaries.
-                        // Let's set a fixed canvas size for Version 1, say 384x500 approx receipt length.
-                        , height: '500px'
+                        height: '500px'
                     }}
                 >
                     {previewImage ? (

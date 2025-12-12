@@ -29,7 +29,7 @@ export function ActivityFeed({ deviceId, refreshTrigger }: ActivityFeedProps) {
             try {
                 const res = await api.get('/messages', {
                     params: {
-                        userId: user.id,
+                        userId: user!.id,
                         deviceId: deviceId,
                         limit: 20
                     }
