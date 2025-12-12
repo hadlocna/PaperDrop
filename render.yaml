@@ -9,7 +9,7 @@ services:
     plan: free
     rootDir: backend
     buildCommand: npm install --include=dev && npm run build
-    startCommand: npm start
+    startCommand: npx prisma migrate deploy && npm start
     envVars:
       - key: DATABASE_URL
         fromDatabase:
