@@ -21,7 +21,7 @@ services:
   # Frontend Static Site
   - type: static
     name: paperdrop-frontend
-    env: static
+
     region: oregon
     plan: free
     rootCommand: cd frontend
