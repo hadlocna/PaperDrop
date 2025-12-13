@@ -42,9 +42,9 @@ def get_printer_connection():
     # Real Hardware connection
     try:
         from escpos.printer import Usb
-        # Epson TM-T20III (from spec)
-        # Try a few standard IDs or allow config injection
-        return Usb(0x04b8, 0x0e15, profile="TM-T20III")
+        # Epson TM-T20III (VID 0x04b8, PID 0x0e28)
+        # We explicitly target the user's specific model
+        return Usb(0x04b8, 0x0e28, profile="TM-T20III")
     except Exception as e:
         logger.error(f"Could not connect to real printer: {e}")
         # In production, returning None might crash logic if not handled.

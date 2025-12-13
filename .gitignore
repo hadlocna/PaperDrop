@@ -22,3 +22,6 @@ venv/
 # PaperDrop
 *.sqlite
 .packer_cache
+.env.local
+frontend.log
+agent.log

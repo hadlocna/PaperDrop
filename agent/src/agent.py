@@ -131,6 +131,11 @@ class PaperDropAgent:
                     # Try to connect
                     success = await self.connect_to_home_wifi()
                     if success:
+                        logger.info("WiFi Connected! Keeping AP alive for 60s to show Success Page...")
+                        # Allow time for UI on the AP to update and user to see "Connected" and the Code
+                        await asyncio.sleep(60) 
+                        await self.wifi_setup.stop()
+                        
                         self.state = DeviceState.ONLINE
                         self.connection_start_time = 0 # Reset
                     else:
@@ -221,7 +226,10 @@ class PaperDropAgent:
         while self.state == DeviceState.WIFI_SETUP and self.running:
             await asyncio.sleep(1)
 
-        await self.wifi_setup.stop()
+        # CRITICAL: Do NOT stop AP if we are transitioning to CONNECTING.
+        # We need the AP alive so the UI can poll and show "Connected!".
+        if self.state != DeviceState.CONNECTING:
+            await self.wifi_setup.stop()
     
     async def on_wifi_configured(self, ssid: str, password: str):
         """
@@ -231,6 +239,9 @@ class PaperDropAgent:
         
         # Save credentials
         self.config.save_wifi_credentials(ssid, password)
+        
+        logger.info("Credentials saved. Waiting 15s before switching networks to allow UI to render...")
+        await asyncio.sleep(15) # Give the user time to read the success page
         
         # Change state to trigger loop update
         self.state = DeviceState.CONNECTING
@@ -270,13 +281,13 @@ class PaperDropAgent:
         """Check if we have a WiFi connection with internet access"""
         try:
             # Check if wlan0 has an IP
-            proc = await asyncio.create_subprocess_exec(
-                'hostname', '-I',
+            proc = await asyncio.create_subprocess_shell(
+                'ip -4 addr show wlan0 | grep -oP "(?<=inet\\s)\\d+(\\.\\d+){3}"',
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
             stdout, _ = await proc.communicate()
-            ip = stdout.decode().strip().split()[0] if stdout else ""
+            ip = stdout.decode().strip()
             
             if not ip or ip.startswith('192.168.4.'):  # AP mode IP
                 return False

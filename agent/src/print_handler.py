@@ -27,8 +27,8 @@ class PrintHandler:
             image_data = base64.b64decode(base64_image)
             img = Image.open(io.BytesIO(image_data))
             
-            # Resize logic (max width ~384px for 58mm thermal printer)
-            width = 384
+            # Resize logic (max width 576px for 80mm TM-T20III)
+            width = 576
             w_percent = (width / float(img.size[0]))
             h_size = int((float(img.size[1]) * float(w_percent)))
             img = img.resize((width, h_size), Image.Resampling.LANCZOS)

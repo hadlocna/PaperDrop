@@ -229,20 +229,36 @@ class WiFiSetupServer:
         self.on_configured = on_configured_callback
         self.server = None
         self.is_running = False
+        self.is_running = False
+        self.connection_state = {"state": "IDLE", "status": "Waiting..."} # IDLE, CONNECTING, CONNECTED, FAILED
         self.app = FastAPI()
         self._setup_routes()
 
     def _setup_routes(self):
+        from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+
+        @self.app.get("/status")
+        async def status():
+            return JSONResponse(self.connection_state)
+
         @self.app.get("/", response_class=HTMLResponse)
         async def home():
             networks_html = await self._scan_wifi_html()
             return HTML_TEMPLATE.replace("<!-- NETWORKS_PLACEHOLDER -->", networks_html)
 
-        @self.app.get("/{full_path:path}", response_class=HTMLResponse)
+        @self.app.get("/generate_204")
+        async def generate_204():
+            # Android check. We want to fail this check so it knows it's captive.
+            # But redirecting to the portal is the standard way.
+            return RedirectResponse("/")
+
+        @self.app.get("/{full_path:path}")
         async def catch_all(full_path: str):
-            logger.info(f"Captive Portal redirect for: {full_path}")
-            networks_html = await self._scan_wifi_html()
-            return HTML_TEMPLATE.replace("<!-- NETWORKS_PLACEHOLDER -->", networks_html)
+            logger.info(f"Captive Portal probe: {full_path}")
+            # Redirect everything to root to force the popup URL to verify
+            # Some devices check for specific content (Success) on 200 OK.
+            # Returning 302 Found -> / usually triggers the CNA.
+            return RedirectResponse("/")
 
 
         @self.app.post("/connect", response_class=HTMLResponse)
@@ -257,13 +273,28 @@ class WiFiSetupServer:
                 # Save credentials implementation
                 self.config.save_wifi_credentials(ssid, password)
                 
+                # Update State
+                self.connection_state = {"state": "CONNECTING", "status": f"Connecting to {ssid}..."}
+
                 # Schedule the state change (which kills AP) for AFTER the response is sent
                 # We assume on_configured is async, but BackgroundTasks expects sync or async
                 background_tasks.add_task(self.on_configured, ssid, password)
                 
-                # We return a success page that instructs the user
-                # We inject the Dashboard URL (Local Mac IP for now, ideally dynamic)
-                DASHBOARD_URL = "http://192.168.86.21:5173/setup" 
+                # Read Device Code
+                import json
+                device_code = "UNKNOWN"
+                try:
+                    with open("/etc/paperdrop/device.json", "r") as f:
+                        data = json.load(f)
+                        device_code = data.get("device_code", "UNKNOWN")
+                except:
+                    pass
+
+                # DASHBOARD_URL = "http://192.168.86.21:5173/setup" # Local fallback
+                DASHBOARD_URL = "https://paperdrop-frontend.onrender.com/setup"
+                
+                # Pattern A (Concurrent Mode) Response
+                # We return a page that stays open and polls for status
                 
                 return f"""
                 <html>
@@ -274,23 +305,51 @@ class WiFiSetupServer:
                         h1 {{ color: #2ecc71; margin-bottom: 20px; }}
                         .step {{ background: #f9f9f9; padding: 15px; margin: 15px 0; border-radius: 8px; text-align: left; }}
                         .btn {{ display: inline-block; background: #000; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 20px; }}
+                        .spinner {{ font-size: 40px; animation: spin 2s linear infinite; margin-bottom: 20px; }}
+                        .code {{ font-family: monospace; font-size: 24px; background: #eee; padding: 5px 10px; border-radius: 4px; letter-spacing: 2px; }}
+                        @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
                     </style>
+                    <script>
+                        function checkStatus() {{
+                            fetch('/status')
+                                .then(response => response.json())
+                                .then(data => {{
+                                    document.getElementById('status-text').innerText = data.status;
+                                    if (data.state === 'CONNECTED') {{
+                                        document.getElementById('spinner').style.display = 'none';
+                                        document.getElementById('success-icon').style.display = 'block';
+                                        document.getElementById('next-steps').style.display = 'block';
+                                        document.getElementById('claim-btn').style.display = 'inline-block';
+                                        document.getElementById('status-text').style.color = '#2ecc71';
+                                    }} else if (data.state === 'FAILED') {{
+                                        document.getElementById('spinner').style.display = 'none';
+                                        document.getElementById('status-icon').style.display = 'none'; // Ensure success icon is hidden
+                                        document.getElementById('status-text').style.color = 'red';
+                                        document.getElementById('status-text').innerText = 'Connection Failed. ' + data.status;
+                                        document.getElementById('retry-btn').style.display = 'inline-block';
+                                    }} else {{
+                                        setTimeout(checkStatus, 2000);
+                                    }}
+                                }})
+                                .catch(e => setTimeout(checkStatus, 2000));
+                        }}
+                        window.onload = checkStatus;
+                    </script>
                 </head>
                 <body>
-                    <h1>Credentials Saved!</h1>
-                    <p>The device is now connecting to <strong>{ssid}</strong>...</p>
+                    <h1 id="status-text">Connecting to {ssid}...</h1>
+                    <div id="spinner" class="spinner">🔄</div>
+                    <div id="success-icon" style="display:none; font-size:50px; margin-bottom:20px;">✅</div>
                     
-                    <div class="step">
-                        <strong>1. Wait ~30 seconds</strong><br>
-                        The "PaperDrop_Setup" hotspot will disappear.
+                    <div id="next-steps" style="display:none;" class="step">
+                        <strong>Connected!</strong><br>
+                        Device is online and bridging internet.<br>
+                        1. Copy Code: <span class="code" style="user-select: all;">{device_code}</span><br>
+                        2. Click below to claim.<br>
                     </div>
                     
-                    <div class="step">
-                        <strong>2. Switch Networks</strong><br>
-                        Connect your phone back to <strong>{ssid}</strong> (or your home WiFi).
-                    </div>
-                    
-                    <a href="{DASHBOARD_URL}" class="btn">Continue to Dashboard</a>
+                    <a id="claim-btn" href="{DASHBOARD_URL}" class="btn" style="display:none;">Claim Device</a>
+                    <a id="retry-btn" href="/" class="btn" style="display:none; background:#666;">Try Again</a>
                 </body>
                 </html>
                 """
@@ -330,31 +389,15 @@ class WiFiSetupServer:
     # ─────────────────────────────────────────────────────────────────
 
     async def _start_ap_mode(self):
-        """Start hostapd and dnsmasq"""
+        """Start AP+STA mode using helper script"""
         try:
-            # In Dev mode, these might be skipped or mocked binaries will be called
             if os.environ.get("PAPERDROP_ENV") == "development":
                 logger.info("[DEV] Skipping AP mode startup commands")
                 return
 
-            logger.info("Starting AP Mode (hostapd/dnsmasq)...")
-            
-            # Unblock wlan0
-            await self._run_bg("rfkill", "unblock", "wlan")
-            
-            # Start interface (using 'ip' command mock)
-            await self._run_bg("ip", "link", "set", "wlan0", "up")
-            try:
-                await self._run_bg("ip", "addr", "flush", "dev", "wlan0")
-            except:
-                pass
-            await self._run_bg("ip", "addr", "add", "192.168.4.1/24", "dev", "wlan0")
-            
-            # Start services
-            # In a real setup these might be systemd services or direct binary calls
-            # For this agent approach, we assume we call binaries directly or via systemctl
-            await self._run_bg("systemctl", "start", "dnsmasq")
-            await self._run_bg("systemctl", "start", "hostapd")
+            logger.info("Starting AP+STA Mode...")
+            # We assume the script is installed at /opt/paperdrop/enable_apsta.sh
+            await self._run_bg("bash", "/opt/paperdrop/enable_apsta.sh", "start")
             
         except Exception as e:
             logger.error(f"Failed to start AP mode: {e}")
@@ -364,13 +407,12 @@ class WiFiSetupServer:
             return
             
         try:
-            await self._run_bg("systemctl", "stop", "hostapd")
-            await self._run_bg("systemctl", "stop", "dnsmasq")
+            await self._run_bg("bash", "/opt/paperdrop/enable_apsta.sh", "stop")
         except:
             pass
 
     async def apply_wifi_credentials(self) -> bool:
-        """Use wpa_cli to connect to the network"""
+        """Apply credentials to wlan0 WITHOUT stopping AP"""
         if os.environ.get("PAPERDROP_ENV") == "development":
             logger.info("[DEV] Pretending to apply WiFi credentials...")
             return True
@@ -379,34 +421,53 @@ class WiFiSetupServer:
         if not ssid:
             return False
             
-        logger.info(f"Applying WiFi credentials for {ssid}...")
+        logger.info(f"Applying WiFi credentials for {ssid} to wlan0 (Concurrent Mode)...")
         
-        # This interaction uses wpa_cli (mocked in Layer 2)
         try:
-            # 1. Add Network
-            # wpa_cli add_network -> returns network_id (e.g. "0")
-            # We'll just assume ID 0 for the mock/mvp
-            await self._run("wpa_cli", "-i", "wlan0", "add_network")
+            # 1. Update wpa_supplicant.conf
+            # We use wpa_cli to add the network dynamically
             
-            # 2. Set SSID
-            await self._run("wpa_cli", "-i", "wlan0", "set_network", "0", "ssid", f'"{ssid}"')
+            # Flush existing networks to be clean
+            # Note: This might be aggressive, but for a simple setup it ensures we target the right one
+            # wpa_cli is tricky with IDs. We'll just try to add a new one and select it.
             
-            # 3. Set Password
-            await self._run("wpa_cli", "-i", "wlan0", "set_network", "0", "psk", f'"{password}"')
+            # Simple approach: Overwrite wpa_supplicant.conf directly and reconfigure
+            # This is often more reliable than wpa_cli state management
+            conf_content = f'''ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
+update_config=1
+country=US
+
+network={{
+    ssid="{ssid}"
+    psk="{password}"
+}}
+'''
+            # Write to temp then move
+            cmd = f"echo '{conf_content}' > /tmp/wpa_supplicant.conf && sudo mv /tmp/wpa_supplicant.conf /etc/wpa_supplicant/wpa_supplicant.conf"
+            await self._run_bg("bash", "-c", cmd)
             
-            # 4. Enable
-            await self._run("wpa_cli", "-i", "wlan0", "enable_network", "0")
+            # 2. Reconfigure wpa_supplicant
+            await self._run("wpa_cli", "-i", "wlan0", "reconfigure")
             
-            # 5. Save
-            await self._run("wpa_cli", "-i", "wlan0", "save_config")
+            # 3. Wait for Connection (Poll for IP)
+            self.connection_state = {"state": "CONNECTING", "status": "Obtaining IP..."}
+            for _ in range(30): # Wait 30 seconds
+                await asyncio.sleep(1)
+                # Check for IP on wlan0
+                pk = await asyncio.create_subprocess_shell("ip -4 addr show wlan0 | grep inet", stdout=asyncio.subprocess.PIPE)
+                stdout, _ = await pk.communicate()
+                if b"inet" in stdout:
+                    logger.info("Connected! IP acquired.")
+                    self.connection_state = {"state": "CONNECTED", "status": "Connected!"}
+                    return True
             
-            # 6. Reassociate
-            await self._run("wpa_cli", "-i", "wlan0", "reassociate")
-            
-            return True
+            logger.error("Timed out waiting for connection.")
+            self.connection_state = {"state": "FAILED", "status": "Timeout"}
+            return False
             
         except Exception as e:
             logger.error(f"Failed to apply WiFi creds: {e}")
+            self.connection_state = {"state": "FAILED", "status": f"Error: {str(e)}"}
             return False
 
     async def _scan_wifi_html(self) -> str:

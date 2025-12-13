@@ -7,6 +7,7 @@ import userRoutes from './routes/users';
 import deviceRoutes from './routes/devices';
 import authRoutes from './routes/auth';
 import messageRoutes from './routes/messages';
+import aiRoutes from './routes/aiRoutes';
 import { WebSocket } from 'ws';
 import { IncomingMessage } from 'http';
 import url from 'url';
@@ -26,6 +27,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/devices', deviceRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/messages', messageRoutes);
+app.use('/api/ai', aiRoutes);
 
 // Basic health check
 app.get('/health', (req, res) => {
