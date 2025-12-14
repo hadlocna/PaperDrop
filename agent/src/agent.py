@@ -56,7 +56,7 @@ class PaperDropAgent:
         self.state = DeviceState.WIFI_SETUP
         self.websocket: Optional[websockets.WebSocketClientProtocol] = None
         self.print_handler = print_handler # Use singleton
-        self.wifi_setup = WiFiSetupServer(self.config, self.on_wifi_configured)
+        self.wifi_setup = WiFiSetupServer(self.config, self.on_wifi_connected)
         self.running = True
         self.reconnect_delay = 5  # Start with 5 second reconnect delay
         self.max_reconnect_delay = 60  # Max 60 seconds between attempts
@@ -231,27 +231,14 @@ class PaperDropAgent:
         if self.state != DeviceState.CONNECTING:
             await self.wifi_setup.stop()
     
-    async def on_wifi_configured(self, ssid: str, password: str):
+    async def on_wifi_connected(self):
         """
-        Callback when user submits WiFi credentials via captive portal.
-        This is called from a background task after the user submits the form.
+        Callback when WiFi connects successfully via the captive portal.
         """
-        logger.info(f"WiFi credentials received for network: {ssid}")
-        
-        # Apply the WiFi credentials (this updates connection_state in WiFiSetupServer)
-        # The AP stays running while we connect to allow the user to see the result
-        success = await self.wifi_setup.apply_wifi_credentials()
-        
-        if success:
-            logger.info("WiFi connected successfully! Keeping AP up for 60s so user can see result...")
-            # Keep AP running for 60 seconds so user can see success page and claim device
-            await asyncio.sleep(60)
-            logger.info("Shutting down setup AP...")
-            await self.wifi_setup.stop()
-            self.state = DeviceState.CONNECTING
-        else:
-            logger.error("WiFi connection failed. AP will stay up for retry.")
-            # Don't change state, let user try again
+        logger.info("WiFi setup successful! Transitioning to connecting state...")
+        self.state = DeviceState.CONNECTING
+        # connection_state in WiFiSetupServer handles the UI feedback/delay
+        # We just need to signal the main loop to proceed
     
     async def connect_to_home_wifi(self) -> bool:
         """
@@ -261,28 +248,52 @@ class PaperDropAgent:
         self.state = DeviceState.CONNECTING
         logger.info("Checking for existing WiFi connection...")
         
-        # 1. OPTIMIZATION: Check if already connected (e.g. by OS Headless Setup)
+        # 1. Check if already connected (e.g. by Setup Server or OS)
         if await self.is_wifi_connected():
             logger.info("Already connected to WiFi! Skipping reconfiguration.")
             return True
 
-        logger.info("Attempting to connect to home WiFi...")
+        logger.info("Attempting to connect using saved credentials...")
         
-        # Apply WiFi credentials to wpa_supplicant and restart
-        success = await self.wifi_setup.apply_wifi_credentials()
-        
-        if not success:
+        # Get credentials
+        ssid, password = self.config.get_wifi_credentials()
+        if not ssid:
+            logger.error("No saved WiFi credentials found.")
             return False
-        
-        # Wait for connection with timeout
-        for i in range(30):  # 30 second timeout
-            if await self.is_wifi_connected():
-                logger.info("WiFi connected!")
+
+        # Try to bring up connection using nmcli
+        # Since we're using NetworkManager, we can just try to 'up' the connection
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "nmcli", "connection", "up", ssid,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await proc.communicate()
+            
+            if proc.returncode == 0:
+                logger.info(f"Successfully brought up connection {ssid}")
                 return True
-            await asyncio.sleep(1)
-        
-        logger.error("WiFi connection timeout")
-        return False
+            else:
+                logger.error(f"Failed to connect to {ssid}: {stderr.decode()}")
+                
+                # Fallback: Try full connect
+                proc = await asyncio.create_subprocess_exec(
+                    "nmcli", "device", "wifi", "connect", ssid, "password", password,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                stdout, stderr = await proc.communicate()
+                if proc.returncode == 0:
+                    logger.info(f"Successfully connected to {ssid} (full connect)")
+                    return True
+                
+                logger.error(f"Full connect failed: {stderr.decode()}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error connecting to WiFi: {e}")
+            return False
     
     async def is_wifi_connected(self) -> bool:
         """Check if we have a WiFi connection with internet access"""
