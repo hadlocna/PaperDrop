@@ -3,6 +3,7 @@ import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { client } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { AlertCircle } from 'lucide-react';
+import logo from '../assets/logo.png';
 
 export function Login() {
     const [email, setEmail] = useState('');
@@ -41,6 +42,7 @@ export function Login() {
         <div className="min-h-screen bg-neutral-50 flex items-center justify-center p-4">
             <div className="max-w-md w-full bg-white rounded-xl shadow-sm border border-neutral-100 p-8">
                 <div className="text-center mb-8">
+                    <img src={logo} alt="PaperDrop" className="w-20 h-20 mx-auto mb-4" />
                     <h1 className="text-2xl font-bold text-neutral-900">Welcome Back</h1>
                     <p className="text-neutral-600 mt-2">Sign in to your account</p>
                 </div>

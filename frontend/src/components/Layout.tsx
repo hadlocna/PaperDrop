@@ -1,5 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import logoHorizontal from '../assets/logo-horizontal.png';
 
 interface LayoutProps {
     children: React.ReactNode;
@@ -18,9 +19,8 @@ export function Layout({ children }: LayoutProps) {
         <div className="h-[100dvh] bg-sand-50 text-charcoal-500 font-sans flex flex-col overflow-hidden">
             <nav className="bg-white shadow-sm sticky top-0 z-10">
                 <div className="w-full px-4 h-16 flex items-center justify-between">
-                    <Link to="/" className="flex items-center gap-2 text-xl font-semibold text-charcoal-700">
-                        <span className="text-2xl">📜</span>
-                        PaperDrop
+                    <Link to="/" className="flex items-center gap-2">
+                        <img src={logoHorizontal} alt="PaperDrop" className="h-8" />
                     </Link>
 
                     <div className="flex items-center gap-4">
