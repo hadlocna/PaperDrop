@@ -610,7 +610,7 @@ function DraggableElement({
             nodeRef={nodeRef}
             bounds="parent"
             position={{ x: element.x, y: element.y }}
-            onStop={(e, data) => onUpdate({ x: data.x, y: data.y })}
+            onStop={(_, data) => onUpdate({ x: data.x, y: data.y })}
             onStart={() => onSelect()} // Just to ensure selection maybe?
             handle=".drag-handle" // Only drag via content, not handles
             cancel=".no-drag"
@@ -623,7 +623,7 @@ function DraggableElement({
                     onSelect();
                 }}
                 // On touch start, select immediately & detect double tap
-                onTouchStart={(e) => {
+                onTouchStart={() => {
                     onSelect();
                     // Double tap detection
                     const now = Date.now();
