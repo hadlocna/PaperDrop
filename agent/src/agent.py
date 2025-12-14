@@ -234,17 +234,24 @@ class PaperDropAgent:
     async def on_wifi_configured(self, ssid: str, password: str):
         """
         Callback when user submits WiFi credentials via captive portal.
+        This is called from a background task after the user submits the form.
         """
         logger.info(f"WiFi credentials received for network: {ssid}")
         
-        # Save credentials
-        self.config.save_wifi_credentials(ssid, password)
+        # Apply the WiFi credentials (this updates connection_state in WiFiSetupServer)
+        # The AP stays running while we connect to allow the user to see the result
+        success = await self.wifi_setup.apply_wifi_credentials()
         
-        logger.info("Credentials saved. Waiting 15s before switching networks to allow UI to render...")
-        await asyncio.sleep(15) # Give the user time to read the success page
-        
-        # Change state to trigger loop update
-        self.state = DeviceState.CONNECTING
+        if success:
+            logger.info("WiFi connected successfully! Keeping AP up for 60s so user can see result...")
+            # Keep AP running for 60 seconds so user can see success page and claim device
+            await asyncio.sleep(60)
+            logger.info("Shutting down setup AP...")
+            await self.wifi_setup.stop()
+            self.state = DeviceState.CONNECTING
+        else:
+            logger.error("WiFi connection failed. AP will stay up for retry.")
+            # Don't change state, let user try again
     
     async def connect_to_home_wifi(self) -> bool:
         """
