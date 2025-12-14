@@ -7,6 +7,7 @@ import { Setup } from './pages/Setup';
 import { Compose } from './pages/Compose';
 import { History } from './pages/History';
 import { DeviceSettings } from './pages/DeviceSettings';
+import { Claim } from './pages/Claim';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
     const { user, isLoading } = useAuth();
@@ -43,6 +44,14 @@ function App() {
                         element={
                             <ProtectedRoute>
                                 <Setup />
+                            </ProtectedRoute>
+                        }
+                    />
+                    <Route
+                        path="/claim"
+                        element={
+                            <ProtectedRoute>
+                                <Claim />
                             </ProtectedRoute>
                         }
                     />

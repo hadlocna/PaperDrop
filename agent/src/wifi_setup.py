@@ -459,44 +459,42 @@ class WiFiSetupServer:
                     pass
 
                 # DASHBOARD_URL = "http://192.168.86.21:5173/setup" # Local fallback
-                DASHBOARD_URL = "https://paperdrop-frontend.onrender.com/setup"
+                DASHBOARD_URL = f"https://paperdrop-frontend.onrender.com/claim?code={device_code}"
                 
-                # Pattern A (Concurrent Mode) Response
-                # We return a page that stays open and polls for status
-                
+                # Return a page with the same styling as the landing page
                 return f"""
+                <!DOCTYPE html>
                 <html>
                 <head>
+                    <title>Connecting - PaperDrop</title>
                     <meta name="viewport" content="width=device-width, initial-scale=1">
+                    """ + STYLE + """
                     <style>
-                        body {{ font-family: -apple-system, sans-serif; padding: 20px; text-align: center; color: #333; }}
-                        h1 {{ color: #2ecc71; margin-bottom: 20px; }}
-                        .step {{ background: #f9f9f9; padding: 15px; margin: 15px 0; border-radius: 8px; text-align: left; }}
-                        .btn {{ display: inline-block; background: #000; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 20px; }}
-                        .spinner {{ font-size: 40px; animation: spin 2s linear infinite; margin-bottom: 20px; }}
-                        .code {{ font-family: monospace; font-size: 24px; background: #eee; padding: 5px 10px; border-radius: 4px; letter-spacing: 2px; }}
+                        .status-icon {{ font-size: 48px; margin: 20px 0; }}
+                        .spinner {{ animation: spin 1.5s linear infinite; display: inline-block; }}
                         @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
+                        .code {{ font-family: monospace; font-size: 28px; background: linear-gradient(135deg, var(--primary), var(--secondary)); color: white; padding: 12px 20px; border-radius: 12px; letter-spacing: 3px; display: inline-block; margin: 16px 0; }}
+                        .success-text {{ color: var(--secondary); }}
+                        .error-text {{ color: var(--primary); }}
+                        a.btn {{ display: inline-block; background: var(--primary); color: white; padding: 16px 32px; text-decoration: none; border-radius: 14px; font-weight: 600; margin-top: 16px; box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3); }}
+                        a.btn-secondary {{ background: #636E72; box-shadow: 0 4px 12px rgba(99, 110, 114, 0.3); }}
+                        .hidden {{ display: none !important; }}
                     </style>
                     <script>
                         function checkStatus() {{
                             fetch('/status')
                                 .then(response => response.json())
                                 .then(data => {{
-                                    document.getElementById('status-text').innerText = data.status;
+                                    document.getElementById('status-msg').innerText = data.status;
                                     if (data.state === 'CONNECTED') {{
-                                        document.getElementById('spinner').style.display = 'none';
-                                        document.getElementById('success-icon').style.display = 'block';
-                                        document.getElementById('next-steps').style.display = 'block';
-                                        document.getElementById('claim-btn').style.display = 'inline-block';
-                                        document.getElementById('status-text').style.color = '#2ecc71';
+                                        document.getElementById('connecting-view').classList.add('hidden');
+                                        document.getElementById('success-view').classList.remove('hidden');
                                     }} else if (data.state === 'FAILED') {{
-                                        document.getElementById('spinner').style.display = 'none';
-                                        document.getElementById('status-icon').style.display = 'none'; // Ensure success icon is hidden
-                                        document.getElementById('status-text').style.color = 'red';
-                                        document.getElementById('status-text').innerText = 'Connection Failed. ' + data.status;
-                                        document.getElementById('retry-btn').style.display = 'inline-block';
+                                        document.getElementById('connecting-view').classList.add('hidden');
+                                        document.getElementById('error-view').classList.remove('hidden');
+                                        document.getElementById('error-msg').innerText = data.status;
                                     }} else {{
-                                        setTimeout(checkStatus, 2000);
+                                        setTimeout(checkStatus, 1500);
                                     }}
                                 }})
                                 .catch(e => setTimeout(checkStatus, 2000));
@@ -505,19 +503,38 @@ class WiFiSetupServer:
                     </script>
                 </head>
                 <body>
-                    <h1 id="status-text">Connecting to {ssid}...</h1>
-                    <div id="spinner" class="spinner">🔄</div>
-                    <div id="success-icon" style="display:none; font-size:50px; margin-bottom:20px;">✅</div>
-                    
-                    <div id="next-steps" style="display:none;" class="step">
-                        <strong>Connected!</strong><br>
-                        Device is online and bridging internet.<br>
-                        1. Copy Code: <span class="code" style="user-select: all;">{device_code}</span><br>
-                        2. Click below to claim.<br>
+                    <div class="container">
+                        <div class="card">
+                            <div class="logo">PaperDrop</div>
+                            
+                            <!-- Connecting State -->
+                            <div id="connecting-view">
+                                <h1>Connecting to WiFi</h1>
+                                <p id="status-msg">Connecting to {ssid}...</p>
+                                <div class="status-icon"><span class="spinner">🔄</span></div>
+                                <p style="color: var(--text-secondary); font-size: 12px;">This may take up to 30 seconds</p>
+                            </div>
+                            
+                            <!-- Success State -->
+                            <div id="success-view" class="hidden">
+                                <h1 class="success-text">Connected!</h1>
+                                <div class="status-icon">✅</div>
+                                <p>Your PaperDrop is now online.</p>
+                                <p style="margin-bottom: 8px; font-size: 12px; color: var(--text-secondary);">YOUR DEVICE CODE</p>
+                                <div class="code">{device_code}</div>
+                                <p style="font-size: 13px; color: var(--text-secondary);">Use this code to add the device to your account</p>
+                                <a href="{DASHBOARD_URL}" class="btn">Add to My Account</a>
+                            </div>
+                            
+                            <!-- Error State -->
+                            <div id="error-view" class="hidden">
+                                <h1 class="error-text">Connection Failed</h1>
+                                <div class="status-icon">❌</div>
+                                <p id="error-msg">Could not connect to WiFi</p>
+                                <a href="/" class="btn btn-secondary">Try Again</a>
+                            </div>
+                        </div>
                     </div>
-                    
-                    <a id="claim-btn" href="{DASHBOARD_URL}" class="btn" style="display:none;">Claim Device</a>
-                    <a id="retry-btn" href="/" class="btn" style="display:none; background:#666;">Try Again</a>
                 </body>
                 </html>
                 """
