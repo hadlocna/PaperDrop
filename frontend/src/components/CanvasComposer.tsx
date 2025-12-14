@@ -213,7 +213,9 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
     };
 
     const handleSendClick = async () => {
-        const img = await generateImage();
+        // If we are in preview mode, use the existing preview image
+        // Otherwise generate a new one
+        const img = previewImage || await generateImage();
         const success = await onSend(img);
 
         if (success) {
@@ -686,6 +688,7 @@ function DraggableElement({
                                     data-type="text"
                                     className={`p-2 border-2 rounded select-none transition-all ${isSelected ? 'border-coral-400 bg-coral-50/20' : 'border-transparent hover:border-gray-300'}`}
                                     style={{
+                                        color: '#000000', // Explicit black for capture
                                         lineHeight: 1.2,
                                         fontSize: element.fontSize || 32,
                                         fontFamily: element.fontFamily || 'handwriting',
