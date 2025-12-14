@@ -20,7 +20,7 @@ export function Layout({ children }: LayoutProps) {
             <nav className="bg-white shadow-sm sticky top-0 z-10">
                 <div className="w-full px-4 h-16 flex items-center justify-between">
                     <Link to="/" className="flex items-center gap-2">
-                        <img src={logoHorizontal} alt="PaperDrop" className="h-8" />
+                        <img src={logoHorizontal} alt="PaperDrop" className="h-12" />
                     </Link>
 
                     <div className="flex items-center gap-4">
