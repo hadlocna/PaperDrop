@@ -15,7 +15,7 @@ export function Layout({ children }: LayoutProps) {
     };
 
     return (
-        <div className="min-h-screen bg-sand-50 text-charcoal-500 font-sans flex flex-col">
+        <div className="h-[100dvh] bg-sand-50 text-charcoal-500 font-sans flex flex-col overflow-hidden">
             <nav className="bg-white shadow-sm sticky top-0 z-10">
                 <div className="w-full px-4 h-16 flex items-center justify-between">
                     <Link to="/" className="flex items-center gap-2 text-xl font-semibold text-charcoal-700">

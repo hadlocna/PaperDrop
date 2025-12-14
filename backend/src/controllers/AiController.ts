@@ -1,8 +1,6 @@
 import { Request, Response } from 'express';
 import OpenAI from 'openai';
 
-const openai = new OpenAI();
-
 const THERMAL_SYSTEM_PROMPT = `You are a designer for a thermal receipt printer used for intimate family notes.
 
 Your job is to create PRINT-READY artwork and layouts that will be printed on a black-and-white thermal printer.
@@ -50,6 +48,14 @@ export class AiController {
                 res.status(400).json({ error: 'Prompt is required' });
                 return;
             }
+
+            if (!process.env.OPENAI_API_KEY) {
+                console.error('[AI] Missing OPENAI_API_KEY');
+                res.status(503).json({ error: 'AI service not configured (Missing API Key)' });
+                return;
+            }
+
+            const openai = new OpenAI();
 
             console.log('[AI] Refining prompt:', prompt);
 

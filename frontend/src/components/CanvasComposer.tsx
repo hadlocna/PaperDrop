@@ -156,29 +156,18 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
         await new Promise(resolve => setTimeout(resolve, 100)); // Short delay for render cycle
 
         try {
-            // 2. Capture High-Res (2x) for better text rendering
+            // 2. Capture - Faithful Screenshot logic
+            // We use scale: 2 to ensure we have enough pixels for a clean downsample, 
+            // but we avoid modifying text styles which causes layout shifts.
             const tempCanvas = await html2canvas(canvasRef.current, {
-                scale: 2, // Keep 2x for sharpness
+                scale: 1,
                 backgroundColor: '#ffffff',
                 logging: false,
                 useCORS: true,
                 allowTaint: true,
                 scrollX: 0,
                 scrollY: 0,
-                ignoreElements: (element) => element.classList.contains('no-print'),
-                onclone: (clonedDoc) => {
-                    // Fix: Force separate layers for text?
-                    // Sometimes html2canvas collapses text if it thinks it overlaps.
-                    // We can try to force visibility or layout updates here.
-                    const textElements = clonedDoc.querySelectorAll('[data-type="text"]');
-                    textElements.forEach((el: any) => {
-                        el.style.transform = 'none'; // Simplify transforms if possible (though we strictly need rotation)
-                        // Actually, don't remove transforms as that kills rotation.
-                        // But we can ensure font loading/rendering is simple.
-                        el.style.fontFeatureSettings = '"liga" 0';
-                        el.style.fontVariantLigatures = 'none';
-                    });
-                }
+                ignoreElements: (element) => element.classList.contains('no-print')
             });
 
             // 3. Downscale to exact Printer Width (576px)
@@ -695,6 +684,7 @@ function DraggableElement({
                                 />
                             ) : (
                                 <div
+                                    data-type="text"
                                     className={`p-2 border-2 rounded select-none transition-all ${isSelected ? 'border-coral-400 bg-coral-50/20' : 'border-transparent hover:border-gray-300'}`}
                                     style={{
                                         lineHeight: 1.2,
