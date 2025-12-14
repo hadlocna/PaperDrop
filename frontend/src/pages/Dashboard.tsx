@@ -51,7 +51,19 @@ export function Dashboard() {
 
     const handleSend = async (base64Image: string, scheduleDate?: string): Promise<boolean> => {
         if (!selectedDeviceId) return false;
+
+        if (!user?.id) {
+            alert('Error: User not identified. Please try logging out and back in.');
+            return false;
+        }
+
+        if (!base64Image) {
+            alert('Error: Canvas generation failed (Empty Image).');
+            return false;
+        }
+
         setSending(true);
+        console.log('Sending Message Payload:', { deviceId: selectedDeviceId, senderId: user.id, contentLength: base64Image.length });
         try {
             await api.post('/messages', {
                 deviceId: selectedDeviceId,
@@ -121,7 +133,7 @@ export function Dashboard() {
 
     return (
         <Layout>
-            <div className="flex h-[calc(100vh-64px)] relative overflow-hidden">
+            <div className="flex h-[calc(100dvh-64px)] relative overflow-hidden">
 
                 {/* 1. Printer Sidebar (Desktop) */}
                 <div className="hidden md:block w-64 h-full">
@@ -152,7 +164,7 @@ export function Dashboard() {
                         </button>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto relative">
+                    <div className="flex-1 overflow-hidden relative">
                         {selectedDeviceId ? (
                             <div className="w-full min-h-full flex flex-col">
                                 <CanvasComposer

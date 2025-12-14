@@ -2,7 +2,6 @@
 import { useState, useRef, useEffect } from 'react';
 import Draggable from 'react-draggable';
 import html2canvas from 'html2canvas';
-import { applyDithering } from '../utils/dithering';
 import {
     Type as TypeIcon,
     Image as ImageIcon,
@@ -11,7 +10,11 @@ import {
     RotateCw,
     Scaling,
     X as XIcon,
-    Loader2
+    Trash2,
+    Loader2,
+    Eye,
+    Edit3,
+    AlertTriangle
 } from 'lucide-react';
 import { client as api } from '../api/client';
 
@@ -37,27 +40,45 @@ interface CanvasComposerProps {
 export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerProps) {
     const [elements, setElements] = useState<CanvasElement[]>([]);
     const [previewImage, setPreviewImage] = useState<string | null>(null);
-    const [canvasHeight, setCanvasHeight] = useState(800);
+    const [canvasHeight, setCanvasHeight] = useState(550);
     const canvasRef = useRef<HTMLDivElement>(null);
     const [selectedId, setSelectedId] = useState<string | null>(null);
 
-    // AI State
+    // Modals & AI State
     const [showAiModal, setShowAiModal] = useState(false);
+    const [showClearConfirm, setShowClearConfirm] = useState(false);
     const [aiPrompt, setAiPrompt] = useState('');
     const [isGenerating, setIsGenerating] = useState(false);
 
     const selectedElement = elements.find(el => el.id === selectedId);
 
+    const confirmClear = () => {
+        setElements([]);
+        setPreviewImage(null);
+        setCanvasHeight(550);
+        setSelectedId(null);
+        setShowClearConfirm(false);
+    };
+
     const handleAiGenerate = async () => {
         if (!aiPrompt.trim()) return;
         setIsGenerating(true);
         try {
-            const res = await api.post('/ai/generate', { prompt: aiPrompt });
-            const { image, caption, specs } = res.data;
+            let image;
+
+            // Mock Mode for testing without API usage
+            if (aiPrompt.toLowerCase().includes('mock') || aiPrompt.toLowerCase().includes('test')) {
+                // Return a random placeholder from Unsplash or similar to simulate AI
+                await new Promise(r => setTimeout(r, 1500)); // Fake delay
+                image = `https://placehold.co/1024x1024/png?text=Mock+AI+Image`;
+            } else {
+                const res = await api.post('/ai/generate', { prompt: aiPrompt });
+                image = res.data.image;
+            }
 
             // 1. Reset Canvas
             setElements([]);
-            setCanvasHeight(800);
+            setCanvasHeight(550); // Image + margins
 
             // 2. Add Image
             const imgEl: CanvasElement = {
@@ -65,24 +86,12 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                 type: 'image',
                 content: image,
                 x: 28, // Centered roughly (576-520)/2 = 28
-                y: 50,
+                y: 50, // Top margin
                 width: 520, // Max width with padding
                 rotation: 0
             };
 
-            // 3. Add Caption (if any)
-            const captionEl: CanvasElement = {
-                id: crypto.randomUUID(),
-                type: 'text',
-                content: caption || '',
-                x: 50,
-                y: 600, // Below image
-                rotation: 0,
-                fontSize: 32,
-                fontFamily: 'handwriting'
-            };
-
-            setElements(caption ? [imgEl, captionEl] : [imgEl]);
+            setElements([imgEl]);
             setShowAiModal(false);
             setAiPrompt('');
         } catch (error) {
@@ -140,34 +149,79 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
     const generateImage = async (): Promise<string> => {
         if (!canvasRef.current) return '';
 
-        // 1. Capture High-Res (2x) for better text rendering
-        const tempCanvas = await html2canvas(canvasRef.current, {
-            scale: 2,
-            backgroundColor: '#ffffff',
-            logging: false,
-        });
+        // 1. DESELECT everything to hide controls (handles, delete buttons, etc.)
+        // We must wait for React to re-render the "clean" state.
+        const previousSelection = selectedId;
+        setSelectedId(null);
+        await new Promise(resolve => setTimeout(resolve, 100)); // Short delay for render cycle
 
-        // 2. Downscale to exact Printer Width (576px)
-        const finalWidth = 576;
-        const scaleFactor = finalWidth / tempCanvas.width;
-        const finalHeight = tempCanvas.height * scaleFactor;
+        try {
+            // 2. Capture High-Res (2x) for better text rendering
+            const tempCanvas = await html2canvas(canvasRef.current, {
+                scale: 2, // Keep 2x for sharpness
+                backgroundColor: '#ffffff',
+                logging: false,
+                useCORS: true,
+                allowTaint: true,
+                scrollX: 0,
+                scrollY: 0,
+                ignoreElements: (element) => element.classList.contains('no-print'),
+                onclone: (clonedDoc) => {
+                    // Fix: Force separate layers for text?
+                    // Sometimes html2canvas collapses text if it thinks it overlaps.
+                    // We can try to force visibility or layout updates here.
+                    const textElements = clonedDoc.querySelectorAll('[data-type="text"]');
+                    textElements.forEach((el: any) => {
+                        el.style.transform = 'none'; // Simplify transforms if possible (though we strictly need rotation)
+                        // Actually, don't remove transforms as that kills rotation.
+                        // But we can ensure font loading/rendering is simple.
+                        el.style.fontFeatureSettings = '"liga" 0';
+                        el.style.fontVariantLigatures = 'none';
+                    });
+                }
+            });
 
-        const outputCanvas = document.createElement('canvas');
-        outputCanvas.width = finalWidth;
-        outputCanvas.height = finalHeight;
-        const ctx = outputCanvas.getContext('2d');
-        if (!ctx) return '';
+            // 3. Downscale to exact Printer Width (576px)
+            const finalWidth = 576;
+            const scaleFactor = finalWidth / tempCanvas.width;
+            const finalHeight = tempCanvas.height * scaleFactor;
 
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(tempCanvas, 0, 0, finalWidth, finalHeight);
+            const outputCanvas = document.createElement('canvas');
+            outputCanvas.width = finalWidth;
+            outputCanvas.height = finalHeight;
+            const ctx = outputCanvas.getContext('2d');
+            if (!ctx) return '';
 
-        // 3. Dither
-        const imageData = ctx.getImageData(0, 0, finalWidth, finalHeight);
-        const ditheredData = applyDithering(imageData);
-        ctx.putImageData(ditheredData, 0, 0);
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(tempCanvas, 0, 0, finalWidth, finalHeight);
 
-        return outputCanvas.toDataURL('image/png');
+            // 4. Simple Threshold (Strict Black & White)
+            // This replaces dithering with a clean "stamp" look
+            const imageData = ctx.getImageData(0, 0, finalWidth, finalHeight);
+            const data = imageData.data;
+            for (let i = 0; i < data.length; i += 4) {
+                const r = data[i];
+                const g = data[i + 1];
+                const b = data[i + 2];
+                // Luminance
+                const gray = (r * 0.299) + (g * 0.587) + (b * 0.114);
+                // Hard threshold
+                const val = gray > 128 ? 255 : 0;
+                data[i] = val;
+                data[i + 1] = val;
+                data[i + 2] = val;
+            }
+            ctx.putImageData(imageData, 0, 0);
+
+            return outputCanvas.toDataURL('image/png');
+        } catch (err) {
+            console.error("Capture failed:", err);
+            return '';
+        } finally {
+            // Optional: Restore selection if you want, but usually clearing it is fine for UX
+            // setSelectedId(previousSelection); 
+        }
     };
 
     const handleSendClick = async () => {
@@ -178,13 +232,44 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
             // Reset Canvas for next message
             setElements([]);
             setPreviewImage(null);
-            setCanvasHeight(800);
+            setCanvasHeight(550);
             setSelectedId(null);
         }
     };
 
     return (
         <div className="flex flex-col w-full h-full relative">
+            {/* Clear Confirmation Modal */}
+            {showClearConfirm && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-white rounded-2xl w-full max-w-xs shadow-2xl p-6 animate-in zoom-in-95 duration-200">
+                        <div className="flex flex-col items-center text-center gap-4">
+                            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center text-red-600">
+                                <AlertTriangle size={24} />
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-lg text-charcoal-900">Clear Canvas?</h3>
+                                <p className="text-sm text-charcoal-500">This will remove all text and images. This action cannot be undone.</p>
+                            </div>
+                            <div className="flex gap-3 w-full mt-2">
+                                <button
+                                    onClick={() => setShowClearConfirm(false)}
+                                    className="flex-1 py-2 px-4 rounded-xl border border-gray-200 text-charcoal-700 font-medium hover:bg-gray-50 transition"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={confirmClear}
+                                    className="flex-1 py-2 px-4 rounded-xl bg-red-500 text-white font-bold hover:bg-red-600 transition shadow-sm active:scale-95"
+                                >
+                                    Clear
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* AI Modal */}
             {showAiModal && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
@@ -231,12 +316,12 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
             )}
 
             {/* Sticky Header Toolbar */}
-            <div className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-gray-200 shadow-sm px-4 py-3 flex justify-between items-center transition-all h-[64px]">
-                <div className="flex gap-2 items-center">
+            <div className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-gray-200 shadow-sm px-2 sm:px-4 py-3 flex justify-between items-center transition-all h-[64px] overflow-x-auto no-scrollbar">
+                <div className="flex gap-1 sm:gap-2 items-center flex-shrink-0">
                     {/* Design Tools OR Context Tools */}
                     {!previewImage && (
                         selectedElement && selectedElement.type === 'text' ? (
-                            <div className="flex items-center gap-4 animate-in fade-in slide-in-from-left-2">
+                            <div className="flex items-center gap-2 sm:gap-4 animate-in fade-in slide-in-from-left-2">
                                 {/* Font Context Menu */}
                                 <button
                                     onClick={() => setSelectedId(null)}
@@ -253,7 +338,7 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                                     >
                                         A-
                                     </button>
-                                    <span className="w-8 text-center text-xs font-mono">{selectedElement.fontSize || 32}</span>
+                                    <span className="w-6 sm:w-8 text-center text-xs font-mono">{selectedElement.fontSize || 32}</span>
                                     <button
                                         className="p-1 px-3 hover:bg-white rounded-md text-sm font-bold active:scale-95 transition"
                                         onClick={() => updateElement(selectedElement.id, { fontSize: Math.min(120, (selectedElement.fontSize || 32) + 4) })}
@@ -264,7 +349,7 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
 
                                 {/* Font Family Toggle */}
                                 <button
-                                    className="p-2 hover:bg-gray-100 rounded-lg border border-gray-200 text-xs font-bold w-16 truncate"
+                                    className="p-2 hover:bg-gray-100 rounded-lg border border-gray-200 text-xs font-bold w-12 sm:w-16 truncate"
                                     onClick={() => {
                                         const current = selectedElement.fontFamily || 'handwriting';
                                         const next = current === 'handwriting' ? 'monospace' : current === 'monospace' ? 'sans-serif' : 'handwriting';
@@ -290,13 +375,28 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                                     <ImageIcon size={24} />
                                     <input type="file" accept="image/*" className="hidden" onChange={addImage} />
                                 </label>
+
+                                {/* Divider - Hidden on very small screens? */}
+                                <div className="w-px h-8 bg-gray-200 mx-1 sm:mx-2" />
+
+                                <button
+                                    onClick={() => setShowClearConfirm(true)}
+                                    disabled={elements.length === 0}
+                                    className={`p-2 rounded-lg transition ${elements.length > 0
+                                        ? 'text-charcoal-900 hover:bg-red-50 hover:text-red-600'
+                                        : 'text-gray-300 cursor-not-allowed'
+                                        }`}
+                                    title="Clear Canvas"
+                                >
+                                    <Trash2 size={20} />
+                                </button>
                             </>
                         )
                     )}
                 </div>
 
                 {/* Print / Preview Actions */}
-                <div className="flex gap-2">
+                <div className="flex gap-1 sm:gap-2 flex-shrink-0 ml-4">
                     <button
                         onClick={async () => {
                             const img = await generateImage();
@@ -318,15 +418,25 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                                 setPreviewImage(img);
                             }
                         }}
-                        className={`px-4 py-2 rounded-lg text-sm font-bold border transition ${previewImage ? 'bg-charcoal-800 text-white border-charcoal-800' : 'bg-white text-charcoal-700 border-gray-300 hover:bg-gray-50'}`}
+                        className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-bold border transition flex items-center gap-2 ${previewImage ? 'bg-black text-white border-black' : 'bg-white text-charcoal-700 border-gray-300 hover:bg-gray-50'}`}
                     >
-                        {previewImage ? 'Edit' : 'Preview'}
+                        {previewImage ? (
+                            <>
+                                <Edit3 size={16} />
+                                <span className="hidden sm:inline">Edit</span>
+                            </>
+                        ) : (
+                            <>
+                                <Eye size={16} />
+                                <span className="hidden sm:inline">Preview</span>
+                            </>
+                        )}
                     </button>
 
                     <button
                         onClick={handleSendClick}
                         disabled={sending || (!elements.length && !previewImage)}
-                        className={`px-6 py-2 rounded-lg text-sm font-bold text-white transition shadow-md flex items-center gap-2 ${sending ? 'bg-coral-400 cursor-wait' : 'bg-coral-500 hover:bg-coral-600 active:scale-95'
+                        className={`px-4 sm:px-6 py-2 rounded-lg text-sm font-bold text-white transition shadow-md flex items-center gap-2 ${sending ? 'bg-coral-400 cursor-wait' : 'bg-coral-500 hover:bg-coral-600 active:scale-95'
                             }`}
                     >
                         {sending ? 'Sending...' : 'PRINT'}
@@ -335,18 +445,17 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
             </div>
 
             {/* Main Infinite Canvas Area */}
-            <div className="flex-1 bg-neutral-900 overflow-y-auto overflow-x-hidden relative flex justify-col items-center py-8" onClick={() => setSelectedId(null)}>
+            <div className="flex-1 bg-gray-100 overflow-y-auto overflow-x-hidden relative flex flex-col items-center pt-4 sm:pt-8 pb-32" onClick={() => setSelectedId(null)}>
                 {/* Visual shadow for roll depth */}
-                <div className="fixed top-[64px] left-0 right-0 h-8 bg-gradient-to-b from-black/20 to-transparent pointer-events-none z-30" />
+                <div className="fixed top-[64px] left-0 right-0 h-6 bg-gradient-to-b from-black/5 to-transparent pointer-events-none z-30" />
 
                 {/* Paper Roll Simulation */}
-                <div className="flex flex-col items-center gap-4">
+                <div className="flex flex-col items-center gap-4 w-full origin-top transform scale-[0.55] xs:scale-[0.65] sm:scale-[0.85] md:scale-100 transition-transform duration-300">
                     <div
-                        className="relative bg-white shadow-2xl transition-all duration-300"
+                        className="relative bg-white shadow-xl border border-gray-200 transition-all duration-300"
                         style={{
                             width: '640px', // 80mm Full Width Visual
-                            minHeight: `${canvasHeight}px`, // Dynamic Height
-                            boxShadow: '0 0 40px rgba(0,0,0,0.5)'
+                            minHeight: `${canvasHeight}px`
                         }}
                         onClick={(e) => e.stopPropagation()}
                     >
@@ -371,16 +480,12 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                                         className="w-full object-contain border border-gray-200 shadow-sm"
                                         style={{ imageRendering: 'pixelated' }}
                                     />
-                                    <div className="mt-8 text-center text-gray-400">
-                                        <p className="text-xs font-mono uppercase tracking-widest mb-1">Preview Mode</p>
-                                        <p className="text-[10px]">1-Bit Dithered • 576px Width</p>
-                                    </div>
                                 </div>
                             ) : (
                                 <div
                                     ref={canvasRef}
                                     className="bg-white relative h-full cursor-text"
-                                    style={{ minHeight: `${canvasHeight} px` }}
+                                    style={{ minHeight: `${canvasHeight}px` }}
                                     onClick={(e) => {
                                         if (e.target === e.currentTarget && !previewImage) {
                                             setSelectedId(null);
@@ -411,23 +516,21 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                             )}
                         </div>
                     </div>
-
-                    {/* Add More Paper Button */}
-                    {!previewImage && (
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setCanvasHeight(h => h + 400);
-                            }}
-                            className="bg-neutral-800/50 hover:bg-neutral-800 text-neutral-400 hover:text-white px-6 py-2 rounded-full text-sm font-medium transition backdrop-blur-sm border border-white/10 flex items-center gap-2 mb-16"
-                        >
-                            <span>⬇️ Add 400px Paper</span>
-                        </button>
-                    )}
                 </div>
             </div>
 
-            {/* Optional Footer or "Cut" button? For now header is enough */}
+            {/* Footer Actions - Add Paper */}
+            {!previewImage && (
+                <div className="w-full bg-white border-t border-gray-200 p-4 shrink-0 z-50 shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
+                    <button
+                        onClick={() => setCanvasHeight(h => h + 400)}
+                        className="w-full bg-gray-100 hover:bg-gray-200 text-charcoal-800 py-3 rounded-xl text-base font-bold transition flex items-center justify-center gap-2 active:scale-[0.98]"
+                    >
+                        <span className="text-xl leading-none font-light block pb-0.5">+</span>
+                        Add Paper
+                    </button>
+                </div>
+            )}
         </div>
     );
 }
@@ -447,7 +550,7 @@ function DraggableElement({
 }) {
     const [isEditing, setIsEditing] = useState(false);
     const nodeRef = useRef<HTMLDivElement>(null);
-    const inputRef = useRef<HTMLInputElement>(null);
+    const inputRef = useRef<HTMLTextAreaElement>(null);
     const lastTap = useRef(0);
 
     // Internal state for smooth dragging/rotating without constant parent re-renders until stop
@@ -457,6 +560,7 @@ function DraggableElement({
     useEffect(() => {
         if (isEditing && inputRef.current) {
             inputRef.current.focus();
+            inputRef.current.setSelectionRange(inputRef.current.value.length, inputRef.current.value.length);
         }
     }, [isEditing]);
 
@@ -551,19 +655,20 @@ function DraggableElement({
                     }}
                 >
                     {/* Element Content */}
-                    <div className={`relative ${isEditing ? 'z-50' : 'z-auto'} `}>
+                    <div className={`relative ${isEditing ? 'z-50' : 'z-auto'}`}>
                         {element.type === 'image' ? (
-                            <div className={`relative transition - all duration - 200 ${isSelected ? 'outline outline-2 outline-coral-400' : 'group-hover:outline group-hover:outline-2 group-hover:outline-coral-400'} `}>
+                            <div className={`relative transition-all duration-200 ${isSelected ? 'outline outline-2 outline-coral-400' : 'group-hover:outline group-hover:outline-2 group-hover:outline-coral-400'}`}>
                                 <img
                                     src={element.content}
                                     alt="Element"
-                                    className="pointer-events-none select-none"
-                                    style={{ width: `${element.width || 200} px` }}
+                                    crossOrigin="anonymous"
+                                    className="pointer-events-none select-none max-w-full"
+                                    style={{ width: `${element.width || 200}px` }}
                                 />
 
                                 {/* Resize Handle (Bottom Right) */}
                                 <div
-                                    className={`no - drag absolute - bottom - 4 - right - 4 w - 10 h - 10 bg - white border border - charcoal - 300 rounded - full shadow cursor - nwse - resize flex items - center justify - center transition - all z - 50 ${isSelected ? 'opacity-100 scale-100' : 'opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100'} `}
+                                    className={`no-drag absolute -bottom-4 -right-4 w-10 h-10 bg-white border border-charcoal-300 rounded-full shadow cursor-nwse-resize flex items-center justify-center transition-all z-50 ${isSelected ? 'opacity-100 scale-100' : 'opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100'}`}
                                     onMouseDown={handleResize}
                                     onTouchStart={handleResize}
                                     title="Resize"
@@ -573,26 +678,32 @@ function DraggableElement({
                             </div>
                         ) : (
                             isEditing ? (
-                                <input
+                                <textarea
                                     ref={inputRef}
                                     value={element.content}
                                     onChange={(e) => onUpdate({ content: e.target.value })}
                                     onBlur={() => setIsEditing(false)}
-                                    // Removed onTouchEnd to prevent accidental blur on mobile keyboard interaction
-                                    onKeyDown={(e) => e.key === 'Enter' && setIsEditing(false)}
-                                    className="bg-transparent border-b-2 border-coral-500 outline-none min-w-[100px] p-1 no-drag text-charcoal-900"
+                                    rows={Math.max(2, element.content.split('\n').length)}
+                                    // Removed onTouchEnd
+                                    className="bg-white/80 backdrop-blur border-2 border-coral-500 rounded-lg outline-none p-4 no-drag text-charcoal-900 resize-none text-center shadow-xl overflow-hidden"
                                     style={{
                                         fontSize: element.fontSize || 32,
-                                        fontFamily: element.fontFamily || 'handwriting'
+                                        fontFamily: element.fontFamily || 'handwriting',
+                                        width: '400px',
+                                        maxWidth: '500px'
                                     }}
                                 />
                             ) : (
                                 <div
-                                    className={`p - 2 border - 2 rounded select - none transition - all ${isSelected ? 'border-coral-400 bg-coral-50/20' : 'border-transparent hover:border-gray-300'} `}
+                                    className={`p-2 border-2 rounded select-none transition-all ${isSelected ? 'border-coral-400 bg-coral-50/20' : 'border-transparent hover:border-gray-300'}`}
                                     style={{
                                         lineHeight: 1.2,
                                         fontSize: element.fontSize || 32,
-                                        fontFamily: element.fontFamily || 'handwriting'
+                                        fontFamily: element.fontFamily || 'handwriting',
+                                        maxWidth: '500px',
+                                        whiteSpace: 'pre-wrap',
+                                        wordBreak: 'break-word',
+                                        textAlign: 'center'
                                     }}
                                 >
                                     {element.content}
@@ -601,7 +712,7 @@ function DraggableElement({
                         )}
 
                         {/* Controls Container (Visible when selected or hovered) */}
-                        <div className={`absolute top - 0 left - 0 w - full h - full pointer - events - none ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition - opacity`}>
+                        <div className={`absolute top-0 left-0 w-full h-full pointer-events-none ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
                             {/* Remove Control */}
                             <button
                                 onClick={(e) => {
