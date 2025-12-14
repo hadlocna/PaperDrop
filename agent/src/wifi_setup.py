@@ -562,7 +562,7 @@ class WiFiSetupServer:
 
             logger.info("Starting AP+STA Mode...")
             # We assume the script is installed at /opt/paperdrop/enable_apsta.sh
-            await self._run_bg("bash", "/opt/paperdrop/enable_apsta.sh", "start")
+            await self._run_bg("sudo", "/opt/paperdrop/enable_apsta.sh", "start")
             
         except Exception as e:
             logger.error(f"Failed to start AP mode: {e}")
@@ -572,7 +572,7 @@ class WiFiSetupServer:
             return
             
         try:
-            await self._run_bg("bash", "/opt/paperdrop/enable_apsta.sh", "stop")
+            await self._run_bg("sudo", "/opt/paperdrop/enable_apsta.sh", "stop")
         except:
             pass
 
