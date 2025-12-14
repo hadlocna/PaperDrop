@@ -220,6 +220,145 @@ SUCCESS_TEMPLATE = """
 """
 
 # ─────────────────────────────────────────────────────────────────────
+# SELF-HEALING RESOURCES
+# ─────────────────────────────────────────────────────────────────────
+
+RECOVERY_SCRIPTS = {
+    "/opt/paperdrop/enable_apsta.sh": r"""#!/bin/bash
+set -e
+
+# CONSTANTS
+PHY_IFACE="wlan0"
+AP_IFACE="uap0"
+IP_ADDR="192.168.4.1/24"
+HOSTAPD_CONF="/etc/paperdrop/hostapd_apsta.conf"
+DNSMASQ_CONF="/etc/paperdrop/dnsmasq_apsta.conf"
+
+function start() {
+    echo "[APSTA] Enabling Mode..."
+    
+    # 0. Harden NetworkManager (Prevent interference)
+    if command -v nmcli >/dev/null 2>&1; then
+        echo "[APSTA] Configuring NetworkManager to ignore $AP_IFACE..."
+        nmcli dev set $AP_IFACE managed no || true
+    fi
+
+    # 1. Create uap0 if not exists
+    if ! iw dev $AP_IFACE info >/dev/null 2>&1; then
+        echo "[APSTA] Creating virtual interface $AP_IFACE..."
+        iw dev $PHY_IFACE interface add $AP_IFACE type __ap
+        ip link set dev $AP_IFACE address 02:00:00:00:01:00
+    fi
+
+    # 2. Config IP
+    echo "[APSTA] Setting IP for $AP_IFACE..."
+    ip link set $AP_IFACE up
+    ip addr flush dev $AP_IFACE
+    ip addr add $IP_ADDR dev $AP_IFACE
+
+    # 3. Config Firewall (NAT + Redirect)
+    echo "[APSTA] Configuring firewall (NAT + Redirect)..."
+    sysctl -w net.ipv4.ip_forward=1 > /dev/null
+    
+    # Cleanups
+    iptables -t nat -D PREROUTING -i $AP_IFACE -d $IP_ADDR -p tcp --dport 80 -j REDIRECT --to-port 8080 2>/dev/null || true
+    iptables -t nat -D POSTROUTING -o $PHY_IFACE -j MASQUERADE 2>/dev/null || true
+
+    iptables -t nat -A PREROUTING -i $AP_IFACE -d $IP_ADDR -p tcp --dport 80 -j REDIRECT --to-port 8080
+    iptables -t nat -A POSTROUTING -o $PHY_IFACE -j MASQUERADE
+    
+    iptables -D FORWARD -i $PHY_IFACE -o $AP_IFACE -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
+    iptables -D FORWARD -i $AP_IFACE -o $PHY_IFACE -j ACCEPT 2>/dev/null || true
+    
+    iptables -A FORWARD -i $PHY_IFACE -o $AP_IFACE -m state --state RELATED,ESTABLISHED -j ACCEPT
+    iptables -A FORWARD -i $AP_IFACE -o $PHY_IFACE -j ACCEPT
+
+    # 4. Channel Sync (Avoid Single-Radio Conflict)
+    CURRENT_CHANNEL=$(iw dev $PHY_IFACE info 2>/dev/null | grep channel | awk '{print $2}')
+    if [ ! -z "$CURRENT_CHANNEL" ]; then
+        echo "[APSTA] Detected wlan0 on channel $CURRENT_CHANNEL. Syncing hostapd..."
+        sed -i "s/channel=.*/channel=$CURRENT_CHANNEL/" $HOSTAPD_CONF
+    fi
+
+    # 5. Start Services
+    echo "[APSTA] Starting dnsmasq..."
+    killall dnsmasq || true
+    dnsmasq -C $DNSMASQ_CONF || { echo "[APSTA] dnsmasq failed to start!"; exit 1; }
+
+    echo "[APSTA] Starting hostapd..."
+    killall hostapd || true
+    hostapd -B $HOSTAPD_CONF
+    
+    echo "[APSTA] Enabled."
+}
+
+function stop() {
+    echo "[APSTA] Disabling Mode..."
+    killall hostapd || true
+    killall dnsmasq || true
+    
+    iptables -t nat -F PREROUTING
+    
+    if iw dev $AP_IFACE info >/dev/null 2>&1; then
+        echo "[APSTA] Removing $AP_IFACE..."
+        iw dev $AP_IFACE del
+    fi
+    echo "[APSTA] Disabled."
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    *)
+        echo "Usage: $0 {start|stop}"
+        exit 1
+        ;;
+esac
+""",
+    "/etc/paperdrop/dnsmasq_apsta.conf": r"""interface=uap0
+bind-interfaces
+dhcp-range=192.168.4.2,192.168.4.20,255.255.255.0,24h
+domain=paperdrop.local
+
+# Upstream DNS (Google)
+server=8.8.8.8
+server=8.8.4.4
+
+# TARGETED CAPTIVE PORTAL POISONING
+address=/setup.paperdrop.local/192.168.4.1
+address=/connectivitycheck.gstatic.com/192.168.4.1
+address=/connectivitycheck.android.com/192.168.4.1
+address=/clients3.google.com/192.168.4.1
+address=/clients2.google.com/192.168.4.1
+address=/android.clients.google.com/192.168.4.1
+address=/captive.apple.com/192.168.4.1
+address=/airport.us/192.168.4.1
+address=/thinkdifferent.us/192.168.4.1
+address=/ibeacon.apple.com/192.168.4.1
+address=/www.msftconnecttest.com/192.168.4.1
+address=/msftconnecttest.com/192.168.4.1
+address=/msftncsi.com/192.168.4.1
+address=/www.msftncsi.com/192.168.4.1
+address=/detectportal.firefox.com/192.168.4.1
+""",
+    "/etc/paperdrop/hostapd_apsta.conf": r"""interface=uap0
+driver=nl80211
+ssid=PaperDrop_Setup
+hw_mode=g
+channel=7
+wmm_enabled=0
+macaddr_acl=0
+auth_algs=1
+ignore_broadcast_ssid=0
+ieee80211n=1
+"""
+}
+
+# ─────────────────────────────────────────────────────────────────────
 # CLASS IMPLEMENTATION
 # ─────────────────────────────────────────────────────────────────────
 
@@ -229,10 +368,35 @@ class WiFiSetupServer:
         self.on_configured = on_configured_callback
         self.server = None
         self.is_running = False
-        self.is_running = False
         self.connection_state = {"state": "IDLE", "status": "Waiting..."} # IDLE, CONNECTING, CONNECTED, FAILED
         self.app = FastAPI()
         self._setup_routes()
+        
+        # Self-Healing: Ensure scripts exist
+        self._ensure_scripts_exist()
+
+    def _ensure_scripts_exist(self):
+        """Recover missing scripts from embedded backup"""
+        if os.environ.get("PAPERDROP_ENV") == "development":
+            return
+
+        for path_str, content in RECOVERY_SCRIPTS.items():
+            path = Path(path_str)
+            if not path.exists():
+                logger.warning(f"⚠️ Missing critical file: {path}. restoring from backup...")
+                try:
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    # Write file
+                    with open(path, 'w') as f:
+                        f.write(content)
+                    
+                    # Make executable if it's the script
+                    if path_str.endswith(".sh"):
+                        os.chmod(path, 0o755)
+                        
+                    logger.info(f"✅ Restored {path}")
+                except Exception as e:
+                    logger.error(f"❌ Failed to restore {path}: {e}")
 
     def _setup_routes(self):
         from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
