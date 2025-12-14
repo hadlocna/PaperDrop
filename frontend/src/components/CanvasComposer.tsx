@@ -151,7 +151,6 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
 
         // 1. DESELECT everything to hide controls (handles, delete buttons, etc.)
         // We must wait for React to re-render the "clean" state.
-        const previousSelection = selectedId;
         setSelectedId(null);
         await new Promise(resolve => setTimeout(resolve, 100)); // Short delay for render cycle
 
@@ -323,14 +322,14 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                                 <div className="flex items-center bg-gray-100 rounded-lg p-1">
                                     <button
                                         className="p-1 px-3 hover:bg-white rounded-md text-sm font-bold active:scale-95 transition"
-                                        onClick={() => updateElement(selectedElement.id, { fontSize: Math.max(12, (selectedElement.fontSize || 32) - 4) })}
+                                        onClick={() => updateElement(element.id, { fontSize: Math.max(12, (element.fontSize || 32) - 4) })}
                                     >
                                         A-
                                     </button>
-                                    <span className="w-6 sm:w-8 text-center text-xs font-mono">{selectedElement.fontSize || 32}</span>
+                                    <span className="w-6 sm:w-8 text-center text-xs font-mono">{element.fontSize || 32}</span>
                                     <button
                                         className="p-1 px-3 hover:bg-white rounded-md text-sm font-bold active:scale-95 transition"
-                                        onClick={() => updateElement(selectedElement.id, { fontSize: Math.min(120, (selectedElement.fontSize || 32) + 4) })}
+                                        onClick={() => updateElement(element.id, { fontSize: Math.min(120, (element.fontSize || 32) + 4) })}
                                     >
                                         A+
                                     </button>
@@ -340,12 +339,12 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                                 <button
                                     className="p-2 hover:bg-gray-100 rounded-lg border border-gray-200 text-xs font-bold w-12 sm:w-16 truncate"
                                     onClick={() => {
-                                        const current = selectedElement.fontFamily || 'handwriting';
+                                        const current = element.fontFamily || 'handwriting';
                                         const next = current === 'handwriting' ? 'monospace' : current === 'monospace' ? 'sans-serif' : 'handwriting';
-                                        updateElement(selectedElement.id, { fontFamily: next });
+                                        updateElement(element.id, { fontFamily: next });
                                     }}
                                 >
-                                    {selectedElement.fontFamily === 'handwriting' ? 'Script' : selectedElement.fontFamily === 'monospace' ? 'Mono' : 'Sans'}
+                                    {element.fontFamily === 'handwriting' ? 'Script' : element.fontFamily === 'monospace' ? 'Mono' : 'Sans'}
                                 </button>
                             </div>
                         ) : (
