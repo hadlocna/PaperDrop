@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { registerUser } from '../api/client';
-import logo from '../assets/logo.png';
+import logoHorizontal from '../assets/logo-horizontal.png';
 
 export const Register = () => {
     const navigate = useNavigate();
@@ -41,7 +41,7 @@ export const Register = () => {
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
             <div className="sm:mx-auto sm:w-full sm:max-w-md">
-                <img src={logo} alt="PaperDrop" className="w-20 h-20 mx-auto mb-6" />
+                <img src={logoHorizontal} alt="PaperDrop" className="h-24 w-auto mx-auto mb-6" />
                 <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
                     Create your account
                 </h2>
