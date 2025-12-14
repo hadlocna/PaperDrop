@@ -521,7 +521,7 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
 
             {/* Footer Actions - Add Paper */}
             {!previewImage && (
-                <div className="w-full bg-white border-t border-gray-200 p-4 shrink-0 z-50 shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
+                <div className="w-full bg-white border-t border-gray-200 p-4 shrink-0 z-50 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] pb-[calc(1rem+env(safe-area-inset-bottom))]">
                     <button
                         onClick={() => setCanvasHeight(h => h + 400)}
                         className="w-full bg-gray-100 hover:bg-gray-200 text-charcoal-800 py-3 rounded-xl text-base font-bold transition flex items-center justify-center gap-2 active:scale-[0.98]"

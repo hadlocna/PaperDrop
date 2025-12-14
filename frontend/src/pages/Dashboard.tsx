@@ -166,7 +166,7 @@ export function Dashboard() {
 
                     <div className="flex-1 overflow-hidden relative">
                         {selectedDeviceId ? (
-                            <div className="w-full min-h-full flex flex-col">
+                            <div className="w-full h-full flex flex-col">
                                 <CanvasComposer
                                     onSend={async (img) => handleSend(img)}
                                     onSchedule={(img) => {
