@@ -1,7 +1,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import Draggable from 'react-draggable';
-import html2canvas from 'html2canvas';
+import { toCanvas } from 'html-to-image';
 import {
     Type as TypeIcon,
     Image as ImageIcon,
@@ -155,18 +155,20 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
         await new Promise(resolve => setTimeout(resolve, 100)); // Short delay for render cycle
 
         try {
-            // 2. Capture - Faithful Screenshot logic
-            // We use scale: 2 to ensure we have enough pixels for a clean downsample, 
-            // but we avoid modifying text styles which causes layout shifts.
-            const tempCanvas = await html2canvas(canvasRef.current, {
-                scale: 1,
+            // 2. Capture - Faithful Screenshot logic via html-to-image
+            // Uses SVG foreignObject for near-native text rendering (fixes html2canvas artifacts)
+            if (!canvasRef.current) return '';
+
+            const tempCanvas = await toCanvas(canvasRef.current, {
                 backgroundColor: '#ffffff',
-                logging: false,
-                useCORS: true,
-                allowTaint: true,
-                scrollX: 0,
-                scrollY: 0,
-                ignoreElements: (element) => element.classList.contains('no-print')
+                pixelRatio: 2, // Capture high-res for clean downsampling
+                filter: (node) => {
+                    // Exclude elements with 'no-print' class
+                    if (node instanceof HTMLElement && node.classList.contains('no-print')) {
+                        return false;
+                    }
+                    return true;
+                }
             });
 
             // 3. Downscale to exact Printer Width (576px)
