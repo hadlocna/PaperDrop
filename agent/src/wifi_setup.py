@@ -282,6 +282,9 @@ function start() {
     fi
 
     # 5. Start Services
+    echo "[APSTA] Waiting for interface to stabilize..."
+    sleep 2
+    
     echo "[APSTA] Starting dnsmasq..."
     killall dnsmasq || true
     dnsmasq -C $DNSMASQ_CONF || { echo "[APSTA] dnsmasq failed to start!"; exit 1; }
