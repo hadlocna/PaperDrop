@@ -262,62 +262,67 @@ class WiFiSetupServer:
             return False
     
     async def _start_ap(self):
-        """Start the access point."""
+        """Start the access point using NetworkManager Native Hotspot."""
         if os.environ.get("PAPERDROP_ENV") == "development":
             logger.info("[DEV] Skipping AP start")
             return
         
-        logger.info("Starting Access Point...")
+        logger.info("Starting AP via NetworkManager...")
         try:
-            # Kill any existing hostapd/dnsmasq
-            subprocess.run(["killall", "hostapd"], capture_output=True)
+            # 1. Ensure interface is managed by NM
+            subprocess.run(["nmcli", "device", "set", PORTAL_INTERFACE, "managed", "yes"], capture_output=True)
+            
+            # 2. Unblock WiFi (Just in case)
+            subprocess.run(["rfkill", "unblock", "wifi"], capture_output=True)
+            
+            # 3. Clean up old profile
+            subprocess.run(["nmcli", "title", "PaperDrop_AP", "delete", "PaperDrop_AP"], capture_output=True) # Try by name
+            subprocess.run(["nmcli", "con", "delete", "PaperDrop_AP"], capture_output=True)
+
+            # 4. Create AP Profile
+            # ipv4.method manual means NM sets the IP, but we handle DHCP (via dnsmasq)
+            cmd = [
+                "nmcli", "con", "add", "type", "wifi", "ifname", PORTAL_INTERFACE,
+                "con-name", "PaperDrop_AP", "autoconnect", "yes",
+                "ssid", PORTAL_SSID, "mode", "ap",
+                "ipv4.method", "manual", "ipv4.addresses", f"{PORTAL_GATEWAY}/24",
+                "wifi-sec.key-mgmt", "none"
+            ]
+            subprocess.run(cmd, check=True, capture_output=True)
+            
+            # 5. Bring UP the AP
+            logger.info("Activating AP Profile...")
+            subprocess.run(["nmcli", "con", "up", "PaperDrop_AP"], check=True)
+            
+            # 6. Start dnsmasq (Manual mode for Captive Portal DNS spoofing)
+            # Kill existing
             subprocess.run(["killall", "dnsmasq"], capture_output=True)
             await asyncio.sleep(1)
             
-            # Disable NetworkManager on interface
-            subprocess.run(["nmcli", "device", "set", PORTAL_INTERFACE, "managed", "no"], capture_output=True)
-            
-            # Set up interface
-            subprocess.run(["ip", "link", "set", PORTAL_INTERFACE, "up"], check=True)
-            subprocess.run(["ip", "addr", "flush", "dev", PORTAL_INTERFACE], capture_output=True)
-            subprocess.run(["ip", "addr", "add", f"{PORTAL_GATEWAY}/24", "dev", PORTAL_INTERFACE], capture_output=True)
-            
-            # Write hostapd config
-            hostapd_conf = f"""interface={PORTAL_INTERFACE}
-driver=nl80211
-ssid={PORTAL_SSID}
-hw_mode=g
-channel=6
-wmm_enabled=0
-macaddr_acl=0
-auth_algs=1
-"""
-            Path("/tmp/paperdrop_hostapd.conf").write_text(hostapd_conf)
-            
-            # Write dnsmasq config
+            # Config for dnsmasq
             dnsmasq_conf = f"""interface={PORTAL_INTERFACE}
 bind-interfaces
 dhcp-range=192.168.4.2,192.168.4.254,255.255.255.0,24h
 address=/#/{PORTAL_GATEWAY}
+keep-in-foreground
 """
             Path("/tmp/paperdrop_dnsmasq.conf").write_text(dnsmasq_conf)
             
-            # Start hostapd
-            subprocess.Popen(["hostapd", "-B", "/tmp/paperdrop_hostapd.conf"])
-            await asyncio.sleep(2)
-            
             # Start dnsmasq
+            logger.info("Starting dnsmasq...")
             subprocess.Popen(["dnsmasq", "-C", "/tmp/paperdrop_dnsmasq.conf"])
             
-            # Set up iptables redirect
+            # 7. Iptables Redirect (Port 80 -> 8080)
             subprocess.run([
                 "iptables", "-t", "nat", "-A", "PREROUTING",
                 "-i", PORTAL_INTERFACE, "-p", "tcp", "--dport", "80",
                 "-j", "REDIRECT", "--to-port", "8080"
             ], capture_output=True)
             
-            logger.info(f"Access Point started: {PORTAL_SSID}")
+            logger.info(f"Access Point started successfully: {PORTAL_SSID}")
             
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to start AP (Command Error): {e}")
         except Exception as e:
             logger.error(f"Failed to start AP: {e}")
     
@@ -328,15 +333,22 @@ address=/#/{PORTAL_GATEWAY}
         
         logger.info("Stopping Access Point...")
         try:
-            subprocess.run(["killall", "hostapd"], capture_output=True)
+            # Clean up dnsmasq
             subprocess.run(["killall", "dnsmasq"], capture_output=True)
+            
+            # Clean up iptables
             subprocess.run([
                 "iptables", "-t", "nat", "-D", "PREROUTING",
                 "-i", PORTAL_INTERFACE, "-p", "tcp", "--dport", "80",
                 "-j", "REDIRECT", "--to-port", "8080"
             ], capture_output=True)
-            subprocess.run(["ip", "addr", "flush", "dev", PORTAL_INTERFACE], capture_output=True)
-            subprocess.run(["nmcli", "device", "set", PORTAL_INTERFACE, "managed", "yes"], capture_output=True)
+            
+            # Bring down AP connection
+            subprocess.run(["nmcli", "con", "down", "PaperDrop_AP"], capture_output=True)
+            
+            # Delete profile to clean up
+            subprocess.run(["nmcli", "con", "delete", "PaperDrop_AP"], capture_output=True)
+            
         except Exception as e:
             logger.error(f"Error stopping AP: {e}")
     
