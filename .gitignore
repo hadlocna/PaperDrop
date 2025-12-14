@@ -25,3 +25,7 @@ venv/
 .env.local
 frontend.log
 agent.log
+
+# OS Images
+*.img
+raspios*
