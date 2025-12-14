@@ -9,7 +9,7 @@ services:
     plan: free
     rootDir: backend
     buildCommand: npm install --include=dev && npm run build
-    startCommand: npx prisma db push --accept-data-loss && npm start
+    startCommand: npx prisma db push --accept-data-loss && npx ts-node prisma/seed.ts && npm start
     envVars:
       - key: DATABASE_URL
         fromDatabase:

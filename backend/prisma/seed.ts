@@ -1,38 +1,33 @@
-import { prisma } from '../src/lib/prisma';
+
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 async function main() {
-    const device = await prisma.device.upsert({
-        where: { deviceCode: 'SIM-001' },
-        update: {},
-        create: {
-            deviceCode: 'SIM-001',
-            deviceSecret: 'secret123',
-            friendlyName: 'Simulation Device',
-            id: 'SIM-DEVICE-001' // Matching the updated agent.py ID
-        },
-    });
-    console.log('Seeded Device:', device);
+    console.log('Start seeding...');
 
-    const device2 = await prisma.device.upsert({
-        where: { deviceCode: 'CODE-1234' },
-        update: {},
+    const testDevice = await prisma.device.upsert({
+        where: { deviceCode: 'TEST88' },
+        update: {}, // No updates if exists
         create: {
-            deviceCode: 'CODE-1234',
-            deviceSecret: 'secret456',
-            friendlyName: 'Example Device',
-            id: 'EXAMPLE-DEVICE-001',
-            status: 'setup_pending'
+            id: '7a46de1e-4c22-4902-9c8e-e5bcdae63c41', // Consistent UUID
+            deviceCode: 'TEST88',
+            deviceSecret: 'fake-secret-123',
+            status: 'setup_pending',
+            friendlyName: 'Test Device 88',
+            // owner: undefined (unclaimed)
         },
     });
-    console.log('Seeded Device 2:', device2);
+
+    console.log(`Seeded device: ${testDevice.deviceCode}`);
+    console.log('Seeding finished.');
 }
 
 main()
-    .then(async () => {
-        await prisma.$disconnect();
-    })
-    .catch(async (e) => {
+    .catch((e) => {
         console.error(e);
-        await prisma.$disconnect();
         process.exit(1);
+    })
+    .finally(async () => {
+        await prisma.$disconnect();
     });
