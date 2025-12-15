@@ -196,6 +196,8 @@ class WiFiSetupServer:
             logger.info(f"Attempting to connect to {ssid}...")
             
             # Stop AP mode
+            # Wait for client to receive response
+            await asyncio.sleep(10)
             await self._stop_ap()
             await asyncio.sleep(2)
             
