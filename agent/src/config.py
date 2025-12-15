@@ -17,8 +17,7 @@ class Config:
         
         self.CLOUD_WS_URL = os.environ.get(
             "PAPERDROP_WS_URL", 
-            "ws://localhost:3000/api/device/connect" 
-            # Defaulting to Local URL for development
+            "wss://paperdrop-backend.onrender.com/api/device/connect" 
         )
         self.FIRMWARE_VERSION = "1.0.0"
         

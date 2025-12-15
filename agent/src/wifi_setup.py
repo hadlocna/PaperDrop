@@ -269,7 +269,8 @@ class WiFiSetupServer:
         
         logger.info("Starting AP via NetworkManager...")
         try:
-            # 1. Ensure interface is managed by NM
+            # 1. Ensure interface is managed by NM and free
+            subprocess.run(["nmcli", "device", "disconnect", PORTAL_INTERFACE], capture_output=True)
             subprocess.run(["nmcli", "device", "set", PORTAL_INTERFACE, "managed", "yes"], capture_output=True)
             
             # 2. Unblock WiFi (Just in case)

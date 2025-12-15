@@ -52,9 +52,9 @@ update_config=1
 country=PT
 
 network={
-    ssid="fabthan"
-    psk="youarecool"
-    key_mgmt=WPA-PSK
+#    ssid="fabthan"
+#    psk="youarecool"
+#    key_mgmt=WPA-PSK
 }
 EOF
 
