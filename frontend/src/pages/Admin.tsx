@@ -3,7 +3,7 @@ import { Layout } from '../components/Layout';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
-import { Terminal as TerminalIcon, Power, Router, Wifi, WifiOff } from 'lucide-react';
+import { Terminal as TerminalIcon, Power, Wifi, WifiOff } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const WS_BASE = API_BASE.replace('http', 'ws');
