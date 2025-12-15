@@ -6,7 +6,7 @@
     "scripts": {
         "start": "node dist/server.js",
         "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
-        "build": "tsc"
+        "build": "npx prisma generate && tsc"
     },
     "keywords": [],
     "author": "",
