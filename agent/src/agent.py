@@ -332,7 +332,23 @@ class PaperDropAgent:
             s.close()
             return ip
         except Exception:
+            return ip
+        except Exception:
             return "127.0.0.1"
+
+    def get_mac_address(self) -> str:
+        """Get the device's MAC address"""
+        try:
+            # Try getting wlan0 mac
+            with open('/sys/class/net/wlan0/address', 'r') as f:
+                return f.read().strip()
+        except:
+            try:
+                # Try getting eth0 mac
+                with open('/sys/class/net/eth0/address', 'r') as f:
+                    return f.read().strip()
+            except:
+                return "00:00:00:00:00:00"
     
     # ─────────────────────────────────────────────────────────────────
     # ONLINE MODE (Connected to Cloud)
@@ -393,6 +409,7 @@ class PaperDropAgent:
             "device_code": self.config.device_code,
             "firmware_version": self.config.firmware_version,
             "local_ip": self.get_local_ip(),
+            "mac_address": self.get_mac_address(),
             "printer_status": {"connected": True}, # Mock status
         }))
         

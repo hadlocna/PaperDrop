@@ -31,6 +31,7 @@ router.get('/devices', async (req, res) => {
             code: d.deviceCode,
             status: d.status,
             name: d.friendlyName,
+            mac: d.macAddress,
             lastSeen: d.lastSeenAt,
             owner: d.owner ? d.owner.email : null
         })));

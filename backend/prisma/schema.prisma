@@ -3,8 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider = "sqlite"
+  url      = "file:./dev.db"
 }
 
 model User {
@@ -35,6 +35,7 @@ model Device {
   friendlyName    String?        @default("My PaperDrop") @map("friendly_name")
   status          String?        @default("setup_pending")
   firmwareVersion String?        @map("firmware_version")
+  macAddress      String?        @map("mac_address")
   lastSeenAt      DateTime?      @map("last_seen_at")
   createdAt       DateTime?      @default(now()) @map("created_at")
   updatedAt       DateTime?      @default(now()) @map("updated_at")

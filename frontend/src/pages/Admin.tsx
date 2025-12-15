@@ -13,6 +13,7 @@ interface Device {
     code: string;
     status: string;
     name: string;
+    mac?: string;
     lastSeen: string;
     owner: string | null;
 }
@@ -188,6 +189,7 @@ export function Admin() {
                             <tr>
                                 <th className="p-4 text-left text-sm font-semibold text-slate-500">Status</th>
                                 <th className="p-4 text-left text-sm font-semibold text-slate-500">Device</th>
+                                <th className="p-4 text-left text-sm font-semibold text-slate-500">MAC / HW</th>
                                 <th className="p-4 text-left text-sm font-semibold text-slate-500">Owner</th>
                                 <th className="p-4 text-left text-sm font-semibold text-slate-500">Last Seen</th>
                                 <th className="p-4 text-left text-sm font-semibold text-slate-500">Actions</th>
@@ -204,8 +206,18 @@ export function Admin() {
                                         </span>
                                     </td>
                                     <td className="p-4">
-                                        <div className="font-medium">{device.name}</div>
+                                        <div className="font-medium flex items-center gap-2">
+                                            {device.name}
+                                            {device.code.startsWith('TEST') && (
+                                                <span className="bg-amber-100 text-amber-800 text-xs px-1.5 py-0.5 rounded border border-amber-200">
+                                                    DUMMY
+                                                </span>
+                                            )}
+                                        </div>
                                         <div className="text-xs text-gray-500 font-mono">{device.code}</div>
+                                    </td>
+                                    <td className="p-4 text-sm font-mono text-gray-500">
+                                        {device.mac || '-'}
                                     </td>
                                     <td className="p-4 text-sm text-gray-600">
                                         {device.owner || <span className="text-orange-400 italic">Unclaimed</span>}

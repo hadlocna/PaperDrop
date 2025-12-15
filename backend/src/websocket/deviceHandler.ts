@@ -86,7 +86,18 @@ export const setupWebSocket = (server: Server) => {
 const handleDeviceMessage = async (deviceId: string, message: any) => {
     // console.log(`Received from ${deviceId}:`, message.type);
 
-    if (message.type === 'print_status') {
+    if (message.type === 'device_hello') {
+        // Update device info
+        await prisma.device.update({
+            where: { id: deviceId },
+            data: {
+                firmwareVersion: message.firmware_version,
+                macAddress: message.mac_address,
+                lastSeenAt: new Date()
+            }
+        });
+    }
+    else if (message.type === 'print_status') {
         if (message.message_id) {
             await prisma.message.update({
                 where: { id: message.message_id },
