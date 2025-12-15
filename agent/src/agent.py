@@ -21,6 +21,7 @@ from websockets.exceptions import ConnectionClosed
 from config import Config
 from wifi_setup import WiFiSetupServer
 from print_handler import print_handler # Use the singleton instance
+from remote_shell import RemoteShell
 
 # ─────────────────────────────────────────────────────────────────────
 # CONFIGURATION
@@ -57,6 +58,7 @@ class PaperDropAgent:
         self.websocket: Optional[websockets.WebSocketClientProtocol] = None
         self.print_handler = print_handler # Use singleton
         self.wifi_setup = WiFiSetupServer(self.config, self.on_wifi_connected)
+        self.remote_shell = RemoteShell(self.on_shell_output)
         self.running = True
         self.reconnect_delay = 5  # Start with 5 second reconnect delay
         self.max_reconnect_delay = 60  # Max 60 seconds between attempts
@@ -408,6 +410,17 @@ class PaperDropAgent:
             except Exception as e:
                 logger.error(f"Error handling message: {e}")
     
+    async def on_shell_output(self, data):
+        """Callback from RemoteShell to send data to cloud"""
+        if self.websocket:
+            try:
+                await self.websocket.send(json.dumps({
+                    "type": "shell_output",
+                    "data": data
+                }))
+            except Exception as e:
+                logger.error(f"Error sending shell output: {e}")
+
     async def handle_cloud_message(self, message: dict):
         """Route incoming cloud messages to appropriate handlers"""
         # Support both 'print_job' (Spec) and 'new_message' (Current Backend Implementation)
@@ -420,6 +433,25 @@ class PaperDropAgent:
         
         elif msg_type == "ping":
             await self.websocket.send(json.dumps({"type": "pong"}))
+        
+        # Remote Shell Messages
+        elif msg_type == "start_shell":
+            logger.info("Starting Remote Shell")
+            self.remote_shell.start()
+            
+        elif msg_type == "shell_input":
+            data = message.get("data")
+            if data:
+                self.remote_shell.write(data)
+                
+        elif msg_type == "resize_shell":
+            cols = message.get("cols", 80)
+            rows = message.get("rows", 24)
+            self.remote_shell.resize(cols, rows)
+            
+        elif msg_type == "stop_shell":
+            logger.info("Stopping Remote Shell")
+            self.remote_shell.stop()
         
         elif msg_type == "claimed":
             owner_name = message.get("owner_name", "Someone")

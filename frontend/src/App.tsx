@@ -8,6 +8,7 @@ import { Compose } from './pages/Compose';
 import { History } from './pages/History';
 import { DeviceSettings } from './pages/DeviceSettings';
 import { Claim } from './pages/Claim';
+import { Admin } from './pages/Admin';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
     const { user, isLoading } = useAuth();
@@ -31,6 +32,7 @@ function App() {
                 <Routes>
                     <Route path="/login" element={<Login />} />
                     <Route path="/register" element={<Register />} />
+                    <Route path="/admin" element={<Admin />} />
                     <Route
                         path="/"
                         element={

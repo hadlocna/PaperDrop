@@ -8,15 +8,19 @@ import deviceRoutes from './routes/devices';
 import authRoutes from './routes/auth';
 import messageRoutes from './routes/messages';
 import aiRoutes from './routes/aiRoutes';
+import adminRoutes from './routes/admin';
 import { WebSocket } from 'ws';
 import { IncomingMessage } from 'http';
 import url from 'url';
 import { setupWebSocket } from './websocket/deviceHandler';
+import { setupAdminWebSocket } from './websocket/adminHandler';
+
 const app = express();
 const server = createServer(app);
 
-// Setup WebSocket
+// Setup WebSockets
 setupWebSocket(server);
+setupAdminWebSocket(server);
 
 // Middleware
 app.use(helmet());
@@ -27,6 +31,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/devices', deviceRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/messages', messageRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/api/ai', aiRoutes);
 
 // Basic health check

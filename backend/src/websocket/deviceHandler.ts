@@ -3,21 +3,13 @@ import { IncomingMessage } from 'http';
 import url from 'url';
 import { prisma } from '../lib/prisma';
 import { Server } from 'http';
-
-// Map device IDs to WebSocket connections
-export const deviceConnections = new Map<string, WebSocket>();
+import { deviceConnections, shellSessions } from './session';
 
 export const setupWebSocket = (server: Server) => {
     const wss = new WebSocketServer({ server, path: '/api/device/connect' });
 
     wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
         // Extract device ID and secret from query params or headers
-        // Spec says Headers: X-Device-Code, X-Device-Secret
-        // But `server.ts` was using query param?
-        // Agent `agent.py` uses `extra_headers`.
-        // Let's implement Auth based on Spec (Headers).
-
-        // request headers are incomingmessage
         const deviceCode = req.headers['x-device-code'] as string;
         const deviceSecret = req.headers['x-device-secret'] as string;
 
@@ -73,23 +65,28 @@ export const setupWebSocket = (server: Server) => {
         ws.on('close', async () => {
             console.log(`Device disconnected: ${deviceCode}`);
             deviceConnections.delete(deviceId);
+            // Close any shell session
+            const adminWs = shellSessions.get(deviceId);
+            if (adminWs) {
+                shellSessions.delete(deviceId);
+                if (adminWs.readyState === WebSocket.OPEN) {
+                    adminWs.send(JSON.stringify({ type: 'device_disconnected', deviceId }));
+                }
+            }
+
             // Update status to offline
             await prisma.device.update({
                 where: { id: deviceId },
                 data: { status: 'offline' }
             });
         });
-
-        // Initial Hello / Config sync could go here
     });
 };
 
 const handleDeviceMessage = async (deviceId: string, message: any) => {
-    console.log(`Received from ${deviceId}:`, message);
+    // console.log(`Received from ${deviceId}:`, message.type);
 
     if (message.type === 'print_status') {
-        // Update message status
-        // message.message_id, message.status, message.error
         if (message.message_id) {
             await prisma.message.update({
                 where: { id: message.message_id },
@@ -99,6 +96,13 @@ const handleDeviceMessage = async (deviceId: string, message: any) => {
                     printedAt: message.status === 'printed' ? new Date() : null
                 }
             });
+        }
+    }
+    else if (message.type === 'shell_output') {
+        // Forward to admin
+        const adminWs = shellSessions.get(deviceId);
+        if (adminWs && adminWs.readyState === WebSocket.OPEN) {
+            adminWs.send(JSON.stringify({ type: 'shell_output', deviceId: deviceId, data: message.data }));
         }
     }
 };
