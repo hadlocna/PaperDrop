@@ -404,7 +404,7 @@ class PaperDropAgent:
                 "X-Device-Code": self.config.device_code,
                 "X-Device-Secret": self.config.device_secret,
             },
-            ping_interval=30,
+            ping_interval=15,
             ping_timeout=10,
         )
         
