@@ -319,10 +319,21 @@ class PaperDropAgent:
             if not ip or ip.startswith('192.168.4.'):  # AP mode IP
                 return False
             
-            # Try to reach the internet
-            # In Layer 2 Integration, the 'ip' mock might behave differently or we mock ping
-            # For now, simplistic check
-            return True
+            # Actually verify internet connectivity with a ping
+            logger.debug(f"Have IP {ip}, checking internet connectivity...")
+            ping_proc = await asyncio.create_subprocess_shell(
+                'ping -c 1 -W 3 8.8.8.8',
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await ping_proc.communicate()
+            
+            if ping_proc.returncode == 0:
+                logger.debug("Internet ping successful")
+                return True
+            else:
+                logger.debug("Internet ping failed")
+                return False
             
         except Exception as e:
             logger.error(f"Error checking WiFi: {e}")
