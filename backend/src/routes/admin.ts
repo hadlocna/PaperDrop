@@ -33,6 +33,9 @@ router.get('/devices', async (req, res) => {
             name: d.friendlyName,
             mac: d.macAddress,
             lastSeen: d.lastSeenAt,
+            wifiSignal: d.wifiSignal,
+            firmwareVersion: d.firmwareVersion,
+            lastHeartbeat: d.lastHeartbeat,
             owner: d.owner ? d.owner.email : null
         })));
     } catch (e) {

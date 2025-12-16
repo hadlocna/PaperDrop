@@ -109,6 +109,18 @@ const handleDeviceMessage = async (deviceId: string, message: any) => {
             });
         }
     }
+    else if (message.type === 'heartbeat') {
+        await prisma.device.update({
+            where: { id: deviceId },
+            data: {
+                status: 'online',
+                lastSeenAt: new Date(),
+                lastHeartbeat: new Date(),
+                wifiSignal: message.wifi_signal,
+                firmwareVersion: message.firmware_version
+            }
+        });
+    }
     else if (message.type === 'shell_output') {
         // Forward to admin
         const adminWs = shellSessions.get(deviceId);

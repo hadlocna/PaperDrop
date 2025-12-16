@@ -15,6 +15,8 @@ interface Device {
     name: string;
     mac?: string;
     lastSeen: string;
+    wifiSignal?: number;
+    firmwareVersion?: string;
     owner: string | null;
 }
 
@@ -170,6 +172,13 @@ export function Admin() {
         );
     }
 
+    const getSignalColor = (rssi?: number) => {
+        if (!rssi) return 'text-gray-400';
+        if (rssi > -60) return 'text-green-500';
+        if (rssi > -75) return 'text-yellow-500';
+        return 'text-red-500';
+    };
+
     return (
         <Layout>
             <div className="max-w-6xl mx-auto mt-10 p-6">
@@ -189,7 +198,8 @@ export function Admin() {
                             <tr>
                                 <th className="p-4 text-left text-sm font-semibold text-slate-500">Status</th>
                                 <th className="p-4 text-left text-sm font-semibold text-slate-500">Device</th>
-                                <th className="p-4 text-left text-sm font-semibold text-slate-500">MAC / HW</th>
+                                <th className="p-4 text-left text-sm font-semibold text-slate-500">Signal</th>
+                                <th className="p-4 text-left text-sm font-semibold text-slate-500">Firmware</th>
                                 <th className="p-4 text-left text-sm font-semibold text-slate-500">Owner</th>
                                 <th className="p-4 text-left text-sm font-semibold text-slate-500">Last Seen</th>
                                 <th className="p-4 text-left text-sm font-semibold text-slate-500">Actions</th>
@@ -216,8 +226,14 @@ export function Admin() {
                                         </div>
                                         <div className="text-xs text-gray-500 font-mono">{device.code}</div>
                                     </td>
-                                    <td className="p-4 text-sm font-mono text-gray-500">
-                                        {device.mac || '-'}
+                                    <td className="p-4">
+                                        <div className={`flex items-center gap-1 font-mono text-sm ${getSignalColor(device.wifiSignal)}`}>
+                                            <Wifi size={16} />
+                                            {device.wifiSignal ? `${device.wifiSignal} dBm` : '-'}
+                                        </div>
+                                    </td>
+                                    <td className="p-4 text-sm font-mono text-gray-600">
+                                        {device.firmwareVersion || 'v1.0.0'}
                                     </td>
                                     <td className="p-4 text-sm text-gray-600">
                                         {device.owner || <span className="text-orange-400 italic">Unclaimed</span>}

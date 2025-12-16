@@ -35,6 +35,9 @@ model Device {
   friendlyName    String?        @default("My PaperDrop") @map("friendly_name")
   status          String?        @default("setup_pending")
   firmwareVersion String?        @map("firmware_version")
+  wifiSignal      Int?           @map("wifi_signal") // RSSI in dBm
+  lastHeartbeat   DateTime?      @map("last_heartbeat")
+  config          String?        @default("{}") // JSON blob for device config
   macAddress      String?        @map("mac_address")
   lastSeenAt      DateTime?      @map("last_seen_at")
   createdAt       DateTime?      @default(now()) @map("created_at")
@@ -48,6 +51,17 @@ model Device {
 
   @@index([deviceCode])
   @@map("devices")
+}
+
+model FirmwareRelease {
+  id          String   @id @default(uuid())
+  version     String   @unique
+  url         String   // URL to download update package
+  description String?
+  isCritical  Boolean  @default(false) @map("is_critical")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("firmware_releases")
 }
 
 model DeviceAccess {

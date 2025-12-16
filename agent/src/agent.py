@@ -414,7 +414,43 @@ class PaperDropAgent:
         }))
         
         logger.info("Connected to cloud!")
+        
+        # Start heartbeat task
+        asyncio.create_task(self.heartbeat_loop())
+        
         await self.listen_for_messages()
+
+    async def heartbeat_loop(self):
+        """Send periodic heartbeats with telemetry"""
+        while self.websocket and not self.websocket.closed:
+            try:
+                # Get WiFi Signal (RSSI)
+                rssi = -100
+                try:
+                    # Parse iwconfig or similar. For now, simple mock or basic check.
+                    # On RPi, we can read /proc/net/wireless
+                    with open('/proc/net/wireless', 'r') as f:
+                        lines = f.readlines()
+                        if len(lines) > 2:
+                            # link level noise...
+                            # Typical line: wlan0: 0000   50.  -60.  -256
+                            parts = lines[2].split()
+                            if len(parts) > 3:
+                                rssi = int(float(parts[3].replace('.', '')))
+                except:
+                    pass
+
+                await self.websocket.send(json.dumps({
+                    "type": "heartbeat",
+                    "device_code": self.config.device_code,
+                    "firmware_version": self.config.firmware_version,
+                    "wifi_signal": rssi,
+                    "status": "online"
+                }))
+            except Exception as e:
+                logger.error(f"Heartbeat error: {e}")
+            
+            await asyncio.sleep(30)
     
     async def listen_for_messages(self):
         """Listen for incoming messages from cloud"""
