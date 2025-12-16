@@ -39,18 +39,23 @@ router.get('/devices', async (req, res) => {
             }
         });
 
-        res.json(devices.map(d => ({
-            id: d.id,
-            code: d.deviceCode,
-            status: d.status,
-            name: d.friendlyName,
-            mac: d.macAddress,
-            lastSeen: d.lastSeenAt,
-            wifiSignal: d.wifiSignal,
-            firmwareVersion: d.firmwareVersion,
-            lastHeartbeat: d.lastHeartbeat,
-            owner: d.owner ? d.owner.email : null
-        })));
+        res.json(devices.map(d => {
+            // Calculate if device is actually online (seen in last 60 seconds)
+            const isOnline = d.lastSeenAt && (new Date().getTime() - new Date(d.lastSeenAt).getTime() < 60000);
+
+            return {
+                id: d.id,
+                code: d.deviceCode,
+                status: isOnline ? 'online' : 'offline',
+                name: d.friendlyName,
+                mac: d.macAddress,
+                lastSeen: d.lastSeenAt,
+                wifiSignal: d.wifiSignal,
+                firmwareVersion: d.firmwareVersion,
+                lastHeartbeat: d.lastHeartbeat,
+                owner: d.owner ? d.owner.email : null
+            };
+        }));
     } catch (e) {
         res.status(500).json({ error: 'Internal Server Error' });
     }
