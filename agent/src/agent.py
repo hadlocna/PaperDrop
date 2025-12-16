@@ -113,6 +113,13 @@ class PaperDropAgent:
                 # STATE: WIFI SETUP (No Credentials)
                 # ─────────────────────────────────────────────────────────
                 elif self.state == DeviceState.WIFI_SETUP:
+                    # Check if we are already online (e.g. pre-provisioned via SD card)
+                    if await self.is_wifi_connected():
+                        logger.info("Detected active internet connection. Skipping setup.")
+                        self.state = DeviceState.ONLINE
+                        self.connection_start_time = 0
+                        continue
+
                     # Check if we actually have creds (maybe added manually)
                     if self.config.has_wifi_credentials():
                         self.state = DeviceState.CONNECTING
@@ -422,7 +429,7 @@ class PaperDropAgent:
 
     async def heartbeat_loop(self):
         """Send periodic heartbeats with telemetry"""
-        while self.websocket and not self.websocket.closed:
+        while self.websocket:
             try:
                 # Get WiFi Signal (RSSI)
                 rssi = -100
@@ -518,6 +525,13 @@ class PaperDropAgent:
             )
             await self.report_print_status(message.get("request_id"), "printed")
         
+        elif msg_type == "update":
+            # OTA Firmware Update
+            version = message.get("version")
+            url = message.get("url")
+            logger.info(f"Received OTA update command: v{version} from {url}")
+            asyncio.create_task(self.perform_ota_update(url, version))
+        
         else:
             logger.warning(f"Unknown message type: {msg_type}")
     
@@ -610,6 +624,102 @@ class PaperDropAgent:
             "printed_at": datetime.utcnow().isoformat() + "Z",
         }))
 
+    # ─────────────────────────────────────────────────────────────────
+    # OTA UPDATE
+    # ─────────────────────────────────────────────────────────────────
+    
+    async def perform_ota_update(self, url: str, version: str):
+        """
+        Download and install a firmware update.
+        1. Download tarball from URL
+        2. Extract to temp directory
+        3. Copy files to agent directory
+        4. Install dependencies
+        5. Restart systemd service
+        """
+        import tempfile
+        import tarfile
+        import shutil
+        import urllib.request
+        
+        logger.info(f"Starting OTA update to v{version}...")
+        
+        try:
+            # Notify cloud we're updating
+            if self.websocket:
+                await self.websocket.send(json.dumps({
+                    "type": "update_status",
+                    "status": "downloading",
+                    "version": version
+                }))
+            
+            # Download
+            with tempfile.TemporaryDirectory() as tmpdir:
+                tarball_path = Path(tmpdir) / "update.tar.gz"
+                
+                logger.info(f"Downloading from {url}...")
+                urllib.request.urlretrieve(url, tarball_path)
+                
+                # Extract
+                logger.info("Extracting...")
+                with tarfile.open(tarball_path, "r:gz") as tar:
+                    tar.extractall(tmpdir)
+                
+                # Find the extracted directory (usually the first folder)
+                extracted_dirs = [d for d in Path(tmpdir).iterdir() if d.is_dir()]
+                if not extracted_dirs:
+                    raise Exception("No directory found in tarball")
+                
+                source_dir = extracted_dirs[0]
+                agent_dir = Path("/home/paperdrop/PaperDrop/agent")
+                
+                # Copy src/ if exists
+                if (source_dir / "src").exists():
+                    logger.info("Copying src/...")
+                    for f in (source_dir / "src").glob("*"):
+                        dest = agent_dir / "src" / f.name
+                        if f.is_file():
+                            shutil.copy2(f, dest)
+                        elif f.is_dir():
+                            if dest.exists():
+                                shutil.rmtree(dest)
+                            shutil.copytree(f, dest)
+                
+                # Install requirements if present
+                if (source_dir / "requirements.txt").exists():
+                    logger.info("Installing requirements...")
+                    proc = await asyncio.create_subprocess_exec(
+                        "pip3", "install", "-r", str(source_dir / "requirements.txt"),
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE
+                    )
+                    await proc.wait()
+            
+            # Notify success
+            if self.websocket:
+                await self.websocket.send(json.dumps({
+                    "type": "update_status",
+                    "status": "installed",
+                    "version": version
+                }))
+            
+            logger.info(f"OTA update to v{version} complete! Restarting...")
+            
+            # Restart service (this will kill this process)
+            await asyncio.create_subprocess_exec(
+                "sudo", "systemctl", "restart", "paperdrop-agent"
+            )
+            
+        except Exception as e:
+            logger.error(f"OTA update failed: {e}")
+            if self.websocket:
+                await self.websocket.send(json.dumps({
+                    "type": "update_status",
+                    "status": "failed",
+                    "version": version,
+                    "error": str(e)
+                }))
+
 # ─────────────────────────────────────────────────────────────────────
 # ENTRY POINT
 # ─────────────────────────────────────────────────────────────────────
@@ -622,3 +732,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

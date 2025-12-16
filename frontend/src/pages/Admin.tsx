@@ -3,7 +3,7 @@ import { Layout } from '../components/Layout';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
-import { Terminal as TerminalIcon, Power, Wifi, WifiOff } from 'lucide-react';
+import { Terminal as TerminalIcon, Power, Wifi, WifiOff, Package, Upload, Rocket } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const WS_BASE = API_BASE.replace('http', 'ws');
@@ -20,12 +20,25 @@ interface Device {
     owner: string | null;
 }
 
+interface FirmwareRelease {
+    id: string;
+    version: string;
+    url: string;
+    description?: string;
+    isCritical: boolean;
+    createdAt: string;
+}
+
 export function Admin() {
     const [password, setPassword] = useState('');
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [devices, setDevices] = useState<Device[]>([]);
     const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
     const [error, setError] = useState('');
+    const [activeTab, setActiveTab] = useState<'devices' | 'firmware'>('devices');
+    const [firmwareReleases, setFirmwareReleases] = useState<FirmwareRelease[]>([]);
+    const [newFirmware, setNewFirmware] = useState({ version: '', url: '', description: '', isCritical: false });
+    const [deployStatus, setDeployStatus] = useState('');
 
     const termRef = useRef<HTMLDivElement>(null);
     const wsRef = useRef<WebSocket | null>(null);
@@ -50,12 +63,65 @@ export function Admin() {
                 setIsAuthenticated(true);
                 setPassword(pass);
                 localStorage.setItem('admin_pass', pass);
+                // Also load firmware releases
+                loadFirmware(pass);
             } else {
                 setError('Invalid password');
                 localStorage.removeItem('admin_pass');
             }
         } catch (e) {
             setError('Connection error');
+        }
+    };
+
+    const loadFirmware = async (pass: string) => {
+        try {
+            const res = await fetch(`${API_BASE}/api/admin/firmware`, {
+                headers: { 'x-admin-password': pass }
+            });
+            if (res.ok) {
+                setFirmwareReleases(await res.json());
+            }
+        } catch (e) {
+            console.error('Failed to load firmware:', e);
+        }
+    };
+
+    const createFirmware = async () => {
+        try {
+            const res = await fetch(`${API_BASE}/api/admin/firmware`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-admin-password': password
+                },
+                body: JSON.stringify(newFirmware)
+            });
+            if (res.ok) {
+                setNewFirmware({ version: '', url: '', description: '', isCritical: false });
+                loadFirmware(password);
+            }
+        } catch (e) {
+            console.error('Failed to create firmware:', e);
+        }
+    };
+
+    const deployFirmware = async (deviceId: string, version: string) => {
+        try {
+            setDeployStatus(`Deploying ${version} to ${deviceId}...`);
+            const res = await fetch(`${API_BASE}/api/admin/firmware/deploy`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-admin-password': password
+                },
+                body: JSON.stringify({ deviceId, version })
+            });
+            const data = await res.json();
+            setDeployStatus(data.message || 'Deploy sent');
+            setTimeout(() => setDeployStatus(''), 3000);
+        } catch (e) {
+            setDeployStatus('Deploy failed');
         }
     };
 
@@ -183,7 +249,24 @@ export function Admin() {
         <Layout>
             <div className="max-w-6xl mx-auto mt-10 p-6">
                 <div className="flex justify-between items-center mb-8">
-                    <h1 className="text-3xl font-bold text-slate-800">Device Monitor</h1>
+                    <div className="flex items-center gap-4">
+                        <h1 className="text-3xl font-bold text-slate-800">Fleet Manager</h1>
+                        <div className="flex bg-slate-100 rounded-lg p-1">
+                            <button
+                                onClick={() => setActiveTab('devices')}
+                                className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'devices' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
+                            >
+                                Devices
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('firmware')}
+                                className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${activeTab === 'firmware' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
+                            >
+                                <Package size={16} />
+                                Firmware
+                            </button>
+                        </div>
+                    </div>
                     <button
                         onClick={() => { localStorage.removeItem('admin_pass'); setIsAuthenticated(false); }}
                         className="text-red-500 hover:text-red-700 font-medium"
@@ -192,69 +275,157 @@ export function Admin() {
                     </button>
                 </div>
 
-                <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-                    <table className="w-full">
-                        <thead className="bg-slate-50 border-b">
-                            <tr>
-                                <th className="p-4 text-left text-sm font-semibold text-slate-500">Status</th>
-                                <th className="p-4 text-left text-sm font-semibold text-slate-500">Device</th>
-                                <th className="p-4 text-left text-sm font-semibold text-slate-500">Signal</th>
-                                <th className="p-4 text-left text-sm font-semibold text-slate-500">Firmware</th>
-                                <th className="p-4 text-left text-sm font-semibold text-slate-500">Owner</th>
-                                <th className="p-4 text-left text-sm font-semibold text-slate-500">Last Seen</th>
-                                <th className="p-4 text-left text-sm font-semibold text-slate-500">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {devices.map(device => (
-                                <tr key={device.id} className="border-b hover:bg-slate-50">
-                                    <td className="p-4">
-                                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${device.status === 'online' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                                            }`}>
-                                            {device.status === 'online' ? <Wifi size={14} className="mr-1" /> : <WifiOff size={14} className="mr-1" />}
-                                            {device.status}
-                                        </span>
-                                    </td>
-                                    <td className="p-4">
-                                        <div className="font-medium flex items-center gap-2">
-                                            {device.name}
-                                            {device.code.startsWith('TEST') && (
-                                                <span className="bg-amber-100 text-amber-800 text-xs px-1.5 py-0.5 rounded border border-amber-200">
-                                                    DUMMY
-                                                </span>
-                                            )}
-                                        </div>
-                                        <div className="text-xs text-gray-500 font-mono">{device.code}</div>
-                                    </td>
-                                    <td className="p-4">
-                                        <div className={`flex items-center gap-1 font-mono text-sm ${getSignalColor(device.wifiSignal)}`}>
-                                            <Wifi size={16} />
-                                            {device.wifiSignal ? `${device.wifiSignal} dBm` : '-'}
-                                        </div>
-                                    </td>
-                                    <td className="p-4 text-sm font-mono text-gray-600">
-                                        {device.firmwareVersion || 'v1.0.0'}
-                                    </td>
-                                    <td className="p-4 text-sm text-gray-600">
-                                        {device.owner || <span className="text-orange-400 italic">Unclaimed</span>}
-                                    </td>
-                                    <td className="p-4 text-sm text-gray-500">
-                                        {new Date(device.lastSeen).toLocaleString()}
-                                    </td>
-                                    <td className="p-4">
-                                        <button
-                                            onClick={() => setSelectedDevice(device)}
-                                            className="bg-slate-800 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2"
-                                        >
-                                            <TerminalIcon size={16} />
-                                            Terminal
-                                        </button>
-                                    </td>
+                {deployStatus && (
+                    <div className="mb-4 p-3 bg-blue-100 text-blue-800 rounded-lg flex items-center gap-2">
+                        <Rocket size={16} /> {deployStatus}
+                    </div>
+                )}
+
+                {activeTab === 'firmware' && (
+                    <div className="space-y-6">
+                        {/* New Firmware Form */}
+                        <div className="bg-white rounded-2xl shadow-lg p-6">
+                            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                                <Upload size={20} /> Add Firmware Release
+                            </h2>
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <input
+                                    type="text"
+                                    placeholder="Version (e.g. 1.1.0)"
+                                    value={newFirmware.version}
+                                    onChange={e => setNewFirmware({ ...newFirmware, version: e.target.value })}
+                                    className="p-3 border rounded-xl"
+                                />
+                                <input
+                                    type="text"
+                                    placeholder="Download URL"
+                                    value={newFirmware.url}
+                                    onChange={e => setNewFirmware({ ...newFirmware, url: e.target.value })}
+                                    className="p-3 border rounded-xl"
+                                />
+                                <input
+                                    type="text"
+                                    placeholder="Description"
+                                    value={newFirmware.description}
+                                    onChange={e => setNewFirmware({ ...newFirmware, description: e.target.value })}
+                                    className="p-3 border rounded-xl"
+                                />
+                                <button
+                                    onClick={createFirmware}
+                                    className="bg-slate-800 hover:bg-slate-700 text-white px-6 py-3 rounded-xl font-medium"
+                                >
+                                    Add Release
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Firmware Releases List */}
+                        <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+                            <table className="w-full">
+                                <thead className="bg-slate-50 border-b">
+                                    <tr>
+                                        <th className="p-4 text-left text-sm font-semibold text-slate-500">Version</th>
+                                        <th className="p-4 text-left text-sm font-semibold text-slate-500">URL</th>
+                                        <th className="p-4 text-left text-sm font-semibold text-slate-500">Description</th>
+                                        <th className="p-4 text-left text-sm font-semibold text-slate-500">Created</th>
+                                        <th className="p-4 text-left text-sm font-semibold text-slate-500">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {firmwareReleases.map(fw => (
+                                        <tr key={fw.id} className="border-b hover:bg-slate-50">
+                                            <td className="p-4 font-mono font-bold">{fw.version}</td>
+                                            <td className="p-4 text-sm text-gray-500 truncate max-w-xs">{fw.url}</td>
+                                            <td className="p-4 text-sm">{fw.description || '-'}</td>
+                                            <td className="p-4 text-sm text-gray-500">{new Date(fw.createdAt).toLocaleDateString()}</td>
+                                            <td className="p-4">
+                                                <select
+                                                    onChange={e => e.target.value && deployFirmware(e.target.value, fw.version)}
+                                                    className="p-2 border rounded-lg text-sm"
+                                                    defaultValue=""
+                                                >
+                                                    <option value="">Deploy to...</option>
+                                                    {devices.filter(d => d.status === 'online').map(d => (
+                                                        <option key={d.id} value={d.id}>{d.name} ({d.code})</option>
+                                                    ))}
+                                                </select>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {firmwareReleases.length === 0 && (
+                                        <tr><td colSpan={5} className="p-8 text-center text-gray-400">No firmware releases yet</td></tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
+
+                {activeTab === 'devices' && (
+                    <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+                        <table className="w-full">
+                            <thead className="bg-slate-50 border-b">
+                                <tr>
+                                    <th className="p-4 text-left text-sm font-semibold text-slate-500">Status</th>
+                                    <th className="p-4 text-left text-sm font-semibold text-slate-500">Device</th>
+                                    <th className="p-4 text-left text-sm font-semibold text-slate-500">Signal</th>
+                                    <th className="p-4 text-left text-sm font-semibold text-slate-500">Firmware</th>
+                                    <th className="p-4 text-left text-sm font-semibold text-slate-500">Owner</th>
+                                    <th className="p-4 text-left text-sm font-semibold text-slate-500">Last Seen</th>
+                                    <th className="p-4 text-left text-sm font-semibold text-slate-500">Actions</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                            </thead>
+                            <tbody>
+                                {devices.map(device => (
+                                    <tr key={device.id} className="border-b hover:bg-slate-50">
+                                        <td className="p-4">
+                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${device.status === 'online' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                                                }`}>
+                                                {device.status === 'online' ? <Wifi size={14} className="mr-1" /> : <WifiOff size={14} className="mr-1" />}
+                                                {device.status}
+                                            </span>
+                                        </td>
+                                        <td className="p-4">
+                                            <div className="font-medium flex items-center gap-2">
+                                                {device.name}
+                                                {device.code.startsWith('TEST') && (
+                                                    <span className="bg-amber-100 text-amber-800 text-xs px-1.5 py-0.5 rounded border border-amber-200">
+                                                        DUMMY
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="text-xs text-gray-500 font-mono">{device.code}</div>
+                                        </td>
+                                        <td className="p-4">
+                                            <div className={`flex items-center gap-1 font-mono text-sm ${getSignalColor(device.wifiSignal)}`}>
+                                                <Wifi size={16} />
+                                                {device.wifiSignal ? `${device.wifiSignal} dBm` : '-'}
+                                            </div>
+                                        </td>
+                                        <td className="p-4 text-sm font-mono text-gray-600">
+                                            {device.firmwareVersion || 'v1.0.0'}
+                                        </td>
+                                        <td className="p-4 text-sm text-gray-600">
+                                            {device.owner || <span className="text-orange-400 italic">Unclaimed</span>}
+                                        </td>
+                                        <td className="p-4 text-sm text-gray-500">
+                                            {new Date(device.lastSeen).toLocaleString()}
+                                        </td>
+                                        <td className="p-4">
+                                            <button
+                                                onClick={() => setSelectedDevice(device)}
+                                                className="bg-slate-800 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2"
+                                            >
+                                                <TerminalIcon size={16} />
+                                                Terminal
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
             </div>
 
             {/* Terminal Modal */}
