@@ -286,37 +286,55 @@ export function Admin() {
                         {/* New Firmware Form */}
                         <div className="bg-white rounded-2xl shadow-lg p-6">
                             <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-                                <Upload size={20} /> Add Firmware Release
+                                <Upload size={20} /> Upload Firmware Release
                             </h2>
-                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <form onSubmit={async (e) => {
+                                e.preventDefault();
+                                const form = e.target as HTMLFormElement;
+                                const formData = new FormData(form);
+                                try {
+                                    const res = await fetch(`${API_BASE}/api/admin/firmware/upload`, {
+                                        method: 'POST',
+                                        headers: { 'x-admin-password': password },
+                                        body: formData
+                                    });
+                                    if (res.ok) {
+                                        form.reset();
+                                        loadFirmware(password);
+                                        setDeployStatus('Firmware uploaded!');
+                                        setTimeout(() => setDeployStatus(''), 3000);
+                                    }
+                                } catch (err) {
+                                    setDeployStatus('Upload failed');
+                                }
+                            }} className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                 <input
                                     type="text"
+                                    name="version"
                                     placeholder="Version (e.g. 1.1.0)"
-                                    value={newFirmware.version}
-                                    onChange={e => setNewFirmware({ ...newFirmware, version: e.target.value })}
                                     className="p-3 border rounded-xl"
+                                    required
+                                />
+                                <input
+                                    type="file"
+                                    name="file"
+                                    accept=".tar.gz,.tgz"
+                                    className="p-3 border rounded-xl"
+                                    required
                                 />
                                 <input
                                     type="text"
-                                    placeholder="Download URL"
-                                    value={newFirmware.url}
-                                    onChange={e => setNewFirmware({ ...newFirmware, url: e.target.value })}
-                                    className="p-3 border rounded-xl"
-                                />
-                                <input
-                                    type="text"
+                                    name="description"
                                     placeholder="Description"
-                                    value={newFirmware.description}
-                                    onChange={e => setNewFirmware({ ...newFirmware, description: e.target.value })}
                                     className="p-3 border rounded-xl"
                                 />
                                 <button
-                                    onClick={createFirmware}
+                                    type="submit"
                                     className="bg-slate-800 hover:bg-slate-700 text-white px-6 py-3 rounded-xl font-medium"
                                 >
-                                    Add Release
+                                    Upload
                                 </button>
-                            </div>
+                            </form>
                         </div>
 
                         {/* Firmware Releases List */}

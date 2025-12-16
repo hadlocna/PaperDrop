@@ -34,6 +34,10 @@ app.use('/api/messages', messageRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/ai', aiRoutes);
 
+// Serve uploaded firmware files
+import path from 'path';
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
 // Basic health check
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', version: '1.0.0' });

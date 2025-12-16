@@ -29,3 +29,4 @@ agent.log
 # OS Images
 *.img
 raspios*
+releases/

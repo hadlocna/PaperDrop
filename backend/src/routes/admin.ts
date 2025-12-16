@@ -1,6 +1,18 @@
 import express from 'express';
+import multer from 'multer';
+import path from 'path';
 import { prisma } from '../lib/prisma';
 import { broadcastToDevice } from '../websocket/deviceHandler';
+
+// Configure multer for firmware uploads
+const storage = multer.diskStorage({
+    destination: path.join(__dirname, '../../uploads'),
+    filename: (req, file, cb) => {
+        const version = req.body.version || 'unknown';
+        cb(null, `firmware-${version}-${Date.now()}.tar.gz`);
+    }
+});
+const upload = multer({ storage });
 
 const router = express.Router();
 
@@ -132,6 +144,38 @@ router.post('/firmware/deploy', async (req, res) => {
             results
         });
     } catch (e) {
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// Upload firmware file
+router.post('/firmware/upload', upload.single('file'), async (req, res) => {
+    try {
+        const { version, description, isCritical } = req.body;
+
+        if (!version || !req.file) {
+            return res.status(400).json({ error: 'version and file are required' });
+        }
+
+        // Build URL for the file
+        const baseUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
+        const url = `${baseUrl}/uploads/${req.file.filename}`;
+
+        const release = await prisma.firmwareRelease.create({
+            data: {
+                version,
+                url,
+                description: description || '',
+                isCritical: isCritical === 'true' || isCritical === true
+            }
+        });
+
+        res.json(release);
+    } catch (e: any) {
+        if (e.code === 'P2002') {
+            return res.status(400).json({ error: 'Version already exists' });
+        }
+        console.error(e);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });
