@@ -37,7 +37,6 @@ export function Admin() {
     const [error, setError] = useState('');
     const [activeTab, setActiveTab] = useState<'devices' | 'firmware'>('devices');
     const [firmwareReleases, setFirmwareReleases] = useState<FirmwareRelease[]>([]);
-    const [newFirmware, setNewFirmware] = useState({ version: '', url: '', description: '', isCritical: false });
     const [deployStatus, setDeployStatus] = useState('');
 
     const termRef = useRef<HTMLDivElement>(null);
@@ -87,24 +86,7 @@ export function Admin() {
         }
     };
 
-    const createFirmware = async () => {
-        try {
-            const res = await fetch(`${API_BASE}/api/admin/firmware`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-admin-password': password
-                },
-                body: JSON.stringify(newFirmware)
-            });
-            if (res.ok) {
-                setNewFirmware({ version: '', url: '', description: '', isCritical: false });
-                loadFirmware(password);
-            }
-        } catch (e) {
-            console.error('Failed to create firmware:', e);
-        }
-    };
+
 
     const deployFirmware = async (deviceId: string, version: string) => {
         try {
