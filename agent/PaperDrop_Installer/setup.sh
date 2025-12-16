@@ -154,30 +154,6 @@ if ! grep -q "iptables -t nat -A PREROUTING" /etc/rc.local; then
     sed -i '$i iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 8080\n' /etc/rc.local
 fi
 
-# 12. Pre-configure WiFi (Troubleshooting Mode)
-echo -e "${GREEN}Pre-configuring WiFi (fabthan2)...${NC}"
-cat <<EOF > /etc/wpa_supplicant/wpa_supplicant.conf
-ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
-update_config=1
-country=US
-
-network={
-    ssid="Ya Mama"
-    psk="youarecool"
-    key_mgmt=WPA-PSK
-}
-EOF
-
-# Pre-seed Agent Config so it knows to connect
-mkdir -p /etc/paperdrop
-cat <<EOF > /etc/paperdrop/wifi.json
-{
-  "ssid": "Ya Mama",
-  "password": "youarecool"
-}
-EOF
-chmod 600 /etc/paperdrop/wifi.json
-
 cleanup_installer
 echo -e "${GREEN}Provisioning Complete! Starting Agent...${NC}"
 systemctl start paperdrop.service
