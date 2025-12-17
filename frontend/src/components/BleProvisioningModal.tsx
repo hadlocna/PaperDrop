@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { X, Bluetooth, Wifi, CheckCircle, AlertCircle, Loader2, WifiOff, Router } from 'lucide-react';
+import { useState } from 'react';
+import { X, Bluetooth, Wifi, CheckCircle, AlertCircle, Loader2, Router } from 'lucide-react';
 
 // Fresh UUIDs matching the Pi BLE server
 const SERVICE_UUID = '12345678-1234-5678-1234-56789abcdef0';
@@ -155,13 +155,6 @@ export function BleProvisioningModal({ isOpen, onClose, onSuccess }: BleProvisio
         }
     };
 
-    const getSignalBars = (signal: number) => {
-        if (signal >= 75) return '●●●●';
-        if (signal >= 50) return '●●●○';
-        if (signal >= 25) return '●●○○';
-        return '●○○○';
-    };
-
     if (!isOpen) return null;
 
     return (
@@ -263,8 +256,8 @@ export function BleProvisioningModal({ isOpen, onClose, onSuccess }: BleProvisio
                                                     key={net.ssid}
                                                     onClick={() => setSsid(net.ssid)}
                                                     className={`w-full p-3 border rounded-xl flex items-center justify-between transition ${ssid === net.ssid
-                                                            ? 'border-blue-500 bg-blue-50'
-                                                            : 'border-gray-200 hover:border-gray-300'
+                                                        ? 'border-blue-500 bg-blue-50'
+                                                        : 'border-gray-200 hover:border-gray-300'
                                                         }`}
                                                 >
                                                     <div className="flex items-center gap-3">
@@ -276,8 +269,8 @@ export function BleProvisioningModal({ isOpen, onClose, onSuccess }: BleProvisio
                                                     <div className="flex items-center gap-2 text-sm">
                                                         <span className="text-gray-400">{net.signal}%</span>
                                                         <span className={`text-xs px-2 py-0.5 rounded ${net.security === 'Open'
-                                                                ? 'bg-yellow-100 text-yellow-700'
-                                                                : 'bg-gray-100 text-gray-600'
+                                                            ? 'bg-yellow-100 text-yellow-700'
+                                                            : 'bg-gray-100 text-gray-600'
                                                             }`}>
                                                             {net.security === 'Open' ? '🔓' : '🔒'}
                                                         </span>
@@ -348,8 +341,8 @@ export function BleProvisioningModal({ isOpen, onClose, onSuccess }: BleProvisio
                                             <div
                                                 key={i}
                                                 className={`w-2 h-2 rounded-full transition-all duration-300 ${connectionProgress >= (i + 1) * 20
-                                                        ? 'bg-blue-500 scale-100'
-                                                        : 'bg-gray-300 scale-75'
+                                                    ? 'bg-blue-500 scale-100'
+                                                    : 'bg-gray-300 scale-75'
                                                     }`}
                                                 style={{
                                                     animation: connectionProgress >= (i + 1) * 20
