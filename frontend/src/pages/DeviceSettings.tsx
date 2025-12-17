@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
-import { client as api, updateDevice, unclaimDevice, createInviteLink } from '../api/client';
+import { client as api, updateDevice, unclaimDevice, createInviteLink, downloadDeviceLogs } from '../api/client';
 
 export function DeviceSettings() {
     const { id } = useParams();
@@ -16,6 +16,10 @@ export function DeviceSettings() {
     const [inviteLink, setInviteLink] = useState('');
     const [inviteMessage, setInviteMessage] = useState('');
     const [inviteLoading, setInviteLoading] = useState(false);
+    const [logType, setLogType] = useState('agent');
+    const [logLines, setLogLines] = useState('500');
+    const [logsLoading, setLogsLoading] = useState(false);
+    const [logMessage, setLogMessage] = useState('');
 
     useEffect(() => {
         async function loadDevice() {
@@ -73,6 +77,30 @@ export function DeviceSettings() {
             setInviteMessage(err.response?.data?.error || 'Failed to create invite');
         } finally {
             setInviteLoading(false);
+        }
+    };
+
+    const handleDownloadLogs = async () => {
+        if (!user?.id || !id) return;
+        setLogsLoading(true);
+        setLogMessage('');
+        try {
+            const res = await downloadDeviceLogs(id, user.id, logType, parseInt(logLines) || 500);
+            const filename = `${device.friendlyName || 'device'}-${logType}-logs.txt`;
+            const blob = new Blob([res.data], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+            setLogMessage('Logs downloaded successfully.');
+        } catch (err: any) {
+            setLogMessage(err.response?.data?.error || 'Unable to download logs');
+        } finally {
+            setLogsLoading(false);
         }
     };
 
@@ -154,6 +182,44 @@ export function DeviceSettings() {
                             </button>
                         </div>
                     )}
+                </div>
+
+                <div className="bg-white rounded-2xl p-6 shadow-sm mb-6">
+                    <h2 className="text-lg font-medium mb-2">Download device logs</h2>
+                    <p className="text-sm text-gray-500 mb-4">Fetch recent logs from the device to help with debugging.</p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+                        <div className="space-y-1">
+                            <label className="block text-sm font-medium text-gray-500">Log type</label>
+                            <select
+                                value={logType}
+                                onChange={(e) => setLogType(e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-coral-500 outline-none"
+                            >
+                                <option value="agent">Agent</option>
+                                <option value="wifi">WiFi</option>
+                                <option value="system">System</option>
+                            </select>
+                        </div>
+                        <div className="space-y-1">
+                            <label className="block text-sm font-medium text-gray-500">Lines</label>
+                            <input
+                                type="number"
+                                min={10}
+                                max={5000}
+                                value={logLines}
+                                onChange={(e) => setLogLines(e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-coral-500 outline-none"
+                            />
+                        </div>
+                        <button
+                            onClick={handleDownloadLogs}
+                            disabled={logsLoading}
+                            className="w-full md:w-auto px-4 py-2 bg-charcoal-800 text-white rounded-xl hover:bg-charcoal-700 transition disabled:opacity-50"
+                        >
+                            {logsLoading ? 'Fetching...' : 'Download logs'}
+                        </button>
+                    </div>
+                    {logMessage && <p className="text-sm text-gray-600 mt-3">{logMessage}</p>}
                 </div>
 
                 <div className="bg-white rounded-2xl p-6 shadow-sm border border-red-100">

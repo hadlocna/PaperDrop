@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
-import { broadcastToDevice } from '../websocket/deviceHandler';
+import { broadcastToDevice, requestLogsFromDevice } from '../websocket/deviceHandler';
 import crypto from 'crypto';
 
 export const claimDevice = async (req: Request, res: Response) => {
@@ -177,6 +177,56 @@ export const testPrint = async (req: Request, res: Response) => {
         }
     } catch (error) {
         console.error(error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+};
+
+export const downloadLogs = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const { userId, type = 'agent', lines = '500' } = req.query;
+
+        if (!userId) {
+            return res.status(400).json({ error: 'Missing user ID' });
+        }
+
+        const device = await prisma.device.findUnique({ where: { id } });
+        if (!device) {
+            return res.status(404).json({ error: 'Device not found' });
+        }
+
+        const access = await prisma.deviceAccess.findUnique({
+            where: { deviceId_userId: { deviceId: id, userId: String(userId) } }
+        });
+
+        if (!access && device.ownerId !== String(userId)) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
+        const lineCount = parseInt(String(lines)) || 500;
+
+        try {
+            const response = await requestLogsFromDevice(id, {
+                type: String(type),
+                lines: lineCount
+            });
+
+            const filename = `${device.friendlyName || 'device'}-${String(type)}-logs.txt`;
+            res.setHeader('Content-Type', 'text/plain');
+            res.setHeader('Content-Disposition', `attachment; filename="${filename.replace(/\s+/g, '_')}"`);
+            res.send(response.logs || '');
+        } catch (err: any) {
+            if (err?.message === 'device_offline') {
+                return res.status(503).json({ error: 'Device offline' });
+            }
+            if (err?.message === 'device_timeout') {
+                return res.status(504).json({ error: 'Device did not respond with logs' });
+            }
+            console.error('Download logs error:', err);
+            return res.status(500).json({ error: 'Failed to fetch logs from device' });
+        }
+    } catch (error) {
+        console.error('Download logs error:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 };

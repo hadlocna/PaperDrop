@@ -3,7 +3,16 @@ import { IncomingMessage } from 'http';
 import url from 'url';
 import { prisma } from '../lib/prisma';
 import { Server } from 'http';
+import crypto from 'crypto';
 import { deviceConnections, shellSessions } from './session';
+
+type PendingLogRequest = {
+    resolve: (payload: any) => void;
+    reject: (error: Error) => void;
+    timer: NodeJS.Timeout;
+};
+
+const pendingLogRequests = new Map<string, PendingLogRequest>();
 
 export const setupWebSocket = (server: Server) => {
     const wss = new WebSocketServer({ server, path: '/api/device/connect' });
@@ -128,6 +137,14 @@ const handleDeviceMessage = async (deviceId: string, message: any) => {
             adminWs.send(JSON.stringify({ type: 'shell_output', deviceId: deviceId, data: message.data }));
         }
     }
+    else if (message.type === 'log_bundle' && message.request_id) {
+        const pending = pendingLogRequests.get(message.request_id);
+        if (pending) {
+            clearTimeout(pending.timer);
+            pending.resolve(message);
+            pendingLogRequests.delete(message.request_id);
+        }
+    }
 };
 
 export const broadcastToDevice = (deviceId: string, data: any): boolean => {
@@ -137,4 +154,31 @@ export const broadcastToDevice = (deviceId: string, data: any): boolean => {
         return true;
     }
     return false;
+};
+
+export const requestLogsFromDevice = async (
+    deviceId: string,
+    options: { type: string; lines: number }
+) => {
+    const requestId = crypto.randomUUID();
+
+    return new Promise<any>((resolve, reject) => {
+        const success = broadcastToDevice(deviceId, {
+            type: 'fetch_logs',
+            request_id: requestId,
+            log_type: options.type,
+            lines: options.lines
+        });
+
+        if (!success) {
+            return reject(new Error('device_offline'));
+        }
+
+        const timer = setTimeout(() => {
+            pendingLogRequests.delete(requestId);
+            reject(new Error('device_timeout'));
+        }, 15000);
+
+        pendingLogRequests.set(requestId, { resolve, reject, timer });
+    });
 };

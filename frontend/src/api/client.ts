@@ -35,6 +35,19 @@ export const createInviteLink = async (deviceId: string, userId: string, email?:
     return response.data;
 };
 
+export const downloadDeviceLogs = async (
+    deviceId: string,
+    userId: string,
+    type: string,
+    lines: number
+) => {
+    const response = await client.get(`/devices/${deviceId}/logs`, {
+        params: { userId, type, lines },
+        responseType: 'blob'
+    });
+    return response;
+};
+
 export const getInviteDetails = async (token: string) => {
     const response = await client.get(`/invites/${token}`);
     return response.data;
