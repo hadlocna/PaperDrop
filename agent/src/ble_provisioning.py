@@ -1,35 +1,38 @@
 #!/usr/bin/env python3
 """
-BLE Provisioning using BlueZ DBus API directly.
-Works with Python 3.13 and standard dbus-next.
+BLE Provisioning GATT Server using official BlueZ Python pattern.
+Based on BlueZ test/example-gatt-server.
+
+Uses PyGObject (GLib/dbus) which is the canonical way BlueZ expects 
+GATT servers to be structured.
 """
 
-import asyncio
-import logging
+import dbus
+import dbus.exceptions
+import dbus.mainloop.glib
+import dbus.service
 import json
 import subprocess
-from dbus_next.aio import MessageBus
-from dbus_next.service import ServiceInterface, method, dbus_property
-from dbus_next import Variant, DBusError, BusType
+import logging
+from gi.repository import GLib
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("BLEProvisioning")
 
-BLUEZ_SERVICE = "org.bluez"
-ADAPTER_PATH = "/org/bluez/hci0"
+BLUEZ_SERVICE_NAME = "org.bluez"
 GATT_MANAGER_IFACE = "org.bluez.GattManager1"
 LE_ADVERTISING_MANAGER_IFACE = "org.bluez.LEAdvertisingManager1"
-ADAPTER_IFACE = "org.bluez.Adapter1"
+DBUS_OM_IFACE = "org.freedesktop.DBus.ObjectManager"
+DBUS_PROP_IFACE = "org.freedesktop.DBus.Properties"
+GATT_SERVICE_IFACE = "org.bluez.GattService1"
+GATT_CHRC_IFACE = "org.bluez.GattCharacteristic1"
+LE_ADVERTISEMENT_IFACE = "org.bluez.LEAdvertisement1"
 
-SERVICE_UUID = "a07498ca-ad5b-474e-940d-16f1fbe7e8cd"
-DEVICE_ID_UUID = "a07498ca-ad5b-474e-940d-16f1fbe7e8ce"
-WIFI_CONFIG_UUID = "a07498ca-ad5b-474e-940d-16f1fbe7e8cf"
+# UUIDs - using fresh UUID to avoid collision
+SERVICE_UUID = "12345678-1234-5678-1234-56789abcdef0"
+DEVICE_ID_CHRC_UUID = "12345678-1234-5678-1234-56789abcdef1"
+WIFI_CONFIG_CHRC_UUID = "12345678-1234-5678-1234-56789abcdef2"
 
-APP_PATH = "/com/paperdrop/ble"
-SERVICE_PATH = f"{APP_PATH}/service0"
-CHAR_DEVICE_ID_PATH = f"{SERVICE_PATH}/char0"
-CHAR_WIFI_CONFIG_PATH = f"{SERVICE_PATH}/char1"
-ADVERT_PATH = f"{APP_PATH}/advertisement0"
 
 def get_device_id():
     try:
@@ -38,245 +41,363 @@ def get_device_id():
     except:
         return "PD-UNKNOWN"
 
-# --- GATT Service ---
-class GattService(ServiceInterface):
-    def __init__(self):
-        super().__init__("org.bluez.GattService1")
-    
-    @dbus_property()
-    def UUID(self) -> 's':
-        return SERVICE_UUID
-    
-    @UUID.setter
-    def UUID(self, value: 's'):
-        pass
-    
-    @dbus_property()
-    def Primary(self) -> 'b':
-        return True
-    
-    @Primary.setter
-    def Primary(self, value: 'b'):
-        pass
 
-# --- GATT Characteristics ---
-class GattCharacteristicDeviceId(ServiceInterface):
-    def __init__(self):
-        super().__init__("org.bluez.GattCharacteristic1")
-        self._uuid = DEVICE_ID_UUID
-        self._service = SERVICE_PATH
-        self._flags = ["read"]
-    
-    @dbus_property()
-    def UUID(self) -> 's':
-        return self._uuid
-    
-    @UUID.setter
-    def UUID(self, value: 's'):
-        pass
-    
-    @dbus_property()
-    def Service(self) -> 'o':
-        return self._service
-    
-    @Service.setter
-    def Service(self, value: 'o'):
-        pass
-    
-    @dbus_property()
-    def Flags(self) -> 'as':
-        return self._flags
-    
-    @Flags.setter
-    def Flags(self, value: 'as'):
-        pass
-    
-    @method()
-    def ReadValue(self, options: 'a{sv}') -> 'ay':
-        device_id = get_device_id()
-        logger.info(f"ReadValue DeviceID: {device_id}")
-        return list(device_id.encode('utf-8'))
+class InvalidArgsException(dbus.exceptions.DBusException):
+    _dbus_error_name = "org.freedesktop.DBus.Error.InvalidArgs"
 
-class GattCharacteristicWifiConfig(ServiceInterface):
-    def __init__(self):
-        super().__init__("org.bluez.GattCharacteristic1")
-        self._uuid = WIFI_CONFIG_UUID
-        self._service = SERVICE_PATH
-        self._flags = ["write"]
-    
-    @dbus_property()
-    def UUID(self) -> 's':
-        return self._uuid
-    
-    @UUID.setter
-    def UUID(self, value: 's'):
-        pass
-    
-    @dbus_property()
-    def Service(self) -> 'o':
-        return self._service
-    
-    @Service.setter
-    def Service(self, value: 'o'):
-        pass
-    
-    @dbus_property()
-    def Flags(self) -> 'as':
-        return self._flags
-    
-    @Flags.setter
-    def Flags(self, value: 'as'):
-        pass
-    
-    @method()
-    def WriteValue(self, value: 'ay', options: 'a{sv}') -> None:
-        try:
-            text = bytes(value).decode('utf-8')
-            logger.info(f"WriteValue WiFiConfig: {text}")
-            data = json.loads(text)
-            ssid = data.get("ssid")
-            password = data.get("password")
-            
-            if ssid and password:
-                logger.info(f"Connecting to WiFi: {ssid}")
-                result = subprocess.run(
-                    ["nmcli", "dev", "wifi", "connect", ssid, "password", password],
-                    capture_output=True, text=True
-                )
-                if result.returncode == 0:
-                    logger.info("WiFi connected successfully!")
-                    # Mark as provisioned
-                    with open('/etc/paperdrop/wifi-provisioned', 'w') as f:
-                        f.write("1")
-                else:
-                    logger.error(f"WiFi connection failed: {result.stderr}")
-        except Exception as e:
-            logger.error(f"Error processing WiFi config: {e}")
 
-# --- GATT Application (ObjectManager) ---
-class GattApplication(ServiceInterface):
-    def __init__(self):
-        super().__init__("org.freedesktop.DBus.ObjectManager")
-    
-    @method()
-    def GetManagedObjects(self) -> 'a{oa{sa{sv}}}':
+class NotSupportedException(dbus.exceptions.DBusException):
+    _dbus_error_name = "org.bluez.Error.NotSupported"
+
+
+class NotPermittedException(dbus.exceptions.DBusException):
+    _dbus_error_name = "org.bluez.Error.NotPermitted"
+
+
+# ==============================
+# Advertisement
+# ==============================
+
+class Advertisement(dbus.service.Object):
+    PATH_BASE = "/org/bluez/example/advertisement"
+
+    def __init__(self, bus, index, advertising_type):
+        self.path = self.PATH_BASE + str(index)
+        self.bus = bus
+        self.ad_type = advertising_type
+        self.service_uuids = None
+        self.manufacturer_data = None
+        self.solicit_uuids = None
+        self.service_data = None
+        self.local_name = None
+        self.include_tx_power = False
+        dbus.service.Object.__init__(self, bus, self.path)
+
+    def get_properties(self):
+        properties = dict()
+        properties["Type"] = self.ad_type
+        if self.service_uuids is not None:
+            properties["ServiceUUIDs"] = dbus.Array(self.service_uuids, signature='s')
+        if self.solicit_uuids is not None:
+            properties["SolicitUUIDs"] = dbus.Array(self.solicit_uuids, signature='s')
+        if self.manufacturer_data is not None:
+            properties["ManufacturerData"] = dbus.Dictionary(self.manufacturer_data, signature='qv')
+        if self.service_data is not None:
+            properties["ServiceData"] = dbus.Dictionary(self.service_data, signature='sv')
+        if self.local_name is not None:
+            properties["LocalName"] = dbus.String(self.local_name)
+        if self.include_tx_power:
+            properties["Includes"] = dbus.Array(["tx-power"], signature='s')
+        return {LE_ADVERTISEMENT_IFACE: properties}
+
+    def get_path(self):
+        return dbus.ObjectPath(self.path)
+
+    @dbus.service.method(DBUS_PROP_IFACE, in_signature='s', out_signature='a{sv}')
+    def GetAll(self, interface):
+        if interface != LE_ADVERTISEMENT_IFACE:
+            raise InvalidArgsException()
+        return self.get_properties()[LE_ADVERTISEMENT_IFACE]
+
+    @dbus.service.method(LE_ADVERTISEMENT_IFACE, in_signature='', out_signature='')
+    def Release(self):
+        logger.info('%s: Released!' % self.path)
+
+
+class ProvisioningAdvertisement(Advertisement):
+    def __init__(self, bus, index):
+        Advertisement.__init__(self, bus, index, "peripheral")
+        self.service_uuids = [SERVICE_UUID]
+        self.local_name = "PaperDrop"
+        self.include_tx_power = True
+
+
+# ==============================
+# GATT Application
+# ==============================
+
+class Application(dbus.service.Object):
+    def __init__(self, bus):
+        self.path = "/"
+        self.services = []
+        dbus.service.Object.__init__(self, bus, self.path)
+
+    def get_path(self):
+        return dbus.ObjectPath(self.path)
+
+    def add_service(self, service):
+        self.services.append(service)
+
+    @dbus.service.method(DBUS_OM_IFACE, out_signature='a{oa{sa{sv}}}')
+    def GetManagedObjects(self):
+        response = {}
+        for service in self.services:
+            response[service.get_path()] = service.get_properties()
+            chrcs = service.get_characteristics()
+            for chrc in chrcs:
+                response[chrc.get_path()] = chrc.get_properties()
+                descs = chrc.get_descriptors()
+                for desc in descs:
+                    response[desc.get_path()] = desc.get_properties()
+        return response
+
+
+class Service(dbus.service.Object):
+    PATH_BASE = "/org/bluez/example/service"
+
+    def __init__(self, bus, index, uuid, primary):
+        self.path = self.PATH_BASE + str(index)
+        self.bus = bus
+        self.uuid = uuid
+        self.primary = primary
+        self.characteristics = []
+        dbus.service.Object.__init__(self, bus, self.path)
+
+    def get_properties(self):
         return {
-            SERVICE_PATH: {
-                "org.bluez.GattService1": {
-                    "UUID": Variant('s', SERVICE_UUID),
-                    "Primary": Variant('b', True),
-                }
-            },
-            CHAR_DEVICE_ID_PATH: {
-                "org.bluez.GattCharacteristic1": {
-                    "UUID": Variant('s', DEVICE_ID_UUID),
-                    "Service": Variant('o', SERVICE_PATH),
-                    "Flags": Variant('as', ["read"]),
-                }
-            },
-            CHAR_WIFI_CONFIG_PATH: {
-                "org.bluez.GattCharacteristic1": {
-                    "UUID": Variant('s', WIFI_CONFIG_UUID),
-                    "Service": Variant('o', SERVICE_PATH),
-                    "Flags": Variant('as', ["write"]),
-                }
+            GATT_SERVICE_IFACE: {
+                'UUID': self.uuid,
+                'Primary': self.primary,
+                'Characteristics': dbus.Array(
+                    self.get_characteristic_paths(),
+                    signature='o')
             }
         }
 
-# --- Advertisement ---
-class LEAdvertisement(ServiceInterface):
-    def __init__(self):
-        super().__init__("org.bluez.LEAdvertisement1")
-        self._type = "peripheral"
-        self._service_uuids = [SERVICE_UUID]
-        self._local_name = "PaperDrop"
-    
-    @dbus_property()
-    def Type(self) -> 's':
-        return self._type
-    
-    @Type.setter
-    def Type(self, value: 's'):
-        self._type = value
-    
-    @dbus_property()
-    def ServiceUUIDs(self) -> 'as':
-        return self._service_uuids
-    
-    @ServiceUUIDs.setter
-    def ServiceUUIDs(self, value: 'as'):
-        self._service_uuids = value
-    
-    @dbus_property()
-    def LocalName(self) -> 's':
-        return self._local_name
-    
-    @LocalName.setter
-    def LocalName(self, value: 's'):
-        self._local_name = value
-    
-    @method()
-    def Release(self) -> None:
-        logger.info("Advertisement released")
+    def get_path(self):
+        return dbus.ObjectPath(self.path)
+
+    def add_characteristic(self, characteristic):
+        self.characteristics.append(characteristic)
+
+    def get_characteristic_paths(self):
+        result = []
+        for chrc in self.characteristics:
+            result.append(chrc.get_path())
+        return result
+
+    def get_characteristics(self):
+        return self.characteristics
+
+    @dbus.service.method(DBUS_PROP_IFACE, in_signature='s', out_signature='a{sv}')
+    def GetAll(self, interface):
+        if interface != GATT_SERVICE_IFACE:
+            raise InvalidArgsException()
+        return self.get_properties()[GATT_SERVICE_IFACE]
 
 
-async def main():
-    logger.info("Starting BLE Provisioning...")
-    
-    bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
-    
-    # Export GATT Application (ObjectManager)
-    app = GattApplication()
-    bus.export(APP_PATH, app)
-    
-    # Export Service
-    service = GattService()
-    bus.export(SERVICE_PATH, service)
-    
-    # Export Characteristics
-    char_device_id = GattCharacteristicDeviceId()
-    bus.export(CHAR_DEVICE_ID_PATH, char_device_id)
-    
-    char_wifi_config = GattCharacteristicWifiConfig()
-    bus.export(CHAR_WIFI_CONFIG_PATH, char_wifi_config)
-    
-    # Export Advertisement
-    advert = LEAdvertisement()
-    bus.export(ADVERT_PATH, advert)
-    
-    # Get BlueZ adapter
-    introspection = await bus.introspect(BLUEZ_SERVICE, ADAPTER_PATH)
-    proxy = bus.get_proxy_object(BLUEZ_SERVICE, ADAPTER_PATH, introspection)
-    
-    # Power on adapter
-    adapter = proxy.get_interface(ADAPTER_IFACE)
-    try:
-        await adapter.set_powered(True)
-        logger.info("Adapter powered on")
-    except DBusError as e:
-        logger.warning(f"Set powered: {e}")
-    
-    # Register GATT Application
-    gatt_manager = proxy.get_interface(GATT_MANAGER_IFACE)
-    try:
-        await gatt_manager.call_register_application(APP_PATH, {})
-        logger.info("GATT Application registered successfully!")
-    except DBusError as e:
-        logger.error(f"Failed to register GATT app: {e}")
-    
-    # Register Advertisement
-    advert_manager = proxy.get_interface(LE_ADVERTISING_MANAGER_IFACE)
-    try:
-        await advert_manager.call_register_advertisement(ADVERT_PATH, {})
-        logger.info("Advertisement registered successfully!")
-    except DBusError as e:
-        logger.error(f"Failed to register advertisement: {e}")
-    
-    logger.info("BLE Provisioning started. Device ID: " + get_device_id())
-    logger.info("Waiting for connections...")
-    
-    # Keep running
-    await asyncio.get_running_loop().create_future()
+class Characteristic(dbus.service.Object):
+    def __init__(self, bus, index, uuid, flags, service):
+        self.path = service.path + '/char' + str(index)
+        self.bus = bus
+        self.uuid = uuid
+        self.service = service
+        self.flags = flags
+        self.descriptors = []
+        dbus.service.Object.__init__(self, bus, self.path)
 
-if __name__ == "__main__":
-    asyncio.run(main())
+    def get_properties(self):
+        return {
+            GATT_CHRC_IFACE: {
+                'Service': self.service.get_path(),
+                'UUID': self.uuid,
+                'Flags': self.flags,
+                'Descriptors': dbus.Array(
+                    self.get_descriptor_paths(),
+                    signature='o')
+            }
+        }
+
+    def get_path(self):
+        return dbus.ObjectPath(self.path)
+
+    def add_descriptor(self, descriptor):
+        self.descriptors.append(descriptor)
+
+    def get_descriptor_paths(self):
+        result = []
+        for desc in self.descriptors:
+            result.append(desc.get_path())
+        return result
+
+    def get_descriptors(self):
+        return self.descriptors
+
+    @dbus.service.method(DBUS_PROP_IFACE, in_signature='s', out_signature='a{sv}')
+    def GetAll(self, interface):
+        if interface != GATT_CHRC_IFACE:
+            raise InvalidArgsException()
+        return self.get_properties()[GATT_CHRC_IFACE]
+
+    @dbus.service.method(GATT_CHRC_IFACE, in_signature='a{sv}', out_signature='ay')
+    def ReadValue(self, options):
+        logger.info('Default ReadValue called, returning error')
+        raise NotSupportedException()
+
+    @dbus.service.method(GATT_CHRC_IFACE, in_signature='aya{sv}')
+    def WriteValue(self, value, options):
+        logger.info('Default WriteValue called, returning error')
+        raise NotSupportedException()
+
+    @dbus.service.method(GATT_CHRC_IFACE)
+    def StartNotify(self):
+        logger.info('Default StartNotify called, returning error')
+        raise NotSupportedException()
+
+    @dbus.service.method(GATT_CHRC_IFACE)
+    def StopNotify(self):
+        logger.info('Default StopNotify called, returning error')
+        raise NotSupportedException()
+
+    @dbus.service.signal(DBUS_PROP_IFACE, signature='sa{sv}as')
+    def PropertiesChanged(self, interface, changed, invalidated):
+        pass
+
+
+# ==============================
+# PaperDrop Provisioning Service
+# ==============================
+
+class ProvisioningService(Service):
+    def __init__(self, bus, index):
+        Service.__init__(self, bus, index, SERVICE_UUID, True)
+        self.add_characteristic(DeviceIdCharacteristic(bus, 0, self))
+        self.add_characteristic(WifiConfigCharacteristic(bus, 1, self))
+
+
+class DeviceIdCharacteristic(Characteristic):
+    def __init__(self, bus, index, service):
+        Characteristic.__init__(
+            self, bus, index,
+            DEVICE_ID_CHRC_UUID,
+            ['read'],
+            service)
+
+    def ReadValue(self, options):
+        device_id = get_device_id()
+        logger.info(f'Reading Device ID: {device_id}')
+        return [dbus.Byte(b) for b in device_id.encode('utf-8')]
+
+
+class WifiConfigCharacteristic(Characteristic):
+    def __init__(self, bus, index, service):
+        Characteristic.__init__(
+            self, bus, index,
+            WIFI_CONFIG_CHRC_UUID,
+            ['write'],
+            service)
+
+    def WriteValue(self, value, options):
+        try:
+            text = bytes(value).decode('utf-8')
+            logger.info(f'Received WiFi config: {text}')
+            
+            data = json.loads(text)
+            ssid = data.get('ssid')
+            password = data.get('password')
+            
+            if ssid and password:
+                logger.info(f'Connecting to WiFi: {ssid}')
+                result = subprocess.run(
+                    ['nmcli', 'dev', 'wifi', 'connect', ssid, 'password', password],
+                    capture_output=True, text=True
+                )
+                if result.returncode == 0:
+                    logger.info('WiFi connected successfully!')
+                    try:
+                        with open('/etc/paperdrop/wifi-provisioned', 'w') as f:
+                            f.write('1')
+                    except:
+                        pass
+                else:
+                    logger.error(f'WiFi connection failed: {result.stderr}')
+            else:
+                logger.error('Missing ssid or password')
+        except Exception as e:
+            logger.error(f'Error processing WiFi config: {e}')
+
+
+# ==============================
+# Main
+# ==============================
+
+def find_adapter(bus):
+    remote_om = dbus.Interface(bus.get_object(BLUEZ_SERVICE_NAME, '/'),
+                               DBUS_OM_IFACE)
+    objects = remote_om.GetManagedObjects()
+
+    for o, props in objects.items():
+        if GATT_MANAGER_IFACE in props.keys():
+            return o
+    return None
+
+
+def register_ad_cb():
+    logger.info('Advertisement registered')
+
+
+def register_ad_error_cb(error):
+    logger.error(f'Failed to register advertisement: {error}')
+    mainloop.quit()
+
+
+def register_app_cb():
+    logger.info('GATT application registered')
+
+
+def register_app_error_cb(error):
+    logger.error(f'Failed to register application: {error}')
+    mainloop.quit()
+
+
+def main():
+    global mainloop
+
+    dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
+
+    bus = dbus.SystemBus()
+
+    adapter = find_adapter(bus)
+    if not adapter:
+        logger.error('GattManager1 interface not found')
+        return
+
+    logger.info(f'Found adapter: {adapter}')
+
+    service_manager = dbus.Interface(
+        bus.get_object(BLUEZ_SERVICE_NAME, adapter),
+        GATT_MANAGER_IFACE)
+
+    ad_manager = dbus.Interface(
+        bus.get_object(BLUEZ_SERVICE_NAME, adapter),
+        LE_ADVERTISING_MANAGER_IFACE)
+
+    app = Application(bus)
+    app.add_service(ProvisioningService(bus, 0))
+
+    adv = ProvisioningAdvertisement(bus, 0)
+
+    mainloop = GLib.MainLoop()
+
+    logger.info('Registering GATT application...')
+    service_manager.RegisterApplication(
+        app.get_path(), {},
+        reply_handler=register_app_cb,
+        error_handler=register_app_error_cb)
+
+    logger.info('Registering advertisement...')
+    ad_manager.RegisterAdvertisement(
+        adv.get_path(), {},
+        reply_handler=register_ad_cb,
+        error_handler=register_ad_error_cb)
+
+    device_id = get_device_id()
+    logger.info(f'BLE Provisioning started. Device ID: {device_id}')
+    logger.info(f'Service UUID: {SERVICE_UUID}')
+    logger.info('Waiting for connections...')
+
+    mainloop.run()
+
+
+if __name__ == '__main__':
+    main()

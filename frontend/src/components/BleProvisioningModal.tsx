@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { X, Bluetooth, Wifi, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 
-const SERVICE_UUID = 'a07498ca-ad5b-474e-940d-16f1fbe7e8cd';
-const DEVICE_ID_UUID = 'a07498ca-ad5b-474e-940d-16f1fbe7e8ce';
-const WIFI_CONFIG_UUID = 'a07498ca-ad5b-474e-940d-16f1fbe7e8cf';
+// Fresh UUIDs matching the Pi BLE server
+const SERVICE_UUID = '12345678-1234-5678-1234-56789abcdef0';
+const DEVICE_ID_UUID = '12345678-1234-5678-1234-56789abcdef1';
+const WIFI_CONFIG_UUID = '12345678-1234-5678-1234-56789abcdef2';
 
 type Step = 'scan' | 'connect' | 'wifi' | 'success' | 'error';
 
