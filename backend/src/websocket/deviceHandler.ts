@@ -60,10 +60,14 @@ export const setupWebSocket = (server: Server) => {
         deviceConnections.set(deviceId, ws);
 
         // Update status to online
-        await prisma.device.update({
-            where: { id: deviceId },
-            data: { status: 'online', lastSeenAt: new Date() }
-        });
+        try {
+            await prisma.device.update({
+                where: { id: deviceId },
+                data: { status: 'online', lastSeenAt: new Date() }
+            });
+        } catch (e) {
+            console.error('Error updating device status:', e);
+        }
 
         ws.on('message', async (message) => {
             try {
@@ -87,10 +91,14 @@ export const setupWebSocket = (server: Server) => {
             }
 
             // Update status to offline
-            await prisma.device.update({
-                where: { id: deviceId },
-                data: { status: 'offline' }
-            });
+            try {
+                await prisma.device.update({
+                    where: { id: deviceId },
+                    data: { status: 'offline' }
+                });
+            } catch (e) {
+                console.error('Error updating device offline status:', e);
+            }
         });
     });
 };
