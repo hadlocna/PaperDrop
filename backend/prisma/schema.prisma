@@ -8,48 +8,49 @@ datasource db {
 }
 
 model User {
-  id              String         @id @default(uuid())
-  email           String         @unique
-  name            String
-  passwordHash    String?        @map("password_hash")
-  authProvider    String         @map("auth_provider")
-  authProviderId  String?        @map("auth_provider_id")
-  createdAt       DateTime?      @default(now()) @map("created_at")
-  updatedAt       DateTime?      @default(now()) @map("updated_at")
-  
+  id             String    @id @default(uuid())
+  email          String    @unique
+  name           String
+  passwordHash   String?   @map("password_hash")
+  authProvider   String    @map("auth_provider")
+  authProviderId String?   @map("auth_provider_id")
+  createdAt      DateTime? @default(now()) @map("created_at")
+  updatedAt      DateTime? @default(now()) @map("updated_at")
+
   // Relations
-  devices         Device[]       // Devices owned by user
-  deviceAccess    DeviceAccess[] // Devices accessible to user
-  messages        Message[]      // Messages sent by user
-  createdTemplates Template[]    // Templates created by user
-  automations     Automation[]   // Automations created by user
-  sentInvites     DeviceInvite[] @relation("InviteInviter")
-  acceptedInvites DeviceInvite[] @relation("InviteAcceptedBy")
+  devices          Device[] // Devices owned by user
+  deviceAccess     DeviceAccess[] // Devices accessible to user
+  messages         Message[] // Messages sent by user
+  createdTemplates Template[] // Templates created by user
+  automations      Automation[] // Automations created by user
+  sentInvites      DeviceInvite[] @relation("InviteInviter")
+  acceptedInvites  DeviceInvite[] @relation("InviteAcceptedBy")
 
   @@map("users")
 }
 
 model Device {
-  id              String         @id @default(uuid())
-  deviceCode      String         @unique @map("device_code")
-  deviceSecret    String         @map("device_secret")
-  ownerId         String?        @map("owner_id")
-  friendlyName    String?        @default("My PaperDrop") @map("friendly_name")
-  status          String?        @default("setup_pending")
-  firmwareVersion String?        @map("firmware_version")
-  wifiSignal      Int?           @map("wifi_signal") // RSSI in dBm
-  lastHeartbeat   DateTime?      @map("last_heartbeat")
-  config          String?        @default("{}") // JSON blob for device config
-  macAddress      String?        @map("mac_address")
-  lastSeenAt      DateTime?      @map("last_seen_at")
-  createdAt       DateTime?      @default(now()) @map("created_at")
-  updatedAt       DateTime?      @default(now()) @map("updated_at")
+  id              String    @id @default(uuid())
+  deviceCode      String    @unique @map("device_code")
+  deviceSecret    String    @map("device_secret")
+  ownerId         String?   @map("owner_id")
+  friendlyName    String?   @default("My PaperDrop") @map("friendly_name")
+  status          String?   @default("setup_pending")
+  firmwareVersion String?   @map("firmware_version")
+  wifiSignal      Int?      @map("wifi_signal") // RSSI in dBm
+  lastHeartbeat   DateTime? @map("last_heartbeat")
+  config          String?   @default("{}") // JSON blob for device config
+  macAddress      String?   @map("mac_address")
+  lastSeenAt      DateTime? @map("last_seen_at")
+  createdAt       DateTime? @default(now()) @map("created_at")
+  updatedAt       DateTime? @default(now()) @map("updated_at")
 
   // Relations
-  owner           User?          @relation(fields: [ownerId], references: [id])
-  deviceAccess    DeviceAccess[]
-  messages        Message[]
-  automations     Automation[]
+  owner        User?          @relation(fields: [ownerId], references: [id])
+  deviceAccess DeviceAccess[]
+  messages     Message[]
+  automations  Automation[]
+  invites      DeviceInvite[]
 
   @@index([deviceCode])
   @@map("devices")
@@ -58,7 +59,7 @@ model Device {
 model FirmwareRelease {
   id          String   @id @default(uuid())
   version     String   @unique
-  url         String   // URL to download update package
+  url         String // URL to download update package
   description String?
   isCritical  Boolean  @default(false) @map("is_critical")
   createdAt   DateTime @default(now()) @map("created_at")
@@ -74,8 +75,8 @@ model DeviceAccess {
   createdAt DateTime? @default(now()) @map("created_at")
 
   // Relations
-  device    Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([deviceId, userId])
   @@index([userId])
@@ -93,9 +94,9 @@ model DeviceInvite {
   createdAt    DateTime? @default(now()) @map("created_at")
   acceptedAt   DateTime? @map("accepted_at")
 
-  device     Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  inviter    User     @relation("InviteInviter", fields: [inviterId], references: [id], onDelete: Cascade)
-  acceptedBy User?    @relation("InviteAcceptedBy", fields: [acceptedById], references: [id])
+  device     Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  inviter    User   @relation("InviteInviter", fields: [inviterId], references: [id], onDelete: Cascade)
+  acceptedBy User?  @relation("InviteAcceptedBy", fields: [acceptedById], references: [id])
 
   @@index([deviceId])
   @@map("device_invites")
@@ -115,8 +116,8 @@ model Message {
   createdAt    DateTime? @default(now()) @map("created_at")
 
   // Relations
-  sender       User      @relation(fields: [senderId], references: [id])
-  device       Device    @relation(fields: [deviceId], references: [id])
+  sender User   @relation(fields: [senderId], references: [id])
+  device Device @relation(fields: [deviceId], references: [id])
 
   @@index([deviceId, status])
   @@map("messages")
@@ -132,7 +133,7 @@ model Template {
   createdAt   DateTime? @default(now()) @map("created_at")
 
   // Relations
-  user        User?     @relation(fields: [createdBy], references: [id])
+  user User? @relation(fields: [createdBy], references: [id])
 
   @@map("templates")
 }
@@ -143,15 +144,15 @@ model Automation {
   deviceId      String    @map("device_id")
   name          String
   triggerType   String    @map("trigger_type")
-  triggerConfig String    @map("trigger_config") 
+  triggerConfig String    @map("trigger_config")
   actionConfig  String    @map("action_config")
   enabled       Boolean?  @default(true)
   createdAt     DateTime? @default(now()) @map("created_at")
   updatedAt     DateTime? @default(now()) @map("updated_at")
 
   // Relations
-  user          User      @relation(fields: [userId], references: [id])
-  device        Device    @relation(fields: [deviceId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+  device Device @relation(fields: [deviceId], references: [id])
 
   @@map("automations")
 }
