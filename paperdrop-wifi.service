@@ -1,0 +1,19 @@
+[Unit]
+Description=PaperDrop WiFi Provisioning (Access Point)
+After=NetworkManager.service paperdrop-first-boot.service
+Wants=NetworkManager.service
+Before=paperdrop-agent.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/paperdrop-wifi.sh
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal+console
+StandardError=journal+console
+
+# Don't start until first-boot has run
+ExecStartPre=/bin/sh -c 'test ! -f /boot/firmware/paperdrop-first-boot'
+
+[Install]
+WantedBy=multi-user.target

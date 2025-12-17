@@ -1,0 +1,15 @@
+[Unit]
+Description=PaperDrop First Boot Initialization
+After=local-fs.target
+Before=paperdrop-wifi.service
+ConditionPathExists=/boot/firmware/paperdrop-first-boot
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/paperdrop-first-boot.sh
+RemainAfterExit=yes
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

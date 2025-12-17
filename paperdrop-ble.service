@@ -1,0 +1,14 @@
+[Unit]
+Description=PaperDrop BLE Provisioning
+After=bluetooth.service
+Requires=bluetooth.service
+
+[Service]
+Type=simple
+ExecStart=/opt/paperdrop/venv/bin/python3 /opt/paperdrop/ble_provisioning.py
+Restart=always
+User=root
+Environment=PYTHONPATH=/opt/paperdrop
+
+[Install]
+WantedBy=multi-user.target

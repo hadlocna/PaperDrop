@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { CanvasComposer } from '../components/CanvasComposer';
 import { ActivityFeed } from '../components/ActivityFeed';
+import { BleProvisioningModal } from '../components/BleProvisioningModal';
 import { useAuth } from '../context/AuthContext';
 import { client as api } from '../api/client';
-import { X, Activity, Printer } from 'lucide-react';
+import { X, Activity, Printer, Bluetooth } from 'lucide-react';
 
 interface Device {
     id: string;
@@ -16,6 +17,7 @@ interface Device {
 
 export function Dashboard() {
     const { user } = useAuth();
+    const navigate = useNavigate();
     const [devices, setDevices] = useState<Device[]>([]);
     const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
@@ -30,6 +32,10 @@ export function Dashboard() {
     const [showScheduleModal, setShowScheduleModal] = useState(false);
     const [pendingImage, setPendingImage] = useState<string | null>(null);
     const [scheduledTime, setScheduledTime] = useState('');
+
+    // BLE Provisioning Modal
+    const [showBleModal, setShowBleModal] = useState(false);
+
 
     useEffect(() => {
         if (!user) return;
@@ -124,9 +130,13 @@ export function Dashboard() {
                         </div>
                     </button>
                 ))}
-                <Link to="/setup" className="flex items-center gap-2 p-3 text-sm text-coral-600 hover:bg-coral-50 rounded-xl transition font-medium">
-                    + Add Printer
-                </Link>
+                <button
+                    onClick={() => setShowBleModal(true)}
+                    className="flex items-center gap-2 p-3 text-sm text-coral-600 hover:bg-coral-50 rounded-xl transition font-medium w-full"
+                >
+                    <Bluetooth size={16} />
+                    Add Printer
+                </button>
             </div>
         </div>
     );
@@ -243,6 +253,17 @@ export function Dashboard() {
                     </div>
                 </div>
             )}
+
+            {/* BLE Provisioning Modal */}
+            <BleProvisioningModal
+                isOpen={showBleModal}
+                onClose={() => setShowBleModal(false)}
+                onSuccess={(deviceId) => {
+                    setShowBleModal(false);
+                    // Navigate to claim page with the device ID
+                    navigate(`/claim?code=${deviceId}`);
+                }}
+            />
         </Layout>
     );
 }

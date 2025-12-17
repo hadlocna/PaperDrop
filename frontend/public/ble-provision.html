@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PaperDrop BLE Provisioning</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 400px;
+            width: 100%;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        h1 {
+            color: #1a1a2e;
+            font-size: 24px;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 14px;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .status {
+            background: #f0f4f8;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .device-id {
+            font-family: monospace;
+            font-size: 18px;
+            font-weight: bold;
+            color: #0066cc;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: border-color 0.2s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #0066cc;
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 10px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #0066cc 0%, #0052a3 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(0, 102, 204, 0.4);
+        }
+
+        .btn-primary:disabled {
+            background: #ccc;
+            transform: none;
+            box-shadow: none;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: #f0f4f8;
+            color: #333;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e4e8;
+        }
+
+        .step {
+            display: none;
+        }
+
+        .step.active {
+            display: block;
+        }
+
+        .success-icon {
+            font-size: 60px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .log {
+            background: #1a1a2e;
+            color: #0f0;
+            font-family: monospace;
+            font-size: 12px;
+            padding: 15px;
+            border-radius: 10px;
+            max-height: 150px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+        }
+
+        .warning {
+            background: #fff3cd;
+            color: #856404;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <!-- Step 1: Connect -->
+        <div id="step1" class="step active">
+            <h1>🖨️ PaperDrop Setup</h1>
+            <p class="subtitle">Connect to your device via Bluetooth</p>
+
+            <div class="warning">
+                ⚠️ Web Bluetooth requires Chrome/Edge. Safari/Firefox not supported.
+            </div>
+
+            <button id="scanBtn" class="btn-primary" onclick="scanForDevice()">
+                Scan for Device
+            </button>
+
+            <div id="log" class="log" style="display: none;"></div>
+        </div>
+
+        <!-- Step 2: Configure WiFi -->
+        <div id="step2" class="step">
+            <h1>📶 WiFi Setup</h1>
+            <p class="subtitle">Enter your WiFi credentials</p>
+
+            <div class="status connected">
+                Connected to: <span class="device-id" id="deviceId">--</span>
+            </div>
+
+            <div class="form-group">
+                <label for="ssid">WiFi Network Name (SSID)</label>
+                <input type="text" id="ssid" placeholder="Enter WiFi name">
+            </div>
+
+            <div class="form-group">
+                <label for="password">WiFi Password</label>
+                <input type="password" id="password" placeholder="Enter password">
+            </div>
+
+            <button id="provisionBtn" class="btn-primary" onclick="provisionDevice()">
+                Connect Device to WiFi
+            </button>
+
+            <button class="btn-secondary" onclick="disconnect()">
+                Disconnect
+            </button>
+        </div>
+
+        <!-- Step 3: Success -->
+        <div id="step3" class="step">
+            <div class="success-icon">✅</div>
+            <h1>Setup Complete!</h1>
+            <p class="subtitle">Your PaperDrop device is now connected to WiFi</p>
+
+            <div class="status connected">
+                Device <span class="device-id" id="deviceIdFinal">--</span> is online
+            </div>
+
+            <button class="btn-primary" onclick="location.href='/claim?code=' + deviceIdValue">
+                Claim This Device
+            </button>
+
+            <button class="btn-secondary" onclick="location.reload()">
+                Set Up Another Device
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const SERVICE_UUID = 'a07498ca-ad5b-474e-940d-16f1fbe7e8cd';
+        const DEVICE_ID_UUID = 'a07498ca-ad5b-474e-940d-16f1fbe7e8ce';
+        const WIFI_CONFIG_UUID = 'a07498ca-ad5b-474e-940d-16f1fbe7e8cf';
+
+        let device = null;
+        let server = null;
+        let service = null;
+        let deviceIdChar = null;
+        let wifiConfigChar = null;
+        let deviceIdValue = '';
+
+        function log(msg) {
+            console.log(msg);
+            const logDiv = document.getElementById('log');
+            logDiv.style.display = 'block';
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.textContent = `> ${msg}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function showStep(stepNum) {
+            document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+            document.getElementById(`step${stepNum}`).classList.add('active');
+        }
+
+        async function scanForDevice() {
+            const btn = document.getElementById('scanBtn');
+            btn.disabled = true;
+            btn.textContent = 'Scanning...';
+
+            try {
+                log('Requesting Bluetooth device...');
+
+                device = await navigator.bluetooth.requestDevice({
+                    filters: [
+                        { services: [SERVICE_UUID] },
+                        { namePrefix: 'PaperDrop' },
+                        { namePrefix: 'paperdrop' }
+                    ],
+                    optionalServices: [SERVICE_UUID]
+                });
+
+                log(`Found device: ${device.name}`);
+
+                log('Connecting to GATT server...');
+                server = await device.gatt.connect();
+                log('Connected!');
+
+                log('Getting service...');
+                service = await server.getPrimaryService(SERVICE_UUID);
+                log('Got service!');
+
+                log('Getting Device ID characteristic...');
+                deviceIdChar = await service.getCharacteristic(DEVICE_ID_UUID);
+
+                log('Reading Device ID...');
+                const value = await deviceIdChar.readValue();
+                deviceIdValue = new TextDecoder().decode(value);
+                log(`Device ID: ${deviceIdValue}`);
+
+                document.getElementById('deviceId').textContent = deviceIdValue;
+
+                log('Getting WiFi Config characteristic...');
+                wifiConfigChar = await service.getCharacteristic(WIFI_CONFIG_UUID);
+                log('Ready to configure WiFi!');
+
+                showStep(2);
+
+            } catch (error) {
+                log(`Error: ${error.message}`);
+                btn.disabled = false;
+                btn.textContent = 'Scan for Device';
+            }
+        }
+
+        async function provisionDevice() {
+            const btn = document.getElementById('provisionBtn');
+            const ssid = document.getElementById('ssid').value;
+            const password = document.getElementById('password').value;
+
+            if (!ssid || !password) {
+                alert('Please enter both SSID and password');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = 'Connecting...';
+
+            try {
+                const config = JSON.stringify({ ssid, password });
+                const encoder = new TextEncoder();
+                const data = encoder.encode(config);
+
+                log(`Sending WiFi config for "${ssid}"...`);
+                await wifiConfigChar.writeValue(data);
+                log('WiFi config sent!');
+
+                // Wait a moment for the device to connect
+                await new Promise(r => setTimeout(r, 3000));
+
+                document.getElementById('deviceIdFinal').textContent = deviceIdValue;
+                showStep(3);
+
+            } catch (error) {
+                log(`Error: ${error.message}`);
+                btn.disabled = false;
+                btn.textContent = 'Connect Device to WiFi';
+            }
+        }
+
+        function disconnect() {
+            if (device && device.gatt.connected) {
+                device.gatt.disconnect();
+            }
+            showStep(1);
+            document.getElementById('scanBtn').disabled = false;
+            document.getElementById('scanBtn').textContent = 'Scan for Device';
+        }
+
+        // Check Web Bluetooth support
+        if (!navigator.bluetooth) {
+            document.querySelector('.warning').innerHTML =
+                '❌ <strong>Web Bluetooth not supported!</strong> Please use Chrome or Edge browser.';
+            document.getElementById('scanBtn').disabled = true;
+        }
+    </script>
+</body>
+
+</html>

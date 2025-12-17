@@ -1,0 +1,20 @@
+[Unit]
+Description=PaperDrop Device Agent
+After=network-online.target paperdrop-wifi.service
+Wants=network-online.target
+# Only start after WiFi is provisioned
+ConditionPathExists=/etc/paperdrop/wifi-provisioned
+
+[Service]
+Type=simple
+ExecStart=/opt/paperdrop/venv/bin/python /opt/paperdrop/agent.py
+Restart=always
+RestartSec=30
+StandardOutput=journal+console
+StandardError=journal+console
+
+# Environment
+EnvironmentFile=-/etc/paperdrop/config.env
+
+[Install]
+WantedBy=multi-user.target

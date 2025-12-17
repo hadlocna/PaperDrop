@@ -20,8 +20,6 @@ import paho.mqtt.client as mqtt
 import psutil
 from dotenv import load_dotenv
 
-from device_interface import get_printer_connection
-
 # Load configuration
 CONFIG_FILE = '/etc/paperdrop/config.env'
 if os.path.exists(CONFIG_FILE):
@@ -154,42 +152,11 @@ def get_mac_address():
         return 'unknown'
 
 
-def broadcast_presence():
-    """Broadcast device presence for local discovery"""
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        device_id = get_device_id()
-        
-        logger.info("Starting presence broadcast on port 50000")
-        
-        while True:
-            try:
-                ip = get_ip_address()
-                if ip:
-                    msg = json.dumps({
-                        'id': device_id,
-                        'ip': ip,
-                        'type': DEVICE_TYPE
-                    }).encode()
-                    s.sendto(msg, ('<broadcast>', 50000))
-            except Exception as e:
-                logger.error(f"Broadcast error: {e}")
-            
-            time.sleep(5)
-    except Exception as e:
-        logger.error(f"Failed to start broadcast: {e}")
-
 class DeviceAgent:
     def __init__(self):
         self.client = mqtt.Client()
         self.connected = False
         self.last_telemetry = 0
-        
-        # Start broadcast thread
-        import threading
-        self.broadcast_thread = threading.Thread(target=broadcast_presence, daemon=True)
-        self.broadcast_thread.start()
         
         if ACCESS_TOKEN:
             self.client.username_pw_set(ACCESS_TOKEN)
@@ -251,40 +218,6 @@ class DeviceAgent:
             subprocess.Popen(['/usr/local/bin/paperdrop-reset-wifi.sh'])
             return {'success': True, 'message': 'WiFi reset initiated'}
         
-        elif method == 'print_message':
-            message = params.get('message', '')
-            if message:
-                try:
-                    p = get_printer_connection()
-                    if p:
-                        p.text(message + "\n")
-                        p.cut()
-                        return {'success': True, 'message': 'Printed'}
-                    else:
-                        return {'success': False, 'error': 'Printer not connected'}
-                except Exception as e:
-                    return {'success': False, 'error': str(e)}
-            return {'success': False, 'error': 'No message'}
-
-        elif method == 'get_logs':
-            log_type = params.get('type', 'agent')
-            lines = int(params.get('lines', 100))
-            
-            if log_type == 'agent':
-                cmd = ['tail', '-n', str(lines), '/var/log/paperdrop/agent.log']
-            elif log_type == 'wifi':
-                cmd = ['tail', '-n', str(lines), '/var/log/paperdrop-wifi.log']
-            elif log_type == 'system':
-                cmd = ['journalctl', '-n', str(lines), '--no-pager']
-            else:
-                return {'success': False, 'error': 'Unknown log type'}
-                
-            try:
-                result = subprocess.run(cmd, capture_output=True, text=True)
-                return {'success': True, 'logs': result.stdout}
-            except Exception as e:
-                return {'success': False, 'error': str(e)}
-
         elif method == 'runCommand':
             cmd = params.get('command', '')
             if cmd:
