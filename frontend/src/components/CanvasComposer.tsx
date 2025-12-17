@@ -14,7 +14,8 @@ import {
     Loader2,
     Eye,
     Edit3,
-    AlertTriangle
+    AlertTriangle,
+    Pencil
 } from 'lucide-react';
 import { client as api } from '../api/client';
 
@@ -43,12 +44,18 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
     const [canvasHeight, setCanvasHeight] = useState(550);
     const canvasRef = useRef<HTMLDivElement>(null);
     const [selectedId, setSelectedId] = useState<string | null>(null);
+    const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
 
     // Modals & AI State
     const [showAiModal, setShowAiModal] = useState(false);
     const [showClearConfirm, setShowClearConfirm] = useState(false);
+    const [showDrawingModal, setShowDrawingModal] = useState(false);
     const [aiPrompt, setAiPrompt] = useState('');
     const [isGenerating, setIsGenerating] = useState(false);
+    const [isDrawing, setIsDrawing] = useState(false);
+    const [drawingSize, setDrawingSize] = useState(6);
+    const [drawingColor, setDrawingColor] = useState('#000000');
+    const [lastPoint, setLastPoint] = useState<{ x: number; y: number } | null>(null);
 
     const selectedElement = elements.find(el => el.id === selectedId);
 
@@ -229,6 +236,89 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
         }
     };
 
+    useEffect(() => {
+        if (showDrawingModal && drawingCanvasRef.current) {
+            const canvas = drawingCanvasRef.current;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+    }, [showDrawingModal]);
+
+    const getPoint = (e: React.MouseEvent | React.TouchEvent) => {
+        const canvas = drawingCanvasRef.current;
+        if (!canvas) return { x: 0, y: 0 };
+        const rect = canvas.getBoundingClientRect();
+        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+        const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+        return {
+            x: clientX - rect.left,
+            y: clientY - rect.top
+        };
+    };
+
+    const drawStroke = (from: { x: number; y: number }, to: { x: number; y: number }) => {
+        const ctx = drawingCanvasRef.current?.getContext('2d');
+        if (!ctx) return;
+        ctx.strokeStyle = drawingColor;
+        ctx.lineWidth = drawingSize;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+        ctx.stroke();
+    };
+
+    const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
+        e.preventDefault();
+        const point = getPoint(e);
+        setIsDrawing(true);
+        setLastPoint(point);
+        drawStroke(point, point);
+    };
+
+    const continueDrawing = (e: React.MouseEvent | React.TouchEvent) => {
+        if (!isDrawing || !lastPoint) return;
+        e.preventDefault();
+        const point = getPoint(e);
+        drawStroke(lastPoint, point);
+        setLastPoint(point);
+    };
+
+    const stopDrawing = () => {
+        setIsDrawing(false);
+        setLastPoint(null);
+    };
+
+    const clearDrawing = () => {
+        const canvas = drawingCanvasRef.current;
+        const ctx = canvas?.getContext('2d');
+        if (canvas && ctx) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+    };
+
+    const addDrawingToCanvas = () => {
+        const canvas = drawingCanvasRef.current;
+        if (!canvas) return;
+        const dataUrl = canvas.toDataURL('image/png');
+        const newElement: CanvasElement = {
+            id: crypto.randomUUID(),
+            type: 'image',
+            content: dataUrl,
+            x: 50,
+            y: 50,
+            width: 300,
+            rotation: 0
+        };
+        setElements([...elements, newElement]);
+        setShowDrawingModal(false);
+    };
+
     return (
         <div className="flex flex-col w-full h-full relative">
             {/* Clear Confirmation Modal */}
@@ -307,6 +397,89 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                 </div>
             )}
 
+            {/* Drawing Modal */}
+            {showDrawingModal && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-4 bg-gradient-to-r from-coral-500 to-orange-500 text-white flex justify-between items-center">
+                            <h3 className="font-bold flex items-center gap-2">
+                                <Pencil size={18} />
+                                Draw a note
+                            </h3>
+                            <button onClick={() => setShowDrawingModal(false)} className="text-white/80 hover:text-white">
+                                <XIcon size={20} />
+                            </button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div className="flex flex-wrap items-center gap-4">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-sm font-semibold text-charcoal-700">Pen</span>
+                                    <div className="flex gap-2">
+                                        {['#000000', '#555555', '#9ca3af'].map(color => (
+                                            <button
+                                                key={color}
+                                                onClick={() => setDrawingColor(color)}
+                                                className={`w-8 h-8 rounded-full border ${drawingColor === color ? 'ring-2 ring-coral-500 border-coral-500' : 'border-gray-300'}`}
+                                                style={{ backgroundColor: color }}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-sm font-semibold text-charcoal-700">Thickness</span>
+                                    <input
+                                        type="range"
+                                        min={2}
+                                        max={16}
+                                        value={drawingSize}
+                                        onChange={(e) => setDrawingSize(Number(e.target.value))}
+                                        className="w-40"
+                                    />
+                                    <span className="text-xs text-charcoal-500 w-8 text-right">{drawingSize}px</span>
+                                </div>
+                            </div>
+                            <div className="bg-gray-50 border border-gray-200 rounded-2xl overflow-hidden shadow-inner">
+                                <canvas
+                                    ref={drawingCanvasRef}
+                                    width={700}
+                                    height={480}
+                                    className="w-full h-[360px] md:h-[420px] bg-white cursor-crosshair"
+                                    onMouseDown={startDrawing}
+                                    onMouseMove={continueDrawing}
+                                    onMouseUp={stopDrawing}
+                                    onMouseLeave={stopDrawing}
+                                    onTouchStart={startDrawing}
+                                    onTouchMove={continueDrawing}
+                                    onTouchEnd={stopDrawing}
+                                />
+                            </div>
+                            <div className="flex flex-wrap gap-3 justify-between items-center">
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={clearDrawing}
+                                        className="px-4 py-2 rounded-lg border border-gray-200 text-charcoal-700 hover:bg-gray-50 transition"
+                                    >
+                                        Clear
+                                    </button>
+                                    <button
+                                        onClick={() => setShowDrawingModal(false)}
+                                        className="px-4 py-2 rounded-lg border border-gray-200 text-charcoal-700 hover:bg-gray-50 transition"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                                <button
+                                    onClick={addDrawingToCanvas}
+                                    className="px-5 py-2 rounded-lg bg-coral-500 text-white font-bold hover:bg-coral-600 shadow active:scale-95 transition"
+                                >
+                                    Add to canvas
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Sticky Header Toolbar */}
             <div className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-gray-200 shadow-sm px-2 sm:px-4 py-3 flex justify-between items-center transition-all h-[64px] overflow-x-auto no-scrollbar">
                 <div className="flex gap-1 sm:gap-2 items-center flex-shrink-0">
@@ -362,6 +535,13 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                                 </button>
                                 <button onClick={addText} className="p-2 hover:bg-gray-100 rounded-lg text-charcoal-700 active:bg-gray-200 transition" title="Add Text">
                                     <TypeIcon size={24} />
+                                </button>
+                                <button
+                                    onClick={() => setShowDrawingModal(true)}
+                                    className="p-2 hover:bg-gray-100 rounded-lg text-charcoal-700 active:bg-gray-200 transition"
+                                    title="Draw"
+                                >
+                                    <Pencil size={24} />
                                 </button>
                                 <label className="p-2 hover:bg-gray-100 rounded-lg text-charcoal-700 active:bg-gray-200 transition cursor-pointer" title="Add Image">
                                     <ImageIcon size={24} />
