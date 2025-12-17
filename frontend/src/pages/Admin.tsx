@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Layout } from '../components/Layout';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
@@ -38,6 +38,9 @@ export function Admin() {
     const [activeTab, setActiveTab] = useState<'devices' | 'firmware'>('devices');
     const [firmwareReleases, setFirmwareReleases] = useState<FirmwareRelease[]>([]);
     const [deployStatus, setDeployStatus] = useState('');
+    const [searchTerm, setSearchTerm] = useState('');
+    const [attentionOnly, setAttentionOnly] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     const termRef = useRef<HTMLDivElement>(null);
     const wsRef = useRef<WebSocket | null>(null);
@@ -51,7 +54,7 @@ export function Admin() {
         }
     }, []);
 
-    const verifyPassword = async (pass: string) => {
+    const loadDevices = async (pass: string, { quietError }: { quietError?: boolean } = {}) => {
         try {
             const res = await fetch(`${API_BASE}/api/admin/devices`, {
                 headers: { 'x-admin-password': pass }
@@ -59,17 +62,30 @@ export function Admin() {
             if (res.ok) {
                 const data = await res.json();
                 setDevices(data);
-                setIsAuthenticated(true);
-                setPassword(pass);
-                localStorage.setItem('admin_pass', pass);
-                // Also load firmware releases
-                loadFirmware(pass);
+                setError('');
+                return true;
             } else {
-                setError('Invalid password');
+                if (!quietError) {
+                    setError('Invalid password');
+                }
                 localStorage.removeItem('admin_pass');
             }
         } catch (e) {
-            setError('Connection error');
+            if (!quietError) {
+                setError('Connection error');
+            }
+        }
+        return false;
+    };
+
+    const verifyPassword = async (pass: string) => {
+        const ok = await loadDevices(pass);
+        if (ok) {
+            setIsAuthenticated(true);
+            setPassword(pass);
+            localStorage.setItem('admin_pass', pass);
+            // Also load firmware releases
+            loadFirmware(pass);
         }
     };
 
@@ -111,6 +127,71 @@ export function Admin() {
         e.preventDefault();
         verifyPassword(password);
     };
+
+    const refreshDevices = async () => {
+        if (!password) return;
+        setIsRefreshing(true);
+        const ok = await loadDevices(password, { quietError: true });
+        if (!ok) {
+            setDeployStatus('Refresh failed. Please re-authenticate.');
+            setTimeout(() => setDeployStatus(''), 3000);
+        }
+        setIsRefreshing(false);
+    };
+
+    const getRelativeTime = (timestamp: string) => {
+        const diff = Date.now() - new Date(timestamp).getTime();
+        const minutes = Math.floor(diff / 60000);
+        if (minutes < 1) return 'just now';
+        if (minutes < 60) return `${minutes}m ago`;
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) return `${hours}h ago`;
+        const days = Math.floor(hours / 24);
+        return `${days}d ago`;
+    };
+
+    const latestFirmwareVersion = useMemo(() => {
+        if (!firmwareReleases.length) return '';
+        const newest = firmwareReleases.reduce((latest, current) => {
+            return new Date(current.createdAt) > new Date(latest.createdAt) ? current : latest;
+        }, firmwareReleases[0]);
+        return newest.version;
+    }, [firmwareReleases]);
+
+    const getIssues = (device: Device) => {
+        const issues: string[] = [];
+        const lastSeenDate = new Date(device.lastSeen);
+        const minutesSinceSeen = (Date.now() - lastSeenDate.getTime()) / 60000;
+
+        if (device.status !== 'online') {
+            issues.push('Offline');
+        } else if (minutesSinceSeen > 10) {
+            issues.push('Stale heartbeat (>10m)');
+        }
+
+        if (device.wifiSignal && device.wifiSignal <= -70) {
+            issues.push('Weak Wi-Fi');
+        }
+
+        if (latestFirmwareVersion && device.firmwareVersion && device.firmwareVersion !== latestFirmwareVersion) {
+            issues.push(`Update to ${latestFirmwareVersion}`);
+        }
+
+        return issues;
+    };
+
+    const filteredDevices = useMemo(() => {
+        const bySearch = devices.filter(device =>
+            device.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            device.code.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+
+        const byAttention = attentionOnly
+            ? bySearch.filter(device => getIssues(device).length > 0)
+            : bySearch;
+
+        return byAttention.sort((a, b) => getIssues(b).length - getIssues(a).length);
+    }, [devices, searchTerm, attentionOnly, firmwareReleases]);
 
     // Terminal Logic
     useEffect(() => {
@@ -249,13 +330,47 @@ export function Admin() {
                             </button>
                         </div>
                     </div>
-                    <button
-                        onClick={() => { localStorage.removeItem('admin_pass'); setIsAuthenticated(false); }}
-                        className="text-red-500 hover:text-red-700 font-medium"
-                    >
-                        Logout
-                    </button>
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={refreshDevices}
+                            disabled={isRefreshing}
+                            className={`px-4 py-2 rounded-lg font-medium border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 transition ${isRefreshing ? 'opacity-60 cursor-not-allowed' : ''}`}
+                        >
+                            {isRefreshing ? 'Refreshing...' : 'Refresh devices'}
+                        </button>
+                        <button
+                            onClick={() => { localStorage.removeItem('admin_pass'); setIsAuthenticated(false); }}
+                            className="text-red-500 hover:text-red-700 font-medium"
+                        >
+                            Logout
+                        </button>
+                    </div>
                 </div>
+
+                {activeTab === 'devices' && (
+                    <div className="mb-6 space-y-3">
+                        <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
+                            <div className="flex items-center gap-2 w-full md:w-auto">
+                                <input
+                                    type="text"
+                                    value={searchTerm}
+                                    onChange={e => setSearchTerm(e.target.value)}
+                                    placeholder="Search by name or code"
+                                    className="w-full md:w-64 p-3 border rounded-xl"
+                                />
+                                <button
+                                    onClick={() => setAttentionOnly(v => !v)}
+                                    className={`px-4 py-2 rounded-xl font-medium border transition ${attentionOnly ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`}
+                                >
+                                    {attentionOnly ? 'Show all devices' : 'Show at-risk only'}
+                                </button>
+                            </div>
+                            <div className="text-sm text-slate-500 bg-slate-50 border border-slate-200 rounded-xl p-3">
+                                Flags devices that are offline, have heartbeats older than 10 minutes, Wi-Fi weaker than -70 dBm, or are behind the latest firmware{latestFirmwareVersion ? ` (v${latestFirmwareVersion})` : ''}.
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {deployStatus && (
                     <div className="mb-4 p-3 bg-blue-100 text-blue-800 rounded-lg flex items-center gap-2">
@@ -372,56 +487,78 @@ export function Admin() {
                                     <th className="p-4 text-left text-sm font-semibold text-slate-500">Firmware</th>
                                     <th className="p-4 text-left text-sm font-semibold text-slate-500">Owner</th>
                                     <th className="p-4 text-left text-sm font-semibold text-slate-500">Last Seen</th>
+                                    <th className="p-4 text-left text-sm font-semibold text-slate-500">Issues</th>
                                     <th className="p-4 text-left text-sm font-semibold text-slate-500">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {devices.map(device => (
-                                    <tr key={device.id} className="border-b hover:bg-slate-50">
-                                        <td className="p-4">
-                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${device.status === 'online' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                                                }`}>
-                                                {device.status === 'online' ? <Wifi size={14} className="mr-1" /> : <WifiOff size={14} className="mr-1" />}
-                                                {device.status}
-                                            </span>
-                                        </td>
-                                        <td className="p-4">
-                                            <div className="font-medium flex items-center gap-2">
-                                                {device.name}
-                                                {device.code.startsWith('TEST') && (
-                                                    <span className="bg-amber-100 text-amber-800 text-xs px-1.5 py-0.5 rounded border border-amber-200">
-                                                        DUMMY
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <div className="text-xs text-gray-500 font-mono">{device.code}</div>
-                                        </td>
-                                        <td className="p-4">
-                                            <div className={`flex items-center gap-1 font-mono text-sm ${getSignalColor(device.wifiSignal)}`}>
-                                                <Wifi size={16} />
-                                                {device.wifiSignal ? `${device.wifiSignal} dBm` : '-'}
-                                            </div>
-                                        </td>
-                                        <td className="p-4 text-sm font-mono text-gray-600">
-                                            {device.firmwareVersion || 'v1.0.0'}
-                                        </td>
-                                        <td className="p-4 text-sm text-gray-600">
-                                            {device.owner || <span className="text-orange-400 italic">Unclaimed</span>}
-                                        </td>
-                                        <td className="p-4 text-sm text-gray-500">
-                                            {new Date(device.lastSeen).toLocaleString()}
-                                        </td>
-                                        <td className="p-4">
-                                            <button
-                                                onClick={() => setSelectedDevice(device)}
-                                                className="bg-slate-800 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2"
-                                            >
-                                                <TerminalIcon size={16} />
-                                                Terminal
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
+                                {filteredDevices.map(device => {
+                                    const issues = getIssues(device);
+                                    return (
+                                        <tr key={device.id} className="border-b hover:bg-slate-50">
+                                            <td className="p-4">
+                                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${device.status === 'online' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                                                    }`}>
+                                                    {device.status === 'online' ? <Wifi size={14} className="mr-1" /> : <WifiOff size={14} className="mr-1" />}
+                                                    {device.status}
+                                                </span>
+                                            </td>
+                                            <td className="p-4">
+                                                <div className="font-medium flex items-center gap-2">
+                                                    {device.name}
+                                                    {device.code.startsWith('TEST') && (
+                                                        <span className="bg-amber-100 text-amber-800 text-xs px-1.5 py-0.5 rounded border border-amber-200">
+                                                            DUMMY
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="text-xs text-gray-500 font-mono">{device.code}</div>
+                                            </td>
+                                            <td className="p-4">
+                                                <div className={`flex items-center gap-1 font-mono text-sm ${getSignalColor(device.wifiSignal)}`}>
+                                                    <Wifi size={16} />
+                                                    {device.wifiSignal ? `${device.wifiSignal} dBm` : '-'}
+                                                </div>
+                                            </td>
+                                            <td className="p-4 text-sm font-mono text-gray-600">
+                                                {device.firmwareVersion || 'v1.0.0'}
+                                            </td>
+                                            <td className="p-4 text-sm text-gray-600">
+                                                {device.owner || <span className="text-orange-400 italic">Unclaimed</span>}
+                                            </td>
+                                            <td className="p-4 text-sm text-gray-500">
+                                                <div className="font-medium text-slate-700">{getRelativeTime(device.lastSeen)}</div>
+                                                <div className="text-xs text-gray-400">{new Date(device.lastSeen).toLocaleString()}</div>
+                                            </td>
+                                            <td className="p-4">
+                                                <div className="flex flex-wrap gap-2">
+                                                    {issues.length === 0 && (
+                                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-100">
+                                                            Healthy
+                                                        </span>
+                                                    )}
+                                                    {issues.map(issue => (
+                                                        <span key={issue} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-100">
+                                                            {issue}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </td>
+                                            <td className="p-4">
+                                                <button
+                                                    onClick={() => setSelectedDevice(device)}
+                                                    className="bg-slate-800 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2"
+                                                >
+                                                    <TerminalIcon size={16} />
+                                                    Terminal
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                                {filteredDevices.length === 0 && (
+                                    <tr><td colSpan={8} className="p-8 text-center text-gray-400">No devices match your filters</td></tr>
+                                )}
                             </tbody>
                         </table>
                     </div>
