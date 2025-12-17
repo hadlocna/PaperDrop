@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
-import { client as api, updateDevice, unclaimDevice } from '../api/client';
+import { client as api, updateDevice, unclaimDevice, createInviteLink } from '../api/client';
 
 export function DeviceSettings() {
     const { id } = useParams();
@@ -12,6 +12,10 @@ export function DeviceSettings() {
     const [loading, setLoading] = useState(true);
     const [newName, setNewName] = useState('');
     const [saving, setSaving] = useState(false);
+    const [inviteEmail, setInviteEmail] = useState('');
+    const [inviteLink, setInviteLink] = useState('');
+    const [inviteMessage, setInviteMessage] = useState('');
+    const [inviteLoading, setInviteLoading] = useState(false);
 
     useEffect(() => {
         async function loadDevice() {
@@ -55,6 +59,23 @@ export function DeviceSettings() {
         }
     };
 
+    const handleInvite = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!user?.id) return;
+        setInviteLoading(true);
+        setInviteMessage('');
+        try {
+            const data = await createInviteLink(id!, user.id, inviteEmail || undefined);
+            const link = `${window.location.origin}/invite/${data.token}`;
+            setInviteLink(link);
+            setInviteMessage('Share this link with your friend.');
+        } catch (err: any) {
+            setInviteMessage(err.response?.data?.error || 'Failed to create invite');
+        } finally {
+            setInviteLoading(false);
+        }
+    };
+
     if (loading) return <Layout><div>Loading...</div></Layout>;
     if (!device) return <Layout><div>Device not found</div></Layout>;
 
@@ -90,6 +111,49 @@ export function DeviceSettings() {
                         <span className="font-mono bg-gray-100 px-3 py-1 rounded text-lg">{device.deviceCode}</span>
                         <p className="text-sm text-gray-400 mt-2">Status: <span className="capitalize text-gray-600">{device.status}</span></p>
                     </div>
+                </div>
+
+                <div className="bg-white rounded-2xl p-6 shadow-sm mb-6">
+                    <h2 className="text-lg font-medium mb-2">Invite a friend</h2>
+                    <p className="text-sm text-gray-500 mb-4">Generate a link to share access to this printer.</p>
+                    <form onSubmit={handleInvite} className="space-y-3">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-500 mb-1">Friend's email (optional)</label>
+                            <input
+                                type="email"
+                                value={inviteEmail}
+                                onChange={(e) => setInviteEmail(e.target.value)}
+                                placeholder="friend@example.com"
+                                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-coral-500 outline-none"
+                            />
+                        </div>
+                        <button
+                            type="submit"
+                            disabled={inviteLoading}
+                            className="w-full bg-charcoal-800 text-white rounded-xl py-2 font-medium hover:bg-charcoal-700 transition disabled:opacity-50"
+                        >
+                            {inviteLoading ? 'Generating...' : 'Create invite link'}
+                        </button>
+                    </form>
+                    {inviteMessage && (
+                        <p className="text-sm text-gray-600 mt-3">{inviteMessage}</p>
+                    )}
+                    {inviteLink && (
+                        <div className="mt-3 p-3 bg-gray-50 border border-gray-200 rounded-xl flex items-center gap-2">
+                            <input
+                                type="text"
+                                readOnly
+                                value={inviteLink}
+                                className="flex-1 bg-transparent text-sm text-gray-700 outline-none"
+                            />
+                            <button
+                                onClick={() => navigator.clipboard.writeText(inviteLink)}
+                                className="text-coral-600 font-medium"
+                            >
+                                Copy
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 <div className="bg-white rounded-2xl p-6 shadow-sm border border-red-100">

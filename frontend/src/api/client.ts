@@ -29,3 +29,18 @@ export const unclaimDevice = async (deviceId: string, userId: string) => {
     const response = await client.delete(`/devices/${deviceId}/access/${userId}`);
     return response.data;
 };
+
+export const createInviteLink = async (deviceId: string, userId: string, email?: string) => {
+    const response = await client.post(`/invites/devices/${deviceId}/invites`, { userId, email });
+    return response.data;
+};
+
+export const getInviteDetails = async (token: string) => {
+    const response = await client.get(`/invites/${token}`);
+    return response.data;
+};
+
+export const acceptInvite = async (token: string, userId: string) => {
+    const response = await client.post(`/invites/${token}/accept`, { userId });
+    return response.data;
+};

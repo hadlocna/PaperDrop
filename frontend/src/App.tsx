@@ -9,6 +9,7 @@ import { History } from './pages/History';
 import { DeviceSettings } from './pages/DeviceSettings';
 import { Claim } from './pages/Claim';
 import { Admin } from './pages/Admin';
+import { InviteAccept } from './pages/InviteAccept';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
     const { user, isLoading } = useAuth();
@@ -33,6 +34,7 @@ function App() {
                     <Route path="/login" element={<Login />} />
                     <Route path="/register" element={<Register />} />
                     <Route path="/admin" element={<Admin />} />
+                    <Route path="/invite/:token" element={<InviteAccept />} />
                     <Route
                         path="/"
                         element={
