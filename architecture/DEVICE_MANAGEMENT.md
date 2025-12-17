@@ -69,3 +69,18 @@ While MQTT is excellent, adding a Broker (Mosquitto/AWS IoT) introduces signific
 ## 7. Security
 *   **Device Auth**: `x-device-code` + `x-device-secret` headers.
 *   **Admin Auth**: Strong password (Environment Variable) protecting all Admin API routes.
+
+## 8. Log Retrieval Contract
+To support fleet debugging, the backend can request device logs via the existing WebSocket channel.
+
+**Backend ➜ Device**
+* Message type: `fetch_logs`
+* Payload: `{ request_id, log_type: 'agent' | 'wifi' | 'system', lines: number }`
+* The backend waits ~15 seconds for a response before timing out.
+
+**Device ➜ Backend**
+* Message type: `log_bundle`
+* Payload: `{ request_id, logs: '<text payload>' }` (additional metadata optional)
+* The backend streams the `logs` content to the requesting user as a downloadable text file.
+
+If the device is offline, the HTTP request returns `503 Device offline`; if no response is received in time, it returns `504 Device did not respond with logs`.

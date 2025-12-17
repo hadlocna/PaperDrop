@@ -7,7 +7,8 @@ import {
     testPrint,
     getAccess,
     grantAccess,
-    revokeAccess
+    revokeAccess,
+    downloadLogs
 } from '../controllers/deviceController';
 
 const router = Router();
@@ -17,6 +18,7 @@ router.get('/', getDevices);
 router.get('/:id', getDevice);
 router.patch('/:id', updateDevice);
 router.post('/:id/test', testPrint);
+router.get('/:id/logs', downloadLogs);
 router.get('/:id/access', getAccess);
 router.post('/:id/access', grantAccess);
 router.delete('/:id/access/:userId', revokeAccess);
