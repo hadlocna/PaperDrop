@@ -118,16 +118,28 @@ export const getMessages = async (req: Request, res: Response) => {
 
 export const clearQueue = async (req: Request, res: Response) => {
     try {
-        const { deviceId } = req.body;
+        const { deviceId, deviceCode } = req.body;
 
-        if (!deviceId) {
-            return res.status(400).json({ error: 'Missing device ID' });
+        if (!deviceId && !deviceCode) {
+            return res.status(400).json({ error: 'Missing device ID or code' });
+        }
+
+        let targetDeviceId = deviceId;
+
+        if (deviceCode) {
+            const device = await prisma.device.findUnique({
+                where: { deviceCode }
+            });
+            if (!device) {
+                return res.status(404).json({ error: 'Device not found' });
+            }
+            targetDeviceId = device.id;
         }
 
         // Delete queued messages for this device
         const result = await prisma.message.deleteMany({
             where: {
-                deviceId: String(deviceId),
+                deviceId: String(targetDeviceId),
                 status: 'queued'
             }
         });
