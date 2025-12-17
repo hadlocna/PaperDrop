@@ -68,9 +68,9 @@ export const setupWebSocket = (server: Server) => {
         ws.on('message', async (message) => {
             try {
                 const data = JSON.parse(message.toString());
-                handleDeviceMessage(deviceId, data);
+                await handleDeviceMessage(deviceId, data);
             } catch (e) {
-                console.error('Error parsing device message:', e);
+                console.error('Error handling device message:', e);
             }
         });
 
@@ -100,14 +100,17 @@ const handleDeviceMessage = async (deviceId: string, message: any) => {
 
     if (message.type === 'device_hello') {
         // Update device info
-        await prisma.device.update({
-            where: { id: deviceId },
-            data: {
-                firmwareVersion: message.firmware_version,
-                macAddress: message.mac_address,
-                lastSeenAt: new Date()
-            }
-        });
+        try {
+            await prisma.device.update({
+                where: { id: deviceId },
+                data: {
+                    firmwareVersion: message.firmware_version,
+                    lastSeenAt: new Date()
+                }
+            });
+        } catch (e) {
+            console.error('Error updating device hello:', e);
+        }
     }
     else if (message.type === 'print_status') {
         if (message.message_id) {
@@ -122,16 +125,20 @@ const handleDeviceMessage = async (deviceId: string, message: any) => {
         }
     }
     else if (message.type === 'heartbeat') {
-        await prisma.device.update({
-            where: { id: deviceId },
-            data: {
-                status: 'online',
-                lastSeenAt: new Date(),
-                lastHeartbeat: new Date(),
-                wifiSignal: message.wifi_signal,
-                firmwareVersion: message.firmware_version
-            }
-        });
+        try {
+            await prisma.device.update({
+                where: { id: deviceId },
+                data: {
+                    status: 'online',
+                    lastSeenAt: new Date(),
+                    // lastHeartbeat: new Date(), // Column missing in prod DB
+                    // wifiSignal: message.wifi_signal, // Column missing in prod DB
+                    firmwareVersion: message.firmware_version
+                }
+            });
+        } catch (e) {
+            console.error('Error updating device heartbeat:', e);
+        }
     }
     else if (message.type === 'shell_output') {
         // Forward to admin
