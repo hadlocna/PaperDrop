@@ -8,7 +8,7 @@ const API_BASE = import.meta.env.VITE_API_URL || '';
 export function Claim() {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
-    const { isLoading } = useAuth();
+    const { isLoading, user } = useAuth();
     const [claiming, setClaiming] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState(false);
@@ -34,6 +34,11 @@ export function Claim() {
             return;
         }
 
+        if (!user?.id) {
+            setError('You must be logged in to claim a device');
+            return;
+        }
+
         setClaiming(true);
         setError(null);
 
@@ -44,7 +49,7 @@ export function Claim() {
                     'Content-Type': 'application/json',
                 },
                 credentials: 'include',
-                body: JSON.stringify({ deviceCode: code }),
+                body: JSON.stringify({ deviceCode: code, userId: user.id }),
             });
 
             if (!response.ok) {
