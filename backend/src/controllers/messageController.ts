@@ -28,12 +28,25 @@ export const sendMessage = async (req: Request, res: Response) => {
             return res.status(403).json({ error: 'Not authorized to send to this device' });
         }
 
+        // Normalize content for consistent storage/printing
+        let normalizedContent: any = content;
+
+        if (contentType === 'image') {
+            // Frontend may wrap the base64 payload or send it directly
+            if (typeof content === 'object' && content !== null) {
+                normalizedContent = content.content || content.image || content.image_url || content;
+            }
+        } else if (contentType === 'text' && typeof content === 'string') {
+            // Wrap plain strings so the printer layout code can read `body`
+            normalizedContent = { body: content };
+        }
+
         // Create message
         const message = await prisma.message.create({
             data: {
                 senderId,
                 deviceId,
-                content: JSON.stringify(content), // Storing as JSON string for SQLite compatibility
+                content: JSON.stringify(normalizedContent), // Storing as JSON string for SQLite compatibility
                 contentType: contentType || 'text',
                 status: scheduledAt ? 'scheduled' : 'queued',
                 scheduledAt: scheduledAt ? new Date(scheduledAt) : null
@@ -46,7 +59,7 @@ export const sendMessage = async (req: Request, res: Response) => {
                 type: 'new_message',
                 message: {
                     id: message.id,
-                    content: content,
+                    content: normalizedContent,
                     contentType: message.contentType,
                     createdAt: message.createdAt
                 }

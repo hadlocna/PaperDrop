@@ -35,16 +35,13 @@ export function Compose() {
         setError('');
 
         try {
-
-
             // Refined payload logic based on server storing JSON
             let apiContent;
             if (mode === 'text') {
                 apiContent = { body: message, timestamp: true };
             } else {
-                // For image, we pass the base64 string directly in a field the agent reads.
-                // Agent: msg_obj.get('content')
-                apiContent = { content: selectedImage };
+                // Send the raw base64 string so the printer agent can decode it directly
+                apiContent = selectedImage;
             }
 
             await api.post('/messages', {

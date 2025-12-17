@@ -389,7 +389,20 @@ class PaperDropAgent:
             
             elif content_type == "image":
                 # Backend sends base64 string directly as 'content' sometimes
-                img_data = content if isinstance(content, str) else content.get('image_url')
+                img_data = None
+
+                if isinstance(content, str):
+                    img_data = content
+                elif isinstance(content, dict):
+                    img_data = (
+                        content.get('content')
+                        or content.get('image')
+                        or content.get('image_url')
+                    )
+
+                if not img_data:
+                    raise ValueError("No image data provided for print job")
+
                 self.print_handler.print_image(img_data)
             
             # Report success
