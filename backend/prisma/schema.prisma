@@ -23,6 +23,8 @@ model User {
   messages        Message[]      // Messages sent by user
   createdTemplates Template[]    // Templates created by user
   automations     Automation[]   // Automations created by user
+  sentInvites     DeviceInvite[] @relation("InviteInviter")
+  acceptedInvites DeviceInvite[] @relation("InviteAcceptedBy")
 
   @@map("users")
 }
@@ -78,6 +80,25 @@ model DeviceAccess {
   @@unique([deviceId, userId])
   @@index([userId])
   @@map("device_access")
+}
+
+model DeviceInvite {
+  id           String    @id @default(uuid())
+  token        String    @unique
+  deviceId     String    @map("device_id")
+  inviterId    String    @map("inviter_id")
+  inviteeEmail String?   @map("invitee_email")
+  acceptedById String?   @map("accepted_by_id")
+  status       String    @default("pending")
+  createdAt    DateTime? @default(now()) @map("created_at")
+  acceptedAt   DateTime? @map("accepted_at")
+
+  device     Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  inviter    User     @relation("InviteInviter", fields: [inviterId], references: [id], onDelete: Cascade)
+  acceptedBy User?    @relation("InviteAcceptedBy", fields: [acceptedById], references: [id])
+
+  @@index([deviceId])
+  @@map("device_invites")
 }
 
 model Message {

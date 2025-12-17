@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { registerUser } from '../api/client';
 import logoHorizontal from '../assets/logo-horizontal.png';
 
 export const Register = () => {
     const navigate = useNavigate();
+    const location = useLocation();
 
     const [formData, setFormData] = useState({
         email: '',
@@ -29,7 +30,7 @@ export const Register = () => {
             // NOTE: The current backend likely just creates user. Best flow: Auto-login after register.
             // If backend doesn't return token on register, we must call login.
             // Let's assume we navigate to login to be safe, preserving state.
-            navigate('/login');
+            navigate('/login', { state: location.state });
 
         } catch (err: any) {
             setError(err.response?.data?.error || 'Registration failed');
