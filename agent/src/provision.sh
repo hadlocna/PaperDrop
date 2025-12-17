@@ -138,24 +138,20 @@ StandardError=journal+console
 WantedBy=multi-user.target
 EOF
 
-# Device Agent Service
-cat <<EOF > /etc/systemd/system/paperdrop.service
+# Device Agent Service (WebSocket)
+cat <<EOF > /etc/systemd/system/paperdrop-ws-agent.service
 [Unit]
-Description=PaperDrop Device Agent
+Description=PaperDrop WebSocket Agent
 After=network-online.target paperdrop-wifi.service
 Wants=network-online.target
-# Only start after WiFi is provisioned (optional, or let agent wait)
-# ConditionPathExists=/etc/paperdrop/wifi-provisioned
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=/opt/paperdrop
-ExecStart=/opt/paperdrop/venv/bin/python /opt/paperdrop/agent.py
+ExecStart=/opt/paperdrop/venv/bin/python /opt/paperdrop/ws_agent.py
 Restart=always
-RestartSec=30
-StandardOutput=journal+console
-StandardError=journal+console
+RestartSec=10
 Environment=PAPERDROP_ENV=production
 
 [Install]
@@ -167,7 +163,7 @@ echo -e "${GREEN}Enabling services...${NC}"
 systemctl daemon-reload
 systemctl enable paperdrop-first-boot.service
 systemctl enable paperdrop-wifi.service
-systemctl enable paperdrop.service
+systemctl enable paperdrop-ws-agent.service
 
 # Ensure NetworkManager is enabled
 systemctl enable NetworkManager

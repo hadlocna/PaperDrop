@@ -1,0 +1,16 @@
+[Unit]
+Description=PaperDrop WebSocket Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/paperdrop
+ExecStart=/opt/paperdrop/venv/bin/python3 /opt/paperdrop/ws_agent.py
+Restart=always
+RestartSec=10
+Environment=PAPERDROP_ENV=production
+
+[Install]
+WantedBy=multi-user.target

@@ -67,6 +67,7 @@ export function Claim() {
             }, 2000);
 
         } catch (e) {
+            console.error('Claim error:', e);
             setError(e instanceof Error ? e.message : 'Failed to claim device');
         } finally {
             setClaiming(false);

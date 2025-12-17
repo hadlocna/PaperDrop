@@ -18,9 +18,12 @@ export const setupWebSocket = (server: Server) => {
     const wss = new WebSocketServer({ server, path: '/api/device/connect' });
 
     wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
+        const parsedUrl = url.parse(req.url || '', true);
+        const query = parsedUrl.query;
+
         // Extract device ID and secret from query params or headers
-        const deviceCode = req.headers['x-device-code'] as string;
-        const deviceSecret = req.headers['x-device-secret'] as string;
+        const deviceCode = (query['deviceCode'] as string) || (req.headers['x-device-code'] as string);
+        const deviceSecret = (query['deviceSecret'] as string) || (req.headers['x-device-secret'] as string);
 
         if (!deviceCode || !deviceSecret) {
             console.log('Connection rejected: Missing credentials');
