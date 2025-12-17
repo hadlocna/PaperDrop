@@ -115,3 +115,26 @@ export const getMessages = async (req: Request, res: Response) => {
         res.status(500).json({ error: 'Internal server error' });
     }
 };
+
+export const clearQueue = async (req: Request, res: Response) => {
+    try {
+        const { deviceId } = req.body;
+
+        if (!deviceId) {
+            return res.status(400).json({ error: 'Missing device ID' });
+        }
+
+        // Delete queued messages for this device
+        const result = await prisma.message.deleteMany({
+            where: {
+                deviceId: String(deviceId),
+                status: 'queued'
+            }
+        });
+
+        res.json({ message: `Cleared ${result.count} queued messages` });
+    } catch (error) {
+        console.error('Clear queue error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+};

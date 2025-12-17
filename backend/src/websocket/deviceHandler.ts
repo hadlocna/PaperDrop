@@ -69,6 +69,45 @@ export const setupWebSocket = (server: Server) => {
             console.error('Error updating device status:', e);
         }
 
+        // Send pending messages
+        try {
+            const pendingMessages = await prisma.message.findMany({
+                where: {
+                    deviceId: deviceId,
+                    status: 'queued'
+                },
+                orderBy: { createdAt: 'asc' }
+            });
+
+            for (const message of pendingMessages) {
+                let content = message.content;
+                try {
+                    content = JSON.parse(message.content);
+                } catch (e) {
+                    // Content might be plain string
+                }
+
+                const broadcastResult = broadcastToDevice(deviceId, {
+                    type: 'new_message',
+                    message: {
+                        id: message.id,
+                        content: content,
+                        contentType: message.contentType,
+                        createdAt: message.createdAt
+                    }
+                });
+
+                if (broadcastResult) {
+                    await prisma.message.update({
+                        where: { id: message.id },
+                        data: { status: 'sent', sentAt: new Date() }
+                    });
+                }
+            }
+        } catch (e) {
+            console.error('Error sending pending messages:', e);
+        }
+
         ws.on('message', async (message) => {
             try {
                 const data = JSON.parse(message.toString());
