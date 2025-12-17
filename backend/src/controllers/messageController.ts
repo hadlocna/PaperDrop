@@ -87,6 +87,9 @@ export const getMessages = async (req: Request, res: Response) => {
             include: {
                 device: {
                     select: { id: true, friendlyName: true }
+                },
+                sender: {
+                    select: { id: true, name: true }
                 }
             }
         });
