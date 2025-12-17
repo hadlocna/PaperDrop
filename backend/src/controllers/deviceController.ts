@@ -11,13 +11,24 @@ export const claimDevice = async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Missing device code or user ID' });
         }
 
-        // Find device
-        const device = await prisma.device.findUnique({
+        // Find device or create it (for BLE-provisioned devices)
+        let device = await prisma.device.findUnique({
             where: { deviceCode },
         });
 
         if (!device) {
-            return res.status(404).json({ error: 'Device not found' });
+            // Device was provisioned via BLE but hasn't connected to backend yet
+            // Create it now so user can claim it immediately
+            console.log(`Creating new device from claim request: ${deviceCode}`);
+            device = await prisma.device.create({
+                data: {
+                    deviceCode,
+                    deviceSecret: crypto.randomBytes(32).toString('hex'),
+                    status: 'offline',
+                    friendlyName: friendlyName || 'My PaperDrop',
+                    lastSeenAt: new Date()
+                }
+            });
         }
 
         if (device.ownerId) {
