@@ -9,6 +9,10 @@ interface Message {
     createdAt: string;
     scheduledAt?: string;
     errorMessage?: string; // Corrected field name
+    sender?: {
+        id: string;
+        name: string;
+    };
 }
 
 interface ActivityFeedProps {
@@ -79,6 +83,7 @@ export function ActivityFeed({ deviceId, refreshTrigger }: ActivityFeedProps) {
                                 {new Date(msg.createdAt).toLocaleTimeString()}
                                 <span className="capitalize ml-1">• {msg.status}</span>
                             </p>
+                            <p className="text-[11px] text-gray-400 text-right mt-1">Sent by {msg.sender?.name || 'Unknown sender'}</p>
                             {msg.errorMessage && (
                                 <p className="text-xs text-red-500 mt-1">{msg.errorMessage}</p>
                             )}

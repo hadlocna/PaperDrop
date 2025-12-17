@@ -10,6 +10,10 @@ interface Message {
     status: string;
     createdAt: string;
     contentType: string;
+    sender?: {
+        id: string;
+        name: string;
+    };
 }
 
 export function History() {
@@ -65,12 +69,15 @@ export function History() {
                                 </p>
                                 <div className="flex justify-between items-center text-xs text-gray-400">
                                     <span>{new Date(msg.createdAt).toLocaleString()}</span>
-                                    <span className={`px-2 py-1 rounded-full ${msg.status === 'printed' ? 'bg-green-100 text-green-700' :
-                                        msg.status === 'sent' ? 'bg-blue-100 text-blue-700' :
-                                            'bg-gray-100 text-gray-600'
-                                        }`}>
-                                        {msg.status}
-                                    </span>
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-[11px] text-gray-400 italic">Sent by {msg.sender?.name || 'Unknown sender'}</span>
+                                        <span className={`px-2 py-1 rounded-full ${msg.status === 'printed' ? 'bg-green-100 text-green-700' :
+                                            msg.status === 'sent' ? 'bg-blue-100 text-blue-700' :
+                                                'bg-gray-100 text-gray-600'
+                                            }`}>
+                                            {msg.status}
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
                         ))}
