@@ -32,6 +32,7 @@ LE_ADVERTISEMENT_IFACE = "org.bluez.LEAdvertisement1"
 SERVICE_UUID = "12345678-1234-5678-1234-56789abcdef0"
 DEVICE_ID_CHRC_UUID = "12345678-1234-5678-1234-56789abcdef1"
 WIFI_CONFIG_CHRC_UUID = "12345678-1234-5678-1234-56789abcdef2"
+WIFI_NETWORKS_CHRC_UUID = "12345678-1234-5678-1234-56789abcdef3"
 
 
 def get_device_id():
@@ -40,6 +41,38 @@ def get_device_id():
             return f.read().strip()
     except:
         return "PD-UNKNOWN"
+
+
+def scan_wifi_networks():
+    """Scan for nearby WiFi networks and return as JSON list."""
+    try:
+        # Rescan for networks
+        subprocess.run(['nmcli', 'dev', 'wifi', 'rescan'], capture_output=True)
+        # Get list of networks
+        result = subprocess.run(
+            ['nmcli', '-t', '-f', 'SSID,SIGNAL,SECURITY', 'dev', 'wifi', 'list'],
+            capture_output=True, text=True
+        )
+        networks = []
+        seen = set()
+        for line in result.stdout.strip().split('\n'):
+            if line:
+                parts = line.split(':')
+                if len(parts) >= 3:
+                    ssid = parts[0]
+                    if ssid and ssid not in seen:  # Skip empty and duplicates
+                        seen.add(ssid)
+                        networks.append({
+                            'ssid': ssid,
+                            'signal': int(parts[1]) if parts[1].isdigit() else 0,
+                            'security': parts[2] if parts[2] else 'Open'
+                        })
+        # Sort by signal strength (strongest first)
+        networks.sort(key=lambda x: x['signal'], reverse=True)
+        return networks[:10]  # Return top 10
+    except Exception as e:
+        logger.error(f'Error scanning WiFi: {e}')
+        return []
 
 
 class InvalidArgsException(dbus.exceptions.DBusException):
@@ -263,6 +296,7 @@ class ProvisioningService(Service):
         Service.__init__(self, bus, index, SERVICE_UUID, True)
         self.add_characteristic(DeviceIdCharacteristic(bus, 0, self))
         self.add_characteristic(WifiConfigCharacteristic(bus, 1, self))
+        self.add_characteristic(WifiNetworksCharacteristic(bus, 2, self))
 
 
 class DeviceIdCharacteristic(Characteristic):
@@ -315,6 +349,23 @@ class WifiConfigCharacteristic(Characteristic):
                 logger.error('Missing ssid or password')
         except Exception as e:
             logger.error(f'Error processing WiFi config: {e}')
+
+
+class WifiNetworksCharacteristic(Characteristic):
+    """Characteristic that returns list of nearby WiFi networks as JSON."""
+    def __init__(self, bus, index, service):
+        Characteristic.__init__(
+            self, bus, index,
+            WIFI_NETWORKS_CHRC_UUID,
+            ['read'],
+            service)
+
+    def ReadValue(self, options):
+        logger.info('Scanning for WiFi networks...')
+        networks = scan_wifi_networks()
+        result = json.dumps(networks)
+        logger.info(f'Found {len(networks)} networks')
+        return [dbus.Byte(b) for b in result.encode('utf-8')]
 
 
 # ==============================

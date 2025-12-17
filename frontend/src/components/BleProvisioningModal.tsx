@@ -1,12 +1,19 @@
 import { useState } from 'react';
-import { X, Bluetooth, Wifi, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { X, Bluetooth, Wifi, CheckCircle, AlertCircle, Loader2, Signal } from 'lucide-react';
 
 // Fresh UUIDs matching the Pi BLE server
 const SERVICE_UUID = '12345678-1234-5678-1234-56789abcdef0';
 const DEVICE_ID_UUID = '12345678-1234-5678-1234-56789abcdef1';
 const WIFI_CONFIG_UUID = '12345678-1234-5678-1234-56789abcdef2';
+const WIFI_NETWORKS_UUID = '12345678-1234-5678-1234-56789abcdef3';
 
 type Step = 'scan' | 'connect' | 'wifi' | 'success' | 'error';
+
+interface WifiNetwork {
+    ssid: string;
+    signal: number;
+    security: string;
+}
 
 interface BleProvisioningModalProps {
     isOpen: boolean;
@@ -23,6 +30,8 @@ export function BleProvisioningModal({ isOpen, onClose, onSuccess }: BleProvisio
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
     const [wifiConfigChar, setWifiConfigChar] = useState<BluetoothRemoteGATTCharacteristic | null>(null);
+    const [networks, setNetworks] = useState<WifiNetwork[]>([]);
+    const [scanningNetworks, setScanningNetworks] = useState(false);
 
     const reset = () => {
         setStep('scan');
@@ -33,6 +42,8 @@ export function BleProvisioningModal({ isOpen, onClose, onSuccess }: BleProvisio
         setError('');
         setLoading(false);
         setWifiConfigChar(null);
+        setNetworks([]);
+        setScanningNetworks(false);
     };
 
     const handleClose = () => {
@@ -82,6 +93,23 @@ export function BleProvisioningModal({ isOpen, onClose, onSuccess }: BleProvisio
             const wifiChar = await service.getCharacteristic(WIFI_CONFIG_UUID);
             setWifiConfigChar(wifiChar);
 
+            // Fetch WiFi networks
+            setScanningNetworks(true);
+            try {
+                const wifiNetworksChar = await service.getCharacteristic(WIFI_NETWORKS_UUID);
+                const networksValue = await wifiNetworksChar.readValue();
+                const networksJson = new TextDecoder().decode(networksValue);
+                const networksList = JSON.parse(networksJson) as WifiNetwork[];
+                setNetworks(networksList);
+                if (networksList.length > 0) {
+                    setSsid(networksList[0].ssid);  // Default to strongest signal
+                }
+            } catch (e) {
+                console.warn('Could not fetch WiFi networks:', e);
+                // Continue without networks list - user can type manually
+            }
+            setScanningNetworks(false);
+
             setStep('wifi');
         } catch (err) {
             console.error('BLE Error:', err);
@@ -115,6 +143,13 @@ export function BleProvisioningModal({ isOpen, onClose, onSuccess }: BleProvisio
         } finally {
             setLoading(false);
         }
+    };
+
+    const getSignalIcon = (signal: number) => {
+        if (signal >= 70) return '📶';
+        if (signal >= 50) return '📶';
+        if (signal >= 30) return '📶';
+        return '📶';
     };
 
     if (!isOpen) return null;
@@ -204,15 +239,34 @@ export function BleProvisioningModal({ isOpen, onClose, onSuccess }: BleProvisio
                             <div className="space-y-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Network Name (SSID)
+                                        Network Name
                                     </label>
-                                    <input
-                                        type="text"
-                                        value={ssid}
-                                        onChange={(e) => setSsid(e.target.value)}
-                                        placeholder="Enter WiFi name"
-                                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                                    />
+                                    {networks.length > 0 ? (
+                                        <select
+                                            value={ssid}
+                                            onChange={(e) => setSsid(e.target.value)}
+                                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white"
+                                        >
+                                            {networks.map((net) => (
+                                                <option key={net.ssid} value={net.ssid}>
+                                                    {net.ssid} ({net.signal}% • {net.security})
+                                                </option>
+                                            ))}
+                                        </select>
+                                    ) : scanningNetworks ? (
+                                        <div className="w-full px-4 py-3 border border-gray-200 rounded-xl flex items-center gap-2 text-gray-500">
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                            Scanning for networks...
+                                        </div>
+                                    ) : (
+                                        <input
+                                            type="text"
+                                            value={ssid}
+                                            onChange={(e) => setSsid(e.target.value)}
+                                            placeholder="Enter WiFi name"
+                                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                                        />
+                                    )}
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
