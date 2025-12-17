@@ -1,746 +1,301 @@
 #!/usr/bin/env python3
 """
 PaperDrop Device Agent
-Runs on Raspberry Pi, manages WiFi setup, cloud connection, and printing.
+Connects to fleet management server after WiFi provisioning
+All dependencies are pre-installed in /opt/paperdrop/venv
 """
 
-import asyncio
-import json
-import logging
 import os
-import signal
 import sys
-from datetime import datetime
-from enum import Enum
+import json
+import time
+import socket
+import logging
+import subprocess
 from pathlib import Path
-from typing import Optional
+from datetime import datetime
 
-import websockets
-from websockets.exceptions import ConnectionClosed
+# Third-party imports (pre-installed in venv)
+import paho.mqtt.client as mqtt
+import psutil
+from dotenv import load_dotenv
 
-from config import Config
-from wifi_setup import WiFiSetupServer
-from print_handler import print_handler # Use the singleton instance
-from remote_shell import RemoteShell
+# Load configuration
+CONFIG_FILE = '/etc/paperdrop/config.env'
+if os.path.exists(CONFIG_FILE):
+    load_dotenv(CONFIG_FILE)
 
-# ─────────────────────────────────────────────────────────────────────
-# CONFIGURATION
-# ─────────────────────────────────────────────────────────────────────
+# Configuration with defaults
+THINGSBOARD_HOST = os.getenv('THINGSBOARD_HOST', 'demo.thingsboard.io')
+THINGSBOARD_PORT = int(os.getenv('THINGSBOARD_PORT', '1883'))
+ACCESS_TOKEN = os.getenv('THINGSBOARD_ACCESS_TOKEN', '')
+TELEMETRY_INTERVAL = int(os.getenv('TELEMETRY_INTERVAL', '60'))
+DEVICE_TYPE = os.getenv('DEVICE_TYPE', 'paperdrop')
+
+# MQTT Topics
+TELEMETRY_TOPIC = 'v1/devices/me/telemetry'
+ATTRIBUTES_TOPIC = 'v1/devices/me/attributes'
+RPC_REQUEST_TOPIC = 'v1/devices/me/rpc/request/+'
+RPC_RESPONSE_TOPIC = 'v1/devices/me/rpc/response/{}'
+
+# Logging setup
+LOG_DIR = '/var/log/paperdrop'
+os.makedirs(LOG_DIR, exist_ok=True)
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(f'{LOG_DIR}/agent.log'),
+        logging.StreamHandler()
+    ]
 )
-logger = logging.getLogger('paperdrop')
+logger = logging.getLogger('PaperDropAgent')
 
 
-class DeviceState(Enum):
-    """Device operating states"""
-    WIFI_SETUP = "wifi_setup"       # AP mode, waiting for WiFi config (No Creds)
-    CONNECTING = "connecting"       # Trying to connect to home WiFi
-    ONLINE = "online"               # Connected to cloud, ready
-    OFFLINE = "offline"             # Has WiFi but can't reach cloud
-    FALLBACK_HOTSPOT = "fallback"   # Has Creds, but failed. AP Mode + Periodic Retry
+def get_device_id():
+    """Read device ID from identity file"""
+    try:
+        with open('/etc/paperdrop/device-id', 'r') as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return socket.gethostname()
 
 
-# ─────────────────────────────────────────────────────────────────────
-# MAIN AGENT CLASS
-# ─────────────────────────────────────────────────────────────────────
+def get_cpu_temperature():
+    """Get CPU temperature in Celsius"""
+    try:
+        with open('/sys/class/thermal/thermal_zone0/temp', 'r') as f:
+            return round(float(f.read().strip()) / 1000.0, 1)
+    except Exception:
+        return None
 
-class PaperDropAgent:
-    """
-    Main agent that orchestrates WiFi setup, cloud connection, and printing.
-    """
-    
-    def __init__(self):
-        self.config = Config()
-        self.state = DeviceState.WIFI_SETUP
-        self.websocket: Optional[websockets.WebSocketClientProtocol] = None
-        self.print_handler = print_handler # Use singleton
-        self.wifi_setup = WiFiSetupServer(self.config, self.on_wifi_connected)
-        self.remote_shell = RemoteShell(self.on_shell_output)
-        self.running = True
-        self.reconnect_delay = 5  # Start with 5 second reconnect delay
-        self.max_reconnect_delay = 60  # Max 60 seconds between attempts
-        
-    async def run(self):
-        """Main entry point - runs the agent forever"""
-        logger.info(f"PaperDrop Agent starting - Device: {self.config.device_code}")
-        
-        # Set up signal handlers for graceful shutdown
-        for sig in (signal.SIGTERM, signal.SIGINT):
-            try:
-                loop = asyncio.get_running_loop()
-                loop.add_signal_handler(
-                    sig, lambda: asyncio.create_task(self.shutdown())
-                )
-            except NotImplementedError:
-                # Windows/Non-Unix support if needed
-                pass
-        
-        # Initialize printer connection (Note: print_handler does this in init)
-        # We can simulate a startup print
-        if os.environ.get("PAPERDROP_ENV") != "development":
-             # Only print connection status on real boot or integration test, 
-             # not every time code reloads in dev
-             pass
-        
-        # ─────────────────────────────────────────────────────────────
-        # LAYER 1 BYPASS: DEVELOPMENT MODE
-        # ─────────────────────────────────────────────────────────────
-        if os.environ.get("PAPERDROP_ENV") == "development":
-            logger.warning("⚠️ DEVELOPMENT MODE DETECTED: Skipping WiFi Setup checks.")
-            logger.info("Force-entering ONLINE mode...")
-            await self.run_online_mode()
-            return
 
-        # Main loop (Layer 2 / Production)
-        self.connection_start_time = 0
-        self.next_retry_time = 0
-        
-        while self.running:
-            try:
-                # ─────────────────────────────────────────────────────────
-                # STATE: ONLINE
-                # ─────────────────────────────────────────────────────────
-                if self.state == DeviceState.ONLINE:
-                    await self.run_online_mode()
-                    # If returns, we disconnected. Try to reconnect.
-                    self.state = DeviceState.CONNECTING
-                    self.connection_start_time = datetime.now().timestamp()
-                
-                # ─────────────────────────────────────────────────────────
-                # STATE: WIFI SETUP (No Credentials)
-                # ─────────────────────────────────────────────────────────
-                elif self.state == DeviceState.WIFI_SETUP:
-                    # Check if we are already online (e.g. pre-provisioned via SD card)
-                    if await self.is_wifi_connected():
-                        logger.info("Detected active internet connection. Skipping setup.")
-                        self.state = DeviceState.ONLINE
-                        self.connection_start_time = 0
-                        continue
-
-                    # Check if we actually have creds (maybe added manually)
-                    if self.config.has_wifi_credentials():
-                        self.state = DeviceState.CONNECTING
-                        self.connection_start_time = datetime.now().timestamp()
-                        continue
-                        
-                    logger.info("No WiFi credentials. Entering Setup Mode.")
-                    # Run AP until user provides creds (callback changes state)
-                    await self.run_wifi_setup_mode()
-
-                # ─────────────────────────────────────────────────────────
-                # STATE: CONNECTING
-                # ─────────────────────────────────────────────────────────
-                elif self.state == DeviceState.CONNECTING:
-                    if not self.connection_start_time:
-                         self.connection_start_time = datetime.now().timestamp()
-                    
-                    # Try to connect
-                    success = await self.connect_to_home_wifi()
-                    if success:
-                        logger.info("WiFi Connected! Keeping AP alive for 60s to show Success Page...")
-                        # Allow time for UI on the AP to update and user to see "Connected" and the Code
-                        await asyncio.sleep(60) 
-                        await self.wifi_setup.stop()
-                        
-                        self.state = DeviceState.ONLINE
-                        self.connection_start_time = 0 # Reset
-                    else:
-                        # Connection Failed
-                        # Check if we have exceeded 5 minutes
-                        elapsed = datetime.now().timestamp() - self.connection_start_time
-                        if elapsed > 300: # 5 Minutes
-                            logger.warning(f"Connection failed for {int(elapsed)}s. Switching to FALLBACK HOTSPOT.")
-                            self.state = DeviceState.FALLBACK_HOTSPOT
-                            self.next_retry_time = datetime.now().timestamp() + 600 # 10 Minutes
-                        else:
-                            # Wait a bit before retrying to avoid spamming
-                            logger.info("Retrying connection in 5s...")
-                            await asyncio.sleep(5)
-
-                # ─────────────────────────────────────────────────────────
-                # STATE: FALLBACK HOTSPOT
-                # ─────────────────────────────────────────────────────────
-                elif self.state == DeviceState.FALLBACK_HOTSPOT:
-                    logger.info("Entering Fallback Hotspot Mode.")
-                    
-                    # 1. Start AP
-                    await self.wifi_setup.start()
-                    
-                    # 2. Loop until Time to Retry OR User Configured
-                    while self.state == DeviceState.FALLBACK_HOTSPOT and self.running:
-                        remaining = self.next_retry_time - datetime.now().timestamp()
-                        
-                        if remaining <= 0:
-                            logger.info("10 Minute Timer Expired. Retrying saved network...")
-                            break # Break loop to retry
-                        
-                        # Sleep briefly to allow interruptions/state changes
-                        await asyncio.sleep(1)
-                    
-                    # 3. Stop AP
-                    await self.wifi_setup.stop()
-                    
-                    # 4. Decide next step
-                    if self.state == DeviceState.FALLBACK_HOTSPOT:
-                        # Timer expired, try connecting ONCE
-                        logger.info("Attempting periodic reconnection...")
-                        success = await self.connect_to_home_wifi()
-                        if success:
-                             self.state = DeviceState.ONLINE
-                             self.connection_start_time = 0
-                        else:
-                             # Failed. Reset Timer and go back to AP loop
-                             logger.info("Reconnect failed. Resuming Fallback Hotspot.")
-                             self.next_retry_time = datetime.now().timestamp() + 600 # 10 Minutes
-                    
-                    # If state changed (e.g. to CONNECTING via callback), the main loop handles it
-            
-            except Exception as e:
-                logger.error(f"Error in main loop: {e}")
-                await asyncio.sleep(5)
-    
-    async def shutdown(self):
-        """Graceful shutdown"""
-        logger.info("Shutting down...")
-        self.running = False
-        if self.websocket:
-            await self.websocket.close()
-        # self.print_handler.disconnect() # Handled by GC/exit usually
-    
-    # ─────────────────────────────────────────────────────────────────
-    # WIFI SETUP MODE
-    # ─────────────────────────────────────────────────────────────────
-    
-    async def run_wifi_setup_mode(self):
-        """
-        Start AP mode and run captive portal for WiFi configuration.
-        Blocks until WiFi is successfully configured.
-        """
-        self.state = DeviceState.WIFI_SETUP
-        logger.info("Entering WiFi setup mode")
-        
-        # Print setup instructions
-        self.print_handler.print_text("SETUP MODE ACTIVE\nConnect to 'PaperDrop' WiFi")
-        
-        # Start the WiFi setup server (AP + captive portal)
-        # This will block until WiFi is configured and verified
-        await self.wifi_setup.start()
-        
-        # In spec this blocks? create_task in wifi_setup suggests it runs server.
-        # We need to wait here or the loop continues.
-        # For simplicity in this async structure, we'll wait for a flag or event.
-        while self.state == DeviceState.WIFI_SETUP and self.running:
-            await asyncio.sleep(1)
-
-        # CRITICAL: Do NOT stop AP if we are transitioning to CONNECTING.
-        # We need the AP alive so the UI can poll and show "Connected!".
-        if self.state != DeviceState.CONNECTING:
-            await self.wifi_setup.stop()
-    
-    async def on_wifi_connected(self):
-        """
-        Callback when WiFi connects successfully via the captive portal.
-        """
-        logger.info("WiFi setup successful! Transitioning to connecting state...")
-        self.state = DeviceState.CONNECTING
-        # connection_state in WiFiSetupServer handles the UI feedback/delay
-        # We just need to signal the main loop to proceed
-    
-    async def connect_to_home_wifi(self) -> bool:
-        """
-        Attempt to connect to the saved home WiFi network.
-        Returns True on success, False on failure.
-        """
-        self.state = DeviceState.CONNECTING
-        logger.info("Checking for existing WiFi connection...")
-        
-        # 1. Check if already connected (e.g. by Setup Server or OS)
-        if await self.is_wifi_connected():
-            logger.info("Already connected to WiFi! Skipping reconfiguration.")
-            return True
-
-        logger.info("Attempting to connect using saved credentials...")
-        
-        # Get credentials
-        ssid, password = self.config.get_wifi_credentials()
-        if not ssid:
-            logger.error("No saved WiFi credentials found.")
-            return False
-
-        # Try to bring up connection using nmcli
-        # Since we're using NetworkManager, we can just try to 'up' the connection
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "nmcli", "connection", "up", ssid,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, stderr = await proc.communicate()
-            
-            if proc.returncode == 0:
-                logger.info(f"Successfully brought up connection {ssid}")
-                return True
-            else:
-                logger.error(f"Failed to connect to {ssid}: {stderr.decode()}")
-                
-                # Fallback: Try full connect
-                proc = await asyncio.create_subprocess_exec(
-                    "nmcli", "device", "wifi", "connect", ssid, "password", password,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-                stdout, stderr = await proc.communicate()
-                if proc.returncode == 0:
-                    logger.info(f"Successfully connected to {ssid} (full connect)")
-                    return True
-                
-                logger.error(f"Full connect failed: {stderr.decode()}")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Error connecting to WiFi: {e}")
-            return False
-    
-    async def is_wifi_connected(self) -> bool:
-        """Check if we have a WiFi connection with internet access"""
-        try:
-            # Check if wlan0 has an IP
-            proc = await asyncio.create_subprocess_shell(
-                'ip -4 addr show wlan0 | grep -oP "(?<=inet\\s)\\d+(\\.\\d+){3}"',
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, _ = await proc.communicate()
-            ip = stdout.decode().strip()
-            
-            if not ip or ip.startswith('192.168.4.'):  # AP mode IP
-                return False
-            
-            # Actually verify internet connectivity with a ping
-            logger.debug(f"Have IP {ip}, checking internet connectivity...")
-            ping_proc = await asyncio.create_subprocess_shell(
-                'ping -c 1 -W 3 8.8.8.8',
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            await ping_proc.communicate()
-            
-            if ping_proc.returncode == 0:
-                logger.debug("Internet ping successful")
-                return True
-            else:
-                logger.debug("Internet ping failed")
-                return False
-            
-        except Exception as e:
-            logger.error(f"Error checking WiFi: {e}")
-            return False
-    
-    def get_local_ip(self) -> str:
-        """Get the device's local IP address"""
-        import socket
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            # Doesn't actually connect, just gets potential route interface
-            s.connect(("8.8.8.8", 80))
-            ip = s.getsockname()[0]
-            s.close()
-            return ip
-        except Exception:
-            return ip
-        except Exception:
-            return "127.0.0.1"
-
-    def get_mac_address(self) -> str:
-        """Get the device's MAC address"""
-        try:
-            # Try getting wlan0 mac
-            with open('/sys/class/net/wlan0/address', 'r') as f:
-                return f.read().strip()
-        except:
-            try:
-                # Try getting eth0 mac
-                with open('/sys/class/net/eth0/address', 'r') as f:
-                    return f.read().strip()
-            except:
-                return "00:00:00:00:00:00"
-    
-    # ─────────────────────────────────────────────────────────────────
-    # ONLINE MODE (Connected to Cloud)
-    # ─────────────────────────────────────────────────────────────────
-    
-    async def run_online_mode(self):
-        """
-        Main operating mode - connected to cloud, listening for print jobs.
-        """
-        self.reconnect_delay = 5  # Reset reconnect delay on successful connection
-        
-        logger.info(f"Starting ONLINE mode. Cloud URL: {self.config.cloud_ws_url}")
-
-        while self.running:
-            try:
-                await self.connect_to_cloud()
-                self.state = DeviceState.ONLINE
-                
-                # If we return from connect_to_cloud, it means connection closed cleanly or we logic'd out
-                # Usually listen_for_messages runs until error
-                
-            except ConnectionClosed as e:
-                logger.warning(f"WebSocket connection closed: {e}")
-                self.state = DeviceState.OFFLINE
-                
-            except Exception as e:
-                logger.error(f"Error in online mode: {e}")
-                self.state = DeviceState.OFFLINE
-            
-            # Reconnect with exponential backoff
-            if self.running:
-                logger.info(f"Reconnecting in {self.reconnect_delay} seconds...")
-                await asyncio.sleep(self.reconnect_delay)
-                self.reconnect_delay = min(
-                    self.reconnect_delay * 1.5, 
-                    self.max_reconnect_delay
-                )
-    
-    async def connect_to_cloud(self):
-        """Establish WebSocket connection to PaperDrop cloud"""
-        logger.info("Connecting to cloud...")
-        
-        self.websocket = await websockets.connect(
-            self.config.cloud_ws_url,
-            additional_headers={
-                "X-Device-Code": self.config.device_code,
-                "X-Device-Secret": self.config.device_secret,
-            },
-            ping_interval=15,
-            ping_timeout=10,
+def get_wifi_info():
+    """Get WiFi connection info"""
+    info = {'ssid': None, 'signal_dbm': None, 'signal_percent': None}
+    try:
+        result = subprocess.run(
+            ['nmcli', '-t', '-f', 'ACTIVE,SSID,SIGNAL', 'device', 'wifi', 'list'],
+            capture_output=True, text=True, timeout=10
         )
-        
-        self.reconnect_delay = 5  # Reset on successful connection
-        
-        # Send hello message
-        await self.websocket.send(json.dumps({
-            "type": "device_hello",
-            "device_code": self.config.device_code,
-            "firmware_version": self.config.firmware_version,
-            "local_ip": self.get_local_ip(),
-            "mac_address": self.get_mac_address(),
-            "printer_status": {"connected": True}, # Mock status
-        }))
-        
-        logger.info("Connected to cloud!")
-        
-        # Start heartbeat task
-        asyncio.create_task(self.heartbeat_loop())
-        
-        await self.listen_for_messages()
+        for line in result.stdout.strip().split('\n'):
+            parts = line.split(':')
+            if len(parts) >= 3 and parts[0] == 'yes':
+                info['ssid'] = parts[1]
+                info['signal_percent'] = int(parts[2]) if parts[2].isdigit() else None
+                break
+    except Exception as e:
+        logger.debug(f"Could not get WiFi info: {e}")
+    return info
 
-    async def heartbeat_loop(self):
-        """Send periodic heartbeats with telemetry"""
-        while self.websocket:
-            try:
-                # Get WiFi Signal (RSSI)
-                rssi = -100
-                try:
-                    # Parse iwconfig or similar. For now, simple mock or basic check.
-                    # On RPi, we can read /proc/net/wireless
-                    with open('/proc/net/wireless', 'r') as f:
-                        lines = f.readlines()
-                        if len(lines) > 2:
-                            # link level noise...
-                            # Typical line: wlan0: 0000   50.  -60.  -256
-                            parts = lines[2].split()
-                            if len(parts) > 3:
-                                rssi = int(float(parts[3].replace('.', '')))
-                except:
-                    pass
 
-                await self.websocket.send(json.dumps({
-                    "type": "heartbeat",
-                    "device_code": self.config.device_code,
-                    "firmware_version": self.config.firmware_version,
-                    "wifi_signal": rssi,
-                    "status": "online"
-                }))
-            except Exception as e:
-                logger.error(f"Heartbeat error: {e}")
-            
-            await asyncio.sleep(30)
+def get_ip_address():
+    """Get primary IP address"""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('8.8.8.8', 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return None
+
+
+def collect_telemetry():
+    """Collect all telemetry data"""
+    wifi = get_wifi_info()
     
-    async def listen_for_messages(self):
-        """Listen for incoming messages from cloud"""
-        async for raw_message in self.websocket:
-            try:
-                message = json.loads(raw_message)
-                await self.handle_cloud_message(message)
-            except json.JSONDecodeError as e:
-                logger.error(f"Invalid JSON from cloud: {e}")
-            except Exception as e:
-                logger.error(f"Error handling message: {e}")
+    return {
+        'ts': int(time.time() * 1000),
+        'cpu_percent': psutil.cpu_percent(interval=1),
+        'memory_percent': psutil.virtual_memory().percent,
+        'disk_percent': psutil.disk_usage('/').percent,
+        'cpu_temp': get_cpu_temperature(),
+        'uptime_seconds': int(time.time() - psutil.boot_time()),
+        'wifi_ssid': wifi['ssid'],
+        'wifi_signal': wifi['signal_percent'],
+        'ip_address': get_ip_address(),
+    }
+
+
+def collect_attributes():
+    """Collect device attributes (sent once on connect)"""
+    return {
+        'device_id': get_device_id(),
+        'device_type': DEVICE_TYPE,
+        'hostname': socket.gethostname(),
+        'os_version': get_os_version(),
+        'agent_version': '1.0.0',
+        'mac_address': get_mac_address(),
+    }
+
+
+def get_os_version():
+    """Get OS version"""
+    try:
+        with open('/etc/os-release', 'r') as f:
+            for line in f:
+                if line.startswith('PRETTY_NAME='):
+                    return line.split('=')[1].strip().strip('"')
+    except Exception:
+        pass
+    return 'unknown'
+
+
+def get_mac_address():
+    """Get WiFi MAC address"""
+    try:
+        with open('/sys/class/net/wlan0/address', 'r') as f:
+            return f.read().strip()
+    except Exception:
+        return 'unknown'
+
+
+class DeviceAgent:
+    def __init__(self):
+        self.client = mqtt.Client()
+        self.connected = False
+        self.last_telemetry = 0
+        
+        if ACCESS_TOKEN:
+            self.client.username_pw_set(ACCESS_TOKEN)
+        
+        self.client.on_connect = self.on_connect
+        self.client.on_disconnect = self.on_disconnect
+        self.client.on_message = self.on_message
     
-    async def on_shell_output(self, data):
-        """Callback from RemoteShell to send data to cloud"""
-        if self.websocket:
-            try:
-                await self.websocket.send(json.dumps({
-                    "type": "shell_output",
-                    "data": data
-                }))
-            except Exception as e:
-                logger.error(f"Error sending shell output: {e}")
-
-    async def handle_cloud_message(self, message: dict):
-        """Route incoming cloud messages to appropriate handlers"""
-        # Support both 'print_job' (Spec) and 'new_message' (Current Backend Implementation)
-        msg_type = message.get("type")
-        
-        logger.info(f"Received message type: {msg_type}")
-
-        if msg_type == "print_job" or msg_type == "new_message":
-            await self.handle_print_job(message)
-        
-        elif msg_type == "ping":
-            await self.websocket.send(json.dumps({"type": "pong"}))
-        
-        # Remote Shell Messages
-        elif msg_type == "start_shell":
-            logger.info("Starting Remote Shell")
-            self.remote_shell.start()
+    def on_connect(self, client, userdata, flags, rc):
+        if rc == 0:
+            logger.info(f"Connected to ThingsBoard at {THINGSBOARD_HOST}")
+            self.connected = True
             
-        elif msg_type == "shell_input":
-            data = message.get("data")
-            if data:
-                self.remote_shell.write(data)
-                
-        elif msg_type == "resize_shell":
-            cols = message.get("cols", 80)
-            rows = message.get("rows", 24)
-            self.remote_shell.resize(cols, rows)
+            # Subscribe to RPC
+            client.subscribe(RPC_REQUEST_TOPIC)
             
-        elif msg_type == "stop_shell":
-            logger.info("Stopping Remote Shell")
-            self.remote_shell.stop()
-        
-        elif msg_type == "claimed":
-            owner_name = message.get("owner_name", "Someone")
-            self.print_handler.print_text(
-                f"Obtained by {owner_name}!\n\nREADY."
-            )
-        
-        elif msg_type == "test_print":
-            self.print_handler.print_text(
-                f"Test Print\n{datetime.now()}"
-            )
-            await self.report_print_status(message.get("request_id"), "printed")
-        
-        elif msg_type == "update":
-            # OTA Firmware Update
-            version = message.get("version")
-            url = message.get("url")
-            logger.info(f"Received OTA update command: v{version} from {url}")
-            asyncio.create_task(self.perform_ota_update(url, version))
-        
+            # Publish attributes
+            attrs = collect_attributes()
+            client.publish(ATTRIBUTES_TOPIC, json.dumps(attrs))
+            logger.info(f"Published attributes: {attrs}")
         else:
-            logger.warning(f"Unknown message type: {msg_type}")
+            logger.error(f"Connection failed: rc={rc}")
+            self.connected = False
     
-    # ─────────────────────────────────────────────────────────────────
-    # PRINT JOB HANDLING
-    # ─────────────────────────────────────────────────────────────────
+    def on_disconnect(self, client, userdata, rc):
+        logger.warning(f"Disconnected: rc={rc}")
+        self.connected = False
     
-    async def handle_print_job(self, job: dict):
-        """
-        Process and print a message from the cloud.
-        """
-        # Backend sends { type: 'new_message', message: { ... } }
-        # Spec sends { type: 'print_job', content: { ... } }
-        # We need to normalize
-        
-        if 'message' in job:
-            # Backend format
-            msg_obj = job['message']
-            message_id = msg_obj.get('id')
-            content_type = msg_obj.get('contentType', 'text')
-            
-            # Content might be a JSON string or object depending on parsing
-            content = msg_obj.get('content')
-            if isinstance(content, str):
-                try:
-                    content = json.loads(content)
-                except:
-                    pass # Keep as string if text
-            
-            # If backend sends just string for content (legacy), wrap it
-            if isinstance(content, str) and content_type == 'text':
-                content = { 'body': content }
-
-        else:
-            # Spec format
-            message_id = job.get("message_id")
-            content_type = job.get("content_type")
-            content = job.get("content", {})
-        
-        sender_name = job.get("sender_name", "Unknown") # Spec
-        if 'message' in job and 'sender' in job['message']:
-             # Attempt to find sender name if nested (backend might not send it yet)
-             pass
-
-        logger.info(f"Processing print job: {message_id} ({content_type})")
-        
+    def on_message(self, client, userdata, msg):
+        """Handle RPC requests"""
         try:
-            # Acknowledge
-            if message_id:
-                await self.websocket.send(json.dumps({
-                    "type": "print_status",
-                    "message_id": message_id,
-                    "status": "printing"
-                }))
-
-            if content_type == "text":
-                self.print_handler.print_message({ 
-                    'content': content, 
-                    'sender_name': sender_name 
-                })
+            request_id = msg.topic.split('/')[-1]
+            payload = json.loads(msg.payload)
+            method = payload.get('method', '')
+            params = payload.get('params', {})
             
-            elif content_type == "image":
-                # Backend sends base64 string directly as 'content' sometimes
-                img_data = content if isinstance(content, str) else content.get('image_url')
-                self.print_handler.print_image(img_data)
+            logger.info(f"RPC request: {method}")
             
-            # Report success
-            await self.report_print_status(message_id, "printed")
-            logger.info(f"Print job completed: {message_id}")
+            response = self.handle_rpc(method, params)
             
+            client.publish(
+                RPC_RESPONSE_TOPIC.format(request_id),
+                json.dumps(response)
+            )
         except Exception as e:
-            logger.error(f"Print job failed: {message_id} - {e}")
-            await self.report_print_status(message_id, "failed", str(e))
+            logger.error(f"RPC error: {e}")
     
-    async def report_print_status(
-        self, 
-        message_id: str, 
-        status: str, 
-        error: str = None
-    ):
-        """Report print job completion back to cloud"""
-        if not self.websocket or not message_id:
-            return
+    def handle_rpc(self, method, params):
+        """Process RPC commands"""
+        if method == 'reboot':
+            subprocess.Popen(['sudo', 'reboot'])
+            return {'success': True, 'message': 'Rebooting...'}
         
-        await self.websocket.send(json.dumps({
-            "type": "print_status",
-            "message_id": message_id,
-            "status": status,
-            "error": error,
-            "printed_at": datetime.utcnow().isoformat() + "Z",
-        }))
-
-    # ─────────────────────────────────────────────────────────────────
-    # OTA UPDATE
-    # ─────────────────────────────────────────────────────────────────
-    
-    async def perform_ota_update(self, url: str, version: str):
-        """
-        Download and install a firmware update.
-        1. Download tarball from URL
-        2. Extract to temp directory
-        3. Copy files to agent directory
-        4. Install dependencies
-        5. Restart systemd service
-        """
-        import tempfile
-        import tarfile
-        import shutil
-        import urllib.request
+        elif method == 'getStatus':
+            return {'success': True, 'telemetry': collect_telemetry()}
         
-        logger.info(f"Starting OTA update to v{version}...")
+        elif method == 'resetWifi':
+            # Clear WiFi and return to AP mode
+            subprocess.Popen(['/usr/local/bin/paperdrop-reset-wifi.sh'])
+            return {'success': True, 'message': 'WiFi reset initiated'}
         
-        try:
-            # Notify cloud we're updating
-            if self.websocket:
-                await self.websocket.send(json.dumps({
-                    "type": "update_status",
-                    "status": "downloading",
-                    "version": version
-                }))
-            
-            # Download
-            with tempfile.TemporaryDirectory() as tmpdir:
-                tarball_path = Path(tmpdir) / "update.tar.gz"
-                
-                logger.info(f"Downloading from {url}...")
-                urllib.request.urlretrieve(url, tarball_path)
-                
-                # Extract
-                logger.info("Extracting...")
-                with tarfile.open(tarball_path, "r:gz") as tar:
-                    tar.extractall(tmpdir)
-                
-                # Find the extracted directory (usually the first folder)
-                extracted_dirs = [d for d in Path(tmpdir).iterdir() if d.is_dir()]
-                if not extracted_dirs:
-                    raise Exception("No directory found in tarball")
-                
-                source_dir = extracted_dirs[0]
-                agent_dir = Path("/home/paperdrop/PaperDrop/agent")
-                
-                # Copy src/ if exists
-                if (source_dir / "src").exists():
-                    logger.info("Copying src/...")
-                    for f in (source_dir / "src").glob("*"):
-                        dest = agent_dir / "src" / f.name
-                        if f.is_file():
-                            shutil.copy2(f, dest)
-                        elif f.is_dir():
-                            if dest.exists():
-                                shutil.rmtree(dest)
-                            shutil.copytree(f, dest)
-                
-                # Install requirements if present
-                if (source_dir / "requirements.txt").exists():
-                    logger.info("Installing requirements...")
-                    proc = await asyncio.create_subprocess_exec(
-                        "pip3", "install", "-r", str(source_dir / "requirements.txt"),
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE
+        elif method == 'runCommand':
+            cmd = params.get('command', '')
+            if cmd:
+                try:
+                    result = subprocess.run(
+                        cmd, shell=True, capture_output=True,
+                        text=True, timeout=30
                     )
-                    await proc.wait()
-            
-            # Notify success
-            if self.websocket:
-                await self.websocket.send(json.dumps({
-                    "type": "update_status",
-                    "status": "installed",
-                    "version": version
-                }))
-            
-            logger.info(f"OTA update to v{version} complete! Restarting...")
-            
-            # Restart service (this will kill this process)
-            await asyncio.create_subprocess_exec(
-                "sudo", "systemctl", "restart", "paperdrop-agent"
-            )
-            
-        except Exception as e:
-            logger.error(f"OTA update failed: {e}")
-            if self.websocket:
-                await self.websocket.send(json.dumps({
-                    "type": "update_status",
-                    "status": "failed",
-                    "version": version,
-                    "error": str(e)
-                }))
+                    return {
+                        'success': True,
+                        'stdout': result.stdout[-1000:],  # Limit output
+                        'stderr': result.stderr[-500:],
+                        'returncode': result.returncode
+                    }
+                except subprocess.TimeoutExpired:
+                    return {'success': False, 'error': 'Timeout'}
+            return {'success': False, 'error': 'No command'}
+        
+        return {'success': False, 'error': f'Unknown method: {method}'}
+    
+    def wait_for_network(self, timeout=300):
+        """Wait for network connectivity before connecting to server"""
+        logger.info("Waiting for network connectivity...")
+        start = time.time()
+        
+        while time.time() - start < timeout:
+            try:
+                socket.create_connection(("8.8.8.8", 53), timeout=5)
+                logger.info("Network is available")
+                return True
+            except OSError:
+                time.sleep(5)
+        
+        logger.error("Network timeout")
+        return False
+    
+    def run(self):
+        """Main agent loop"""
+        # Wait for network (wifi-connect should have set it up)
+        if not self.wait_for_network():
+            logger.error("No network. Agent cannot start.")
+            sys.exit(1)
+        
+        # Connect to ThingsBoard
+        while True:
+            try:
+                logger.info(f"Connecting to {THINGSBOARD_HOST}:{THINGSBOARD_PORT}")
+                self.client.connect(THINGSBOARD_HOST, THINGSBOARD_PORT, 60)
+                break
+            except Exception as e:
+                logger.error(f"Connection error: {e}. Retrying in 10s...")
+                time.sleep(10)
+        
+        self.client.loop_start()
+        
+        try:
+            while True:
+                now = time.time()
+                
+                # Publish telemetry
+                if self.connected and now - self.last_telemetry >= TELEMETRY_INTERVAL:
+                    telemetry = collect_telemetry()
+                    self.client.publish(TELEMETRY_TOPIC, json.dumps(telemetry))
+                    logger.debug(f"Telemetry: {telemetry}")
+                    self.last_telemetry = now
+                
+                time.sleep(1)
+                
+        except KeyboardInterrupt:
+            logger.info("Shutting down...")
+        finally:
+            self.client.loop_stop()
+            self.client.disconnect()
 
-# ─────────────────────────────────────────────────────────────────────
-# ENTRY POINT
-# ─────────────────────────────────────────────────────────────────────
 
-def main():
-    """Entry point for the agent"""
-    agent = PaperDropAgent()
-    asyncio.run(agent.run())
-
-
-if __name__ == "__main__":
-    main()
-
+if __name__ == '__main__':
+    if not ACCESS_TOKEN:
+        logger.warning("No ACCESS_TOKEN configured. Running in demo mode.")
+    
+    agent = DeviceAgent()
+    agent.run()
