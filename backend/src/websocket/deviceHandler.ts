@@ -18,127 +18,132 @@ export const setupWebSocket = (server: Server) => {
     const wss = new WebSocketServer({ server, path: '/api/device/connect' });
 
     wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
-        const parsedUrl = url.parse(req.url || '', true);
-        const query = parsedUrl.query;
-
-        // Extract device ID and secret from query params or headers
-        const deviceCode = (query['deviceCode'] as string) || (req.headers['x-device-code'] as string);
-        const deviceSecret = (query['deviceSecret'] as string) || (req.headers['x-device-secret'] as string);
-
-        if (!deviceCode || !deviceSecret) {
-            console.log('Connection rejected: Missing credentials');
-            ws.close(4001, 'Missing authentication');
-            return;
-        }
-
-        // Verify or Create device
-        let device = await prisma.device.findUnique({
-            where: { deviceCode }
-        });
-
-        if (!device) {
-            console.log(`New device verified: ${deviceCode}`);
-            // Create new device
-            device = await prisma.device.create({
-                data: {
-                    deviceCode,
-                    deviceSecret,
-                    status: 'online',
-                    friendlyName: 'New Printer',
-                    lastSeenAt: new Date()
-                }
-            });
-        } else if (device.deviceSecret !== deviceSecret) {
-            console.log(`Connection rejected: Invalid credentials for ${deviceCode}`);
-            ws.close(4001, 'Invalid authentication');
-            return;
-        }
-
-        const deviceId = device.id;
-        console.log(`Device connected: ${deviceCode} (${deviceId})`);
-
-        deviceConnections.set(deviceId, ws);
-
-        // Update status to online
         try {
-            await prisma.device.update({
-                where: { id: deviceId },
-                data: { status: 'online', lastSeenAt: new Date() }
+            const parsedUrl = url.parse(req.url || '', true);
+            const query = parsedUrl.query;
+
+            // Extract device ID and secret from query params or headers
+            const deviceCode = (query['deviceCode'] as string) || (req.headers['x-device-code'] as string);
+            const deviceSecret = (query['deviceSecret'] as string) || (req.headers['x-device-secret'] as string);
+
+            if (!deviceCode || !deviceSecret) {
+                console.log('Connection rejected: Missing credentials');
+                ws.close(4001, 'Missing authentication');
+                return;
+            }
+
+            // Verify or Create device
+            let device = await prisma.device.findUnique({
+                where: { deviceCode }
             });
-        } catch (e) {
-            console.error('Error updating device status:', e);
-        }
 
-        // Send pending messages
-        try {
-            const pendingMessages = await prisma.message.findMany({
-                where: {
-                    deviceId: deviceId,
-                    status: 'queued'
-                },
-                orderBy: { createdAt: 'asc' }
-            });
-
-            for (const message of pendingMessages) {
-                let content = message.content;
-                try {
-                    content = JSON.parse(message.content);
-                } catch (e) {
-                    // Content might be plain string
-                }
-
-                const broadcastResult = broadcastToDevice(deviceId, {
-                    type: 'new_message',
-                    message: {
-                        id: message.id,
-                        content: content,
-                        contentType: message.contentType,
-                        createdAt: message.createdAt
+            if (!device) {
+                console.log(`New device verified: ${deviceCode}`);
+                // Create new device
+                device = await prisma.device.create({
+                    data: {
+                        deviceCode,
+                        deviceSecret,
+                        status: 'online',
+                        friendlyName: 'New Printer',
+                        lastSeenAt: new Date()
                     }
                 });
-
-                if (broadcastResult) {
-                    await prisma.message.update({
-                        where: { id: message.id },
-                        data: { status: 'sent', sentAt: new Date() }
-                    });
-                }
-            }
-        } catch (e) {
-            console.error('Error sending pending messages:', e);
-        }
-
-        ws.on('message', async (message) => {
-            try {
-                const data = JSON.parse(message.toString());
-                await handleDeviceMessage(deviceId, data);
-            } catch (e) {
-                console.error('Error handling device message:', e);
-            }
-        });
-
-        ws.on('close', async () => {
-            console.log(`Device disconnected: ${deviceCode}`);
-            deviceConnections.delete(deviceId);
-            // Close any shell session
-            const adminWs = shellSessions.get(deviceId);
-            if (adminWs) {
-                shellSessions.delete(deviceId);
-                if (adminWs.readyState === WebSocket.OPEN) {
-                    adminWs.send(JSON.stringify({ type: 'device_disconnected', deviceId }));
-                }
+            } else if (device.deviceSecret !== deviceSecret) {
+                console.log(`Connection rejected: Invalid credentials for ${deviceCode}`);
+                ws.close(4001, 'Invalid authentication');
+                return;
             }
 
-            // Update status to offline
+            const deviceId = device.id;
+            console.log(`Device connected: ${deviceCode} (${deviceId})`);
+
+            deviceConnections.set(deviceId, ws);
+
+            // Update status to online
             try {
                 await prisma.device.update({
                     where: { id: deviceId },
-                    data: { status: 'offline' }
+                    data: { status: 'online', lastSeenAt: new Date() }
                 });
             } catch (e) {
-                console.error('Error updating device offline status:', e);
+                console.error('Error updating device status:', e);
             }
-        });
+
+            // Send pending messages
+            try {
+                const pendingMessages = await prisma.message.findMany({
+                    where: {
+                        deviceId: deviceId,
+                        status: 'queued'
+                    },
+                    orderBy: { createdAt: 'asc' }
+                });
+
+                for (const message of pendingMessages) {
+                    let content = message.content;
+                    try {
+                        content = JSON.parse(message.content);
+                    } catch (e) {
+                        // Content might be plain string
+                    }
+
+                    const broadcastResult = broadcastToDevice(deviceId, {
+                        type: 'new_message',
+                        message: {
+                            id: message.id,
+                            content: content,
+                            contentType: message.contentType,
+                            createdAt: message.createdAt
+                        }
+                    });
+
+                    if (broadcastResult) {
+                        await prisma.message.update({
+                            where: { id: message.id },
+                            data: { status: 'sent', sentAt: new Date() }
+                        });
+                    }
+                }
+            } catch (e) {
+                console.error('Error sending pending messages:', e);
+            }
+
+            ws.on('message', async (message) => {
+                try {
+                    const data = JSON.parse(message.toString());
+                    await handleDeviceMessage(deviceId, data);
+                } catch (e) {
+                    console.error('Error handling device message:', e);
+                }
+            });
+
+            ws.on('close', async () => {
+                console.log(`Device disconnected: ${deviceCode}`);
+                deviceConnections.delete(deviceId);
+                // Close any shell session
+                const adminWs = shellSessions.get(deviceId);
+                if (adminWs) {
+                    shellSessions.delete(deviceId);
+                    if (adminWs.readyState === WebSocket.OPEN) {
+                        adminWs.send(JSON.stringify({ type: 'device_disconnected', deviceId }));
+                    }
+                }
+
+                // Update status to offline
+                try {
+                    await prisma.device.update({
+                        where: { id: deviceId },
+                        data: { status: 'offline' }
+                    });
+                } catch (e) {
+                    console.error('Error updating device offline status:', e);
+                }
+            });
+        } catch (error) {
+            console.error('Critical error in WebSocket connection handler:', error);
+            ws.close(1011, 'Internal server error');
+        }
     });
 };
 
