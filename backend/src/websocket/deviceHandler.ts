@@ -19,6 +19,7 @@ export const setupWebSocket = () => {
     const wss = new WebSocketServer({ noServer: true });
 
     wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
+        console.log(`[WS] CONNECTION ATTEMPT: ${req.url}`);
         let deviceId: string | null = null;
         let deviceCode: string | null = null;
 
