@@ -23,7 +23,6 @@ function DeviceSettingsModal({ deviceId, onClose, onUpdate }: { deviceId: string
     const [saving, setSaving] = useState(false);
     const [inviteEmail, setInviteEmail] = useState('');
     const [inviteLink, setInviteLink] = useState('');
-    const [inviteMessage, setInviteMessage] = useState('');
     const [inviteLoading, setInviteLoading] = useState(false);
     const [logType, setLogType] = useState('agent');
     const [logLines, setLogLines] = useState('500');
