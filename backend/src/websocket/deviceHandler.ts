@@ -51,7 +51,6 @@ export const setupWebSocket = (server: Server) => {
                 });
             } else if (device.deviceSecret !== deviceSecret) {
                 // If the device is not yet claimed, allow updating the secret
-                // This handles the case where a device is factory reset before being claimed
                 if (!device.ownerId) {
                     console.log(`Updating secret for unclaimed device: ${deviceCode}`);
                     device = await prisma.device.update({
@@ -59,7 +58,7 @@ export const setupWebSocket = (server: Server) => {
                         data: { deviceSecret }
                     });
                 } else {
-                    console.log(`Connection rejected: Invalid credentials for ${deviceCode} (claimed by ${device.ownerId})`);
+                    console.log(`Connection rejected: Invalid credentials for ${deviceCode}`);
                     ws.close(4003, 'Invalid authentication: secret mismatch');
                     return;
                 }
@@ -70,7 +69,8 @@ export const setupWebSocket = (server: Server) => {
 
             deviceConnections.set(deviceId, ws);
 
-            // Update status to online
+            // Update status to online (DISABLED FOR DEBUG)
+            /*
             try {
                 await prisma.device.update({
                     where: { id: deviceId },
@@ -79,8 +79,10 @@ export const setupWebSocket = (server: Server) => {
             } catch (e) {
                 console.error('Error updating device status:', e);
             }
+            */
 
-            // Send pending messages
+            // Send pending messages (DISABLED FOR DEBUG)
+            /*
             try {
                 const pendingMessages = await prisma.message.findMany({
                     where: {
@@ -95,7 +97,6 @@ export const setupWebSocket = (server: Server) => {
                     try {
                         content = JSON.parse(message.content);
                     } catch (e) {
-                        // Content might be plain string
                     }
 
                     const broadcastResult = broadcastToDevice(deviceId, {
@@ -118,10 +119,12 @@ export const setupWebSocket = (server: Server) => {
             } catch (e) {
                 console.error('Error sending pending messages:', e);
             }
+            */
 
             ws.on('message', async (message) => {
                 try {
                     const data = JSON.parse(message.toString());
+                    console.log(`Received from ${deviceCode}:`, data.type);
                     await handleDeviceMessage(deviceId, data);
                 } catch (e) {
                     console.error('Error handling device message:', e);
@@ -131,16 +134,9 @@ export const setupWebSocket = (server: Server) => {
             ws.on('close', async () => {
                 console.log(`Device disconnected: ${deviceCode}`);
                 deviceConnections.delete(deviceId);
-                // Close any shell session
-                const adminWs = shellSessions.get(deviceId);
-                if (adminWs) {
-                    shellSessions.delete(deviceId);
-                    if (adminWs.readyState === WebSocket.OPEN) {
-                        adminWs.send(JSON.stringify({ type: 'device_disconnected', deviceId }));
-                    }
-                }
 
-                // Update status to offline
+                // Update status to offline (DISABLED FOR DEBUG)
+                /*
                 try {
                     await prisma.device.update({
                         where: { id: deviceId },
@@ -149,6 +145,7 @@ export const setupWebSocket = (server: Server) => {
                 } catch (e) {
                     console.error('Error updating device offline status:', e);
                 }
+                */
             });
         } catch (error) {
             console.error('Critical error in WebSocket connection handler:', error);
