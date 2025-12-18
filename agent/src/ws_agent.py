@@ -105,6 +105,28 @@ async def connect_to_backend():
             async with websockets.connect(ws_url) as websocket:
                 logger.info("Connected to backend!")
                 
+                # Start background listener immediately to catch early messages
+                async def listen():
+                    try:
+                        async for message in websocket:
+                            logger.info(f"Received from backend: {message}")
+                            try:
+                                data = json.loads(message)
+                                if data.get('type') == 'ping':
+                                    await websocket.send(json.dumps({'type': 'pong'}))
+                                elif data.get('type') == 'new_message':
+                                    await handle_print_job(websocket, data)
+                                elif data.get('type') == 'error':
+                                    logger.error(f"Backend error: {data.get('message')}")
+                            except json.JSONDecodeError:
+                                logger.warning(f"Received non-JSON message: {message}")
+                    except websockets.exceptions.ConnectionClosed as e:
+                        logger.warning(f"Connection closed in listener: Code={e.code}")
+                    except Exception as e:
+                        logger.error(f"Error in listener: {e}")
+
+                listener_task = asyncio.create_task(listen())
+
                 # Wait a bit before sending hello to ensure backend is ready
                 await asyncio.sleep(1)
                 
@@ -118,24 +140,11 @@ async def connect_to_backend():
                     }))
                 except Exception as e:
                     logger.error(f"Failed to send device_hello: {e}")
+                    listener_task.cancel()
                     raise
-                
-                # Keep connection alive and handle messages
-                async for message in websocket:
-                    try:
-                        data = json.loads(message)
-                        logger.info(f"Received message type: {data.get('type')}")
-                        
-                        # Handle specific message types
-                        if data.get('type') == 'ping':
-                            await websocket.send(json.dumps({'type': 'pong'}))
-                        elif data.get('type') == 'new_message':
-                            await handle_print_job(websocket, data)
-                        elif data.get('type') == 'error':
-                            logger.error(f"Backend error: {data.get('message')}")
-                            
-                    except json.JSONDecodeError:
-                        logger.warning(f"Received non-JSON message: {message}")
+
+                # Keep the main task alive while the listener runs
+                await listener_task
                         
         except websockets.exceptions.ConnectionClosed as e:
             logger.warning(f"Connection closed by server: Code={e.code}, Reason='{e.reason}'. Reconnecting in 5s...")
