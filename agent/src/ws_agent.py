@@ -91,11 +91,14 @@ async def connect_to_backend():
         logger.error("No device code found. Exiting.")
         return
 
-    # Use query parameters for authentication (more robust through some proxies)
-    ws_url = f"{base_ws_url}?deviceCode={device_code}&deviceSecret={device_secret}"
+    import urllib.parse
+    # Use query parameters for authentication
+    encoded_code = urllib.parse.quote(device_code)
+    encoded_secret = urllib.parse.quote(device_secret)
+    ws_url = f"{base_ws_url}?deviceCode={encoded_code}&deviceSecret={encoded_secret}"
 
     logger.info(f"Starting WebSocket agent for device: {device_code}")
-    logger.info(f"Connecting to: {base_ws_url} (with credentials in query params)")
+    logger.info(f"Connecting to: {base_ws_url}")
     
     while True:
         try:

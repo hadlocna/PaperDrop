@@ -152,7 +152,11 @@ export const setupWebSocket = () => {
             if (messageBuffer.length > 0) {
                 console.log(`[${deviceCode}] Processing ${messageBuffer.length} buffered messages`);
                 for (const msg of messageBuffer) {
-                    await handleDeviceMessage(deviceId, msg);
+                    try {
+                        await handleDeviceMessage(deviceId, msg);
+                    } catch (e) {
+                        console.error(`[${deviceCode}] Error processing buffered message:`, e);
+                    }
                 }
                 messageBuffer.length = 0;
             }
