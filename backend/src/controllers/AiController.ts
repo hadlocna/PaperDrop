@@ -72,18 +72,17 @@ export class AiController {
             const designSpecs = JSON.parse(completion.choices[0].message.content || '{}');
             console.log('[AI] Design Specs:', designSpecs);
 
-            // 2. Generate Image with DALL-E 3
-            // We ask for a simple black and white line art style explicitly in the prompt we send to DALL-E
-            const dallePrompt = `Black and white thermal printer line art. Simple, bold lines. No shading. No grayscale. White background. ${designSpecs.image_prompt}. ${designSpecs.generation_instructions}`;
+            // 2. Generate Image with GPT Image 1.5 (latest model, replaces DALL-E 3)
+            // We ask for a simple black and white line art style explicitly in the prompt
+            const imagePrompt = `Black and white thermal printer line art. Simple, bold lines. No shading. No grayscale. White background. ${designSpecs.image_prompt}. ${designSpecs.generation_instructions}`;
 
-            console.log('[AI] Generating image with DALL-E 3...');
+            console.log('[AI] Generating image with gpt-image-1.5...');
             const imageResponse = await openai.images.generate({
-                model: "dall-e-3",
-                prompt: dallePrompt,
+                model: "gpt-image-1.5",
+                prompt: imagePrompt,
                 n: 1,
                 size: "1024x1024",
-                response_format: "b64_json",
-                style: "natural" // 'vivid' might be too complex? 'natural' often better for line art.
+                quality: "medium", // medium quality is faster and sufficient for thermal printing
             });
 
             if (!imageResponse.data || !imageResponse.data[0]) {
