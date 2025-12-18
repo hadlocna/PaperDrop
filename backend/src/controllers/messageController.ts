@@ -1,10 +1,12 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { broadcastToDevice } from '../websocket/deviceHandler';
+import { AuthRequest } from '../middleware/authMiddleware';
 
-export const sendMessage = async (req: Request, res: Response) => {
+export const sendMessage = async (req: AuthRequest, res: Response) => {
     try {
-        const { senderId, deviceId, content, contentType, scheduledAt } = req.body;
+        const { deviceId, content, contentType, scheduledAt } = req.body;
+        const senderId = req.user?.userId;
 
         if (!senderId || !deviceId || !content) {
             return res.status(400).json({ error: 'Missing required fields' });
@@ -55,13 +57,20 @@ export const sendMessage = async (req: Request, res: Response) => {
 
         // Broadcast to device via WebSocket ONLY if not scheduled
         if (!message.scheduledAt) {
+            // Fetch sender name for attribution
+            const sender = await prisma.user.findUnique({
+                where: { id: senderId },
+                select: { name: true }
+            });
+
             const broadcastResult = broadcastToDevice(deviceId, {
                 type: 'new_message',
                 message: {
                     id: message.id,
                     content: normalizedContent,
                     contentType: message.contentType,
-                    createdAt: message.createdAt
+                    createdAt: message.createdAt,
+                    senderName: sender?.name || 'Unknown'
                 }
             });
 
@@ -81,16 +90,39 @@ export const sendMessage = async (req: Request, res: Response) => {
     }
 };
 
-export const getMessages = async (req: Request, res: Response) => {
+export const getMessages = async (req: AuthRequest, res: Response) => {
     try {
-        const { userId, deviceId, limit = 50, offset = 0 } = req.query;
+        const { deviceId, limit = 50, offset = 0, shared = 'false' } = req.query;
+        const userId = req.user?.userId;
 
         if (!userId) {
-            return res.status(400).json({ error: 'Missing user ID' });
+            return res.status(401).json({ error: 'Unauthorized' });
         }
 
-        const where: any = { senderId: String(userId) };
-        if (deviceId) where.deviceId = String(deviceId);
+        let where: any = {};
+
+        if (shared === 'true' && deviceId) {
+            // Verify access to the device before showing shared history
+            const access = await prisma.deviceAccess.findUnique({
+                where: {
+                    deviceId_userId: {
+                        deviceId: String(deviceId),
+                        userId: String(userId)
+                    }
+                }
+            });
+            const device = await prisma.device.findUnique({ where: { id: String(deviceId) } });
+            const isOwner = device?.ownerId === userId;
+
+            if (!access && !isOwner) {
+                return res.status(403).json({ error: 'Not authorized to view history for this device' });
+            }
+            where.deviceId = String(deviceId);
+        } else {
+            // Default to only user's messages
+            where.senderId = String(userId);
+            if (deviceId) where.deviceId = String(deviceId);
+        }
 
         const messages = await prisma.message.findMany({
             where,

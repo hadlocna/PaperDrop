@@ -1,14 +1,16 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
 import { prisma } from '../lib/prisma';
+import { AuthRequest } from '../middleware/authMiddleware';
 
-export const createInvite = async (req: Request, res: Response) => {
+export const createInvite = async (req: AuthRequest, res: Response) => {
     try {
         const { id: deviceId } = req.params;
-        const { userId, email } = req.body;
+        const { email } = req.body;
+        const userId = req.user?.userId;
 
         if (!userId) {
-            return res.status(400).json({ error: 'Missing user ID' });
+            return res.status(401).json({ error: 'Unauthorized' });
         }
 
         const device = await prisma.device.findUnique({ where: { id: deviceId } });
@@ -64,13 +66,13 @@ export const getInviteDetails = async (req: Request, res: Response) => {
     }
 };
 
-export const acceptInvite = async (req: Request, res: Response) => {
+export const acceptInvite = async (req: AuthRequest, res: Response) => {
     try {
         const { token } = req.params;
-        const { userId } = req.body;
+        const userId = req.user?.userId;
 
         if (!userId) {
-            return res.status(400).json({ error: 'Missing user ID' });
+            return res.status(401).json({ error: 'Unauthorized' });
         }
 
         const invite = await prisma.deviceInvite.findUnique({ where: { token } });

@@ -45,7 +45,7 @@ export function InviteAccept() {
         setAccepting(true);
         setError('');
         try {
-            const result = await acceptInvite(invite.token, user.id);
+            const result = await acceptInvite(invite.token);
             if (result.status === 'accepted') {
                 setAccepted(true);
                 setInvite({ ...invite, status: 'accepted' });

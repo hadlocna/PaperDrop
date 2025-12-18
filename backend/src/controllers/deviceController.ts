@@ -2,10 +2,12 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { broadcastToDevice, requestLogsFromDevice } from '../websocket/deviceHandler';
 import crypto from 'crypto';
+import { AuthRequest } from '../middleware/authMiddleware';
 
-export const claimDevice = async (req: Request, res: Response) => {
+export const claimDevice = async (req: AuthRequest, res: Response) => {
     try {
-        const { deviceCode, userId, friendlyName } = req.body;
+        const { deviceCode, friendlyName } = req.body;
+        const userId = req.user?.userId;
 
         if (!deviceCode || !userId) {
             return res.status(400).json({ error: 'Missing device code or user ID' });
@@ -57,11 +59,16 @@ export const claimDevice = async (req: Request, res: Response) => {
             return dev;
         });
 
-        // Notify device
+        // Notify device and validate connection
         broadcastToDevice(device.id, {
             type: 'claimed',
-            owner_name: 'Owner' // Ideally fetch user name
+            owner_name: 'Owner'
         });
+
+        // Post-claim validation: request a connection test
+        setTimeout(() => {
+            broadcastToDevice(device.id, { type: 'test_connection' });
+        }, 2000);
 
         res.json(updatedDevice);
 
@@ -71,12 +78,12 @@ export const claimDevice = async (req: Request, res: Response) => {
     }
 };
 
-export const getDevices = async (req: Request, res: Response) => {
+export const getDevices = async (req: AuthRequest, res: Response) => {
     try {
-        const { userId } = req.query;
+        const userId = req.user?.userId;
 
         if (!userId) {
-            return res.status(400).json({ error: 'Missing user ID' });
+            return res.status(401).json({ error: 'Unauthorized' });
         }
 
         const devices = await prisma.device.findMany({
@@ -93,12 +100,16 @@ export const getDevices = async (req: Request, res: Response) => {
             }
         });
 
-        // Calculate real-time status based on lastSeenAt
+        // Calculate real-time status based on lastSeenAt or lastHeartbeat
         const now = new Date().getTime();
-        const devicesWithStatus = devices.map(d => ({
-            ...d,
-            status: d.lastSeenAt && (now - new Date(d.lastSeenAt).getTime() < 60000) ? 'online' : 'offline'
-        }));
+        const devicesWithStatus = devices.map(d => {
+            const lastActive = d.lastHeartbeat || d.lastSeenAt;
+            const isOnline = lastActive && (now - new Date(lastActive).getTime() < 60000);
+            return {
+                ...d,
+                status: isOnline ? 'online' : 'offline'
+            };
+        });
 
         res.json(devicesWithStatus);
     } catch (error) {
@@ -107,13 +118,13 @@ export const getDevices = async (req: Request, res: Response) => {
     }
 };
 
-export const getDevice = async (req: Request, res: Response) => {
+export const getDevice = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
-        const { userId } = req.query;
+        const userId = req.user?.userId;
 
         if (!userId) {
-            return res.status(400).json({ error: 'Missing user ID' });
+            return res.status(401).json({ error: 'Unauthorized' });
         }
 
         const device = await prisma.device.findUnique({
@@ -139,7 +150,8 @@ export const getDevice = async (req: Request, res: Response) => {
         }
 
         // Calculate real-time status
-        const isOnline = device.lastSeenAt && (new Date().getTime() - new Date(device.lastSeenAt).getTime() < 60000);
+        const lastActive = device.lastHeartbeat || device.lastSeenAt;
+        const isOnline = lastActive && (new Date().getTime() - new Date(lastActive).getTime() < 60000);
         const deviceWithStatus = {
             ...device,
             status: isOnline ? 'online' : 'offline'
@@ -151,10 +163,11 @@ export const getDevice = async (req: Request, res: Response) => {
     }
 };
 
-export const updateDevice = async (req: Request, res: Response) => {
+export const updateDevice = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
-        const { userId, friendlyName } = req.body;
+        const { friendlyName } = req.body;
+        const userId = req.user?.userId;
 
         const device = await prisma.device.findUnique({ where: { id } });
         if (!device) return res.status(404).json({ error: 'Device not found' });
@@ -174,10 +187,12 @@ export const updateDevice = async (req: Request, res: Response) => {
     }
 };
 
-export const testPrint = async (req: Request, res: Response) => {
+export const testPrint = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
-        const { userId } = req.body;
+        const userId = req.user?.userId;
+
+        if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
         // Check access... generic logic repeatedly used, ideally middleware.
         const access = await prisma.deviceAccess.findUnique({
@@ -202,13 +217,14 @@ export const testPrint = async (req: Request, res: Response) => {
     }
 };
 
-export const downloadLogs = async (req: Request, res: Response) => {
+export const downloadLogs = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
-        const { userId, type = 'agent', lines = '500' } = req.query;
+        const { type = 'agent', lines = '500' } = req.query;
+        const userId = req.user?.userId;
 
         if (!userId) {
-            return res.status(400).json({ error: 'Missing user ID' });
+            return res.status(401).json({ error: 'Unauthorized' });
         }
 
         const device = await prisma.device.findUnique({ where: { id } });
@@ -235,7 +251,7 @@ export const downloadLogs = async (req: Request, res: Response) => {
             const filename = `${device.friendlyName || 'device'}-${String(type)}-logs.txt`;
             res.setHeader('Content-Type', 'text/plain');
             res.setHeader('Content-Disposition', `attachment; filename="${filename.replace(/\s+/g, '_')}"`);
-            res.send(response.logs || '');
+            res.send(response.content || '');
         } catch (err: any) {
             if (err?.message === 'device_offline') {
                 return res.status(503).json({ error: 'Device offline' });
@@ -252,14 +268,21 @@ export const downloadLogs = async (req: Request, res: Response) => {
     }
 };
 
-export const getAccess = async (req: Request, res: Response) => {
+export const getAccess = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
-        const { userId } = req.query;
+        const userId = req.user?.userId;
 
         const device = await prisma.device.findUnique({ where: { id } });
-        if (!device || device.ownerId !== String(userId)) {
-            return res.status(403).json({ error: 'Only owner can view access' });
+        if (!device) return res.status(404).json({ error: 'Device not found' });
+
+        // Check if user has access to view this
+        const userAccess = await prisma.deviceAccess.findUnique({
+            where: { deviceId_userId: { deviceId: id, userId: String(userId) } }
+        });
+
+        if (!userAccess && device.ownerId !== userId) {
+            return res.status(403).json({ error: 'Access denied' });
         }
 
         const access = await prisma.deviceAccess.findMany({
@@ -267,16 +290,22 @@ export const getAccess = async (req: Request, res: Response) => {
             include: { user: { select: { id: true, name: true, email: true } } }
         });
 
-        res.json(access);
+        const invites = await prisma.deviceInvite.findMany({
+            where: { deviceId: id, status: 'pending' },
+            include: { inviter: { select: { name: true } } }
+        });
+
+        res.json({ access, invites });
     } catch (error) {
         res.status(500).json({ error: 'Internal server error' });
     }
 };
 
-export const grantAccess = async (req: Request, res: Response) => {
+export const grantAccess = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
-        const { userId, email } = req.body;
+        const { email } = req.body;
+        const userId = req.user?.userId;
 
         const device = await prisma.device.findUnique({ where: { id } });
         if (!device || device.ownerId !== userId) {
@@ -311,10 +340,10 @@ export const grantAccess = async (req: Request, res: Response) => {
     }
 };
 
-export const revokeAccess = async (req: Request, res: Response) => {
+export const revokeAccess = async (req: AuthRequest, res: Response) => {
     try {
         const { id, userId: targetUserId } = req.params;
-        const { userId } = req.body; // Owner ID from body/session
+        const userId = req.user?.userId;
 
         const device = await prisma.device.findUnique({ where: { id } });
         if (!device || device.ownerId !== userId) {
@@ -335,10 +364,10 @@ export const revokeAccess = async (req: Request, res: Response) => {
     }
 };
 
-export const unclaimDevice = async (req: Request, res: Response) => {
+export const unclaimDevice = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
-        const { userId } = req.body;
+        const userId = req.user?.userId;
 
         const device = await prisma.device.findUnique({ where: { id } });
         if (!device) return res.status(404).json({ error: 'Device not found' });

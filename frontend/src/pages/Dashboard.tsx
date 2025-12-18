@@ -18,6 +18,8 @@ interface Device {
 function DeviceSettingsModal({ deviceId, onClose, onUpdate }: { deviceId: string, onClose: () => void, onUpdate: () => void }) {
     const { user } = useAuth();
     const [device, setDevice] = useState<any>(null);
+    const [accessList, setAccessList] = useState<any[]>([]);
+    const [pendingInvites, setPendingInvites] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [newName, setNewName] = useState('');
     const [saving, setSaving] = useState(false);
@@ -33,27 +35,40 @@ function DeviceSettingsModal({ deviceId, onClose, onUpdate }: { deviceId: string
     const [testResult, setTestResult] = useState<string | null>(null);
 
     useEffect(() => {
-        async function loadDevice() {
+        async function loadData() {
             try {
-                const res = await api.get(`/devices/${deviceId}`, {
-                    params: { userId: user?.id }
-                });
-                setDevice(res.data);
-                setNewName(res.data.friendlyName);
+                const [deviceRes, accessRes] = await Promise.all([
+                    api.get(`/devices/${deviceId}`),
+                    api.get(`/devices/${deviceId}/access`)
+                ]);
+                setDevice(deviceRes.data);
+                setNewName(deviceRes.data.friendlyName);
+                setAccessList(accessRes.data.access || []);
+                setPendingInvites(accessRes.data.invites || []);
             } catch (err) {
                 console.error(err);
             } finally {
                 setLoading(false);
             }
         }
-        if (user?.id) loadDevice();
+        if (user?.id) loadData();
     }, [deviceId, user?.id]);
+
+    const handleRevokeAccess = async (targetUserId: string) => {
+        if (!confirm('Are you sure you want to revoke access for this user?')) return;
+        try {
+            await api.delete(`/devices/${deviceId}/access/${targetUserId}`);
+            setAccessList(accessList.filter(a => a.userId !== targetUserId));
+        } catch (err) {
+            alert('Failed to revoke access');
+        }
+    };
 
     const handleUpdateName = async (e: React.FormEvent) => {
         e.preventDefault();
         setSaving(true);
         try {
-            await updateDevice(deviceId, { friendlyName: newName, userId: user?.id });
+            await updateDevice(deviceId, { friendlyName: newName });
             setDevice({ ...device, friendlyName: newName });
             onUpdate();
         } catch (err) {
@@ -76,7 +91,7 @@ function DeviceSettingsModal({ deviceId, onClose, onUpdate }: { deviceId: string
     const handleUnclaim = async () => {
         if (!confirm('Are you sure you want to remove this device? You will need the code to claim it again.')) return;
         try {
-            await unclaimDevice(deviceId, user?.id!);
+            await unclaimDevice(deviceId);
             onClose();
             onUpdate();
         } catch (err) {
@@ -88,9 +103,8 @@ function DeviceSettingsModal({ deviceId, onClose, onUpdate }: { deviceId: string
         e.preventDefault();
         if (!user?.id) return;
         setInviteLoading(true);
-        setInviteLoading(true);
         try {
-            const data = await createInviteLink(deviceId, user.id, inviteEmail || undefined);
+            const data = await createInviteLink(deviceId, inviteEmail || undefined);
             const link = `${window.location.origin}/invite/${data.token}`;
             setInviteLink(link);
             setInviteLink(link);
@@ -106,7 +120,7 @@ function DeviceSettingsModal({ deviceId, onClose, onUpdate }: { deviceId: string
         setLogsLoading(true);
         setLogMessage('');
         try {
-            const res = await downloadDeviceLogs(deviceId, user.id, logType, parseInt(logLines) || 500);
+            const res = await downloadDeviceLogs(deviceId, logType, parseInt(logLines) || 500);
             const filename = `${device.friendlyName || 'device'}-${logType}-logs.txt`;
             const blob = new Blob([res.data], { type: 'text/plain' });
             const url = window.URL.createObjectURL(blob);
@@ -131,7 +145,7 @@ function DeviceSettingsModal({ deviceId, onClose, onUpdate }: { deviceId: string
         try {
             // We'll implement a simple ping/pong via the existing message system or a new endpoint
             // For now, let's just check if the device is 'online' in the DB
-            const res = await api.get(`/devices/${deviceId}`, { params: { userId: user?.id } });
+            const res = await api.get(`/devices/${deviceId}`);
             if (res.data.status === 'online') {
                 setTestResult('Device is online and connected to WebSocket.');
             } else {
@@ -234,6 +248,49 @@ function DeviceSettingsModal({ deviceId, onClose, onUpdate }: { deviceId: string
                     {/* Invites */}
                     <section>
                         <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">Share Access</h3>
+
+                        {/* Access List */}
+                        {accessList.length > 0 && (
+                            <div className="mb-6 space-y-3">
+                                <h4 className="text-xs font-bold text-gray-400 uppercase ml-1">Users with Access</h4>
+                                {accessList.map((access) => (
+                                    <div key={access.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
+                                        <div>
+                                            <p className="text-sm font-medium text-charcoal-800">{access.user.name}</p>
+                                            <p className="text-xs text-gray-400">{access.user.email} • <span className="capitalize">{access.role}</span></p>
+                                        </div>
+                                        {device.ownerId === user?.id && access.userId !== user?.id && (
+                                            <button
+                                                onClick={() => handleRevokeAccess(access.userId)}
+                                                className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                                                title="Revoke Access"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Pending Invites */}
+                        {pendingInvites.length > 0 && (
+                            <div className="mb-6 space-y-3">
+                                <h4 className="text-xs font-bold text-gray-400 uppercase ml-1">Pending Invites</h4>
+                                {pendingInvites.map((invite) => (
+                                    <div key={invite.id} className="flex items-center justify-between p-3 bg-orange-50 rounded-xl border border-orange-100">
+                                        <div>
+                                            <p className="text-sm font-medium text-orange-800">{invite.inviteeEmail || 'Open Invite'}</p>
+                                            <p className="text-xs text-orange-600">Sent by {invite.inviter.name}</p>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[10px] font-bold uppercase bg-orange-200 text-orange-700 px-1.5 py-0.5 rounded">Pending</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
                         <p className="text-sm text-gray-500 mb-4">Invite others to print to this device.</p>
                         <form onSubmit={handleInvite} className="space-y-3">
                             <div className="flex gap-2">
@@ -371,7 +428,7 @@ export function Dashboard() {
         if (!user) return;
         async function fetchDevices() {
             try {
-                const res = await api.get('/devices', { params: { userId: user?.id } });
+                const res = await api.get('/devices');
                 setDevices(res.data);
                 if (res.data.length > 0 && !selectedDeviceId) {
                     setSelectedDeviceId(res.data[0].id);
@@ -403,7 +460,6 @@ export function Dashboard() {
         try {
             await api.post('/messages', {
                 deviceId: selectedDeviceId,
-                senderId: user?.id,
                 contentType: 'image',
                 content: base64Image, // Send raw base64 string
                 scheduledAt: scheduleDate
@@ -605,7 +661,7 @@ export function Dashboard() {
                     }}
                     onUpdate={() => {
                         // Refresh devices to get new name
-                        api.get('/devices', { params: { userId: user?.id } }).then(res => setDevices(res.data));
+                        api.get('/devices').then(res => setDevices(res.data));
                     }}
                 />
             )}

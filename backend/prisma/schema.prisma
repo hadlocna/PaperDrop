@@ -38,6 +38,7 @@ model Device {
   status          String?   @default("setup_pending")
   firmwareVersion String?   @map("firmware_version")
   wifiSignal      Int?      @map("wifi_signal") // RSSI in dBm
+  ipAddress       String?   @map("ip_address")
   lastHeartbeat   DateTime? @map("last_heartbeat")
   config          String?   @default("{}") // JSON blob for device config
   macAddress      String?   @map("mac_address")

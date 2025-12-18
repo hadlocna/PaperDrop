@@ -41,7 +41,8 @@ class ScheduledMessageProcessor {
                         id: message.id,
                         content: JSON.parse(message.content), // Assuming JSON string in DB
                         contentType: message.contentType,
-                        createdAt: message.createdAt
+                        createdAt: message.createdAt,
+                        senderName: message.sender?.name || 'Unknown'
                     }
                 };
 

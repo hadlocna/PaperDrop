@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { registerUser } from '../api/client';
+import { useAuth } from '../context/AuthContext';
 import logoHorizontal from '../assets/logo-horizontal.png';
 
 export const Register = () => {
     const navigate = useNavigate();
     const location = useLocation();
+    const { login } = useAuth();
 
     const [formData, setFormData] = useState({
         email: '',
@@ -15,23 +17,18 @@ export const Register = () => {
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
+    // The page we were trying to access before being redirected to login/register
+    const from = location.state?.from?.pathname + (location.state?.from?.search || '') || '/';
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         setError('');
 
         try {
-            await registerUser(formData.email, formData.name, formData.password);
-            // After registration, usually we login automatically or redirect to login.
-            // Assuming registerUser logs them in or we want them to login:
-            // For this flow, let's assume it auto-logs in (backend pending) OR we redirect to login
-            // BUT, if we redirect to login, we must keep the state.
-
-            // NOTE: The current backend likely just creates user. Best flow: Auto-login after register.
-            // If backend doesn't return token on register, we must call login.
-            // Let's assume we navigate to login to be safe, preserving state.
-            navigate('/login', { state: location.state });
-
+            const data = await registerUser(formData.email, formData.name, formData.password);
+            login(data);
+            navigate(from, { replace: true });
         } catch (err: any) {
             setError(err.response?.data?.error || 'Registration failed');
         } finally {

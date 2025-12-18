@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
 
 export const registerUser = async (req: Request, res: Response) => {
     try {
@@ -34,9 +35,19 @@ export const registerUser = async (req: Request, res: Response) => {
             },
         });
 
+        // Sign a JWT token
+        const token = jwt.sign(
+            { userId: user.id, email: user.email },
+            process.env.JWT_SECRET || 'paperdrop-secret',
+            { expiresIn: '30d' }
+        );
+
         // Return user without sensitive data
         const { passwordHash: _, ...userWithoutHash } = user;
-        res.status(201).json(userWithoutHash);
+        res.status(201).json({
+            user: userWithoutHash,
+            token
+        });
 
     } catch (error) {
         console.error('Registration error:', error);

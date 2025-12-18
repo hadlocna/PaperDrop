@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
 
 export const loginUser = async (req: Request, res: Response) => {
     try {
@@ -24,10 +25,18 @@ export const loginUser = async (req: Request, res: Response) => {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
-        // In a real app, sign a JWT here. For this MVP, we'll return the user info.
-        // Frontend will store the user ID in context/localStorage.
+        // Sign a JWT token
+        const token = jwt.sign(
+            { userId: user.id, email: user.email },
+            process.env.JWT_SECRET || 'paperdrop-secret',
+            { expiresIn: '30d' }
+        );
+
         const { passwordHash: _, ...userWithoutHash } = user;
-        res.json(userWithoutHash);
+        res.json({
+            user: userWithoutHash,
+            token
+        });
 
     } catch (error) {
         console.error('Login error:', error);

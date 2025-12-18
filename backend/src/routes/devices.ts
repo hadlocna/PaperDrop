@@ -12,7 +12,11 @@ import {
     unclaimDevice
 } from '../controllers/deviceController';
 
+import { authenticateToken } from '../middleware/authMiddleware';
+
 const router = Router();
+
+router.use(authenticateToken);
 
 router.post('/claim', claimDevice);
 router.delete('/:id/claim', unclaimDevice);

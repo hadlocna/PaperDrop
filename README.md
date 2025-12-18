@@ -221,12 +221,20 @@ Key files on the device:
 - `/etc/paperdrop/wifi.json` - Saved WiFi credentials
 - `/opt/paperdrop/` - Application code
 
+## 👥 Multi-User Sharing
+PaperDrop is designed for families. A device owner can share access with others:
+
+1. **Owner Invites**: From the device settings, the owner can generate an invite link or send an invite to a specific email.
+2. **Accepting Invites**: The invitee clicks the link, logs in (or registers), and accepts the invite.
+3. **Shared History**: All authorized users can see the message history for the shared device, making it easy to see what has been sent.
+4. **Access Management**: Owners can see who has access and revoke it at any time.
+
 ## 🔐 Security
 
-- **Device Authentication**: Each device has a unique `deviceCode` and `deviceSecret`
-- **User Authentication**: Users log in via email/password
-- **Device Access**: Owners can share access with other users via invite links
-- **API Security**: Backend uses CORS and Helmet for protection
+- **JWT Authentication**: All API requests are authenticated using JSON Web Tokens (JWT).
+- **Server-Side Authorization**: The backend verifies device access permissions for every message and setting update.
+- **Device Authentication**: Each device has a unique `deviceCode` and `deviceSecret` for WebSocket connections.
+- **API Security**: Backend uses CORS, Helmet, and rate limiting for protection.
 
 ## 🐛 Troubleshooting
 

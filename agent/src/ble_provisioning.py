@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 """
 BLE Provisioning GATT Server using official BlueZ Python pattern.
-Based on BlueZ test/example-gatt-server.
-
-Uses PyGObject (GLib/dbus) which is the canonical way BlueZ expects 
-GATT servers to be structured.
 """
 
 import dbus
@@ -14,9 +10,31 @@ import dbus.service
 import json
 import subprocess
 import logging
+from logging.handlers import RotatingFileHandler
+import os
+import time
+import threading
 from gi.repository import GLib
 
-logging.basicConfig(level=logging.INFO)
+# Logging setup
+LOG_FILE = '/var/log/paperdrop/ble.log'
+try:
+    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+except:
+    pass
+
+log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+try:
+    file_handler = RotatingFileHandler(LOG_FILE, maxBytes=5*1024*1024, backupCount=5)
+    file_handler.setFormatter(log_formatter)
+    handlers = [file_handler, logging.StreamHandler()]
+except:
+    handlers = [logging.StreamHandler()]
+
+logging.basicConfig(
+    level=logging.INFO,
+    handlers=handlers
+)
 logger = logging.getLogger("BLEProvisioning")
 
 BLUEZ_SERVICE_NAME = "org.bluez"
@@ -28,7 +46,7 @@ GATT_SERVICE_IFACE = "org.bluez.GattService1"
 GATT_CHRC_IFACE = "org.bluez.GattCharacteristic1"
 LE_ADVERTISEMENT_IFACE = "org.bluez.LEAdvertisement1"
 
-# UUIDs - using fresh UUID to avoid collision
+# UUIDs
 SERVICE_UUID = "12345678-1234-5678-1234-56789abcdef0"
 DEVICE_ID_CHRC_UUID = "12345678-1234-5678-1234-56789abcdef1"
 WIFI_CONFIG_CHRC_UUID = "12345678-1234-5678-1234-56789abcdef2"
@@ -37,64 +55,90 @@ WIFI_STATUS_CHRC_UUID = "12345678-1234-5678-1234-56789abcdef4"
 
 # Global status
 wifi_status = "idle"  # idle, connecting, connected, failed
+wifi_error = ""
 wifi_status_obj = None
 
-def update_wifi_status(new_status):
-    global wifi_status
+def update_wifi_status(new_status, error=""):
+    global wifi_status, wifi_error
     wifi_status = new_status
-    logger.info(f"WiFi Status updated: {wifi_status}")
+    wifi_error = error
+    logger.info(f"WiFi Status updated: {wifi_status} {f'({error})' if error else ''}")
     if wifi_status_obj:
+        status_data = json.dumps({"status": wifi_status, "error": wifi_error})
         wifi_status_obj.PropertiesChanged(
             GATT_CHRC_IFACE,
-            {'Value': [dbus.Byte(b) for b in wifi_status.encode('utf-8')]},
+            {'Value': [dbus.Byte(b) for b in status_data.encode('utf-8')]},
             []
         )
 
 def connect_wifi_task(ssid, password):
     update_wifi_status("connecting")
-    try:
-        logger.info(f"Connecting to WiFi: {ssid}")
-        
-        # Delete any existing connection for this SSID first
-        subprocess.run(['nmcli', 'connection', 'delete', ssid], 
-                       capture_output=True, text=True)
-        
-        # Create new connection with proper WPA-PSK settings
-        result = subprocess.run([
-            'nmcli', 'connection', 'add',
-            'type', 'wifi',
-            'con-name', ssid,
-            'ssid', ssid,
-            'wifi-sec.key-mgmt', 'wpa-psk',
-            'wifi-sec.psk', password
-        ], capture_output=True, text=True, timeout=30)
-        
-        if result.returncode != 0:
-            logger.error(f"Failed to create connection: {result.stderr}")
-            update_wifi_status("failed")
-            return
-        
-        # Now activate the connection
-        result = subprocess.run(
-            ['nmcli', 'connection', 'up', ssid],
-            capture_output=True, text=True, timeout=30
-        )
-        
-        if result.returncode == 0:
-            logger.info("WiFi connected successfully!")
-            try:
-                with open('/etc/paperdrop/wifi-provisioned', 'w') as f:
-                    f.write('1')
-            except:
-                pass
-            update_wifi_status("connected")
-        else:
-            logger.error(f"WiFi connection failed: {result.stderr}")
-            update_wifi_status("failed")
-    except Exception as e:
-        logger.error(f"Error in WiFi connection task: {e}")
-        update_wifi_status("failed")
-
+    max_retries = 3
+    
+    for attempt in range(1, max_retries + 1):
+        try:
+            logger.info(f"Connecting to WiFi: {ssid} (Attempt {attempt}/{max_retries})")
+            
+            # Delete any existing connection for this SSID first
+            subprocess.run(['sudo', 'nmcli', 'connection', 'delete', ssid], 
+                           capture_output=True, text=True)
+            
+            # Create new connection
+            result = subprocess.run([
+                'sudo', 'nmcli', 'connection', 'add',
+                'type', 'wifi',
+                'con-name', ssid,
+                'ssid', ssid,
+                'wifi-sec.key-mgmt', 'wpa-psk',
+                'wifi-sec.psk', password
+            ], capture_output=True, text=True, timeout=30)
+            
+            if result.returncode != 0:
+                logger.error(f"Failed to create connection: {result.stderr}")
+                if attempt == max_retries:
+                    update_wifi_status("failed", f"Failed to create connection: {result.stderr}")
+                    return
+                time.sleep(2)
+                continue
+            
+            # Now activate the connection
+            result = subprocess.run(
+                ['sudo', 'nmcli', 'connection', 'up', ssid],
+                capture_output=True, text=True, timeout=45
+            )
+            
+            if result.returncode == 0:
+                logger.info("WiFi connected successfully!")
+                try:
+                    os.makedirs('/etc/paperdrop', exist_ok=True)
+                    with open('/etc/paperdrop/wifi-provisioned', 'w') as f:
+                        f.write('1')
+                    # Save credentials for reuse
+                    with open('/etc/paperdrop/wifi.json', 'w') as f:
+                        json.dump({"ssid": ssid, "password": password}, f)
+                except Exception as e:
+                    logger.warning(f"Failed to save provisioned flag: {e}")
+                
+                update_wifi_status("connected")
+                return
+            else:
+                logger.error(f"WiFi connection failed: {result.stderr}")
+                if attempt == max_retries:
+                    error_msg = result.stderr
+                    if "Secrets were required, but not provided" in error_msg:
+                        error_msg = "Invalid password"
+                    elif "No network with SSID" in error_msg:
+                        error_msg = "Network not found"
+                    update_wifi_status("failed", error_msg)
+                    return
+                time.sleep(5)
+                
+        except Exception as e:
+            logger.error(f"Error in WiFi connection task: {e}")
+            if attempt == max_retries:
+                update_wifi_status("failed", str(e))
+                return
+            time.sleep(2)
 
 def get_device_id():
     try:
@@ -103,15 +147,14 @@ def get_device_id():
     except:
         return "PD-UNKNOWN"
 
-
 def scan_wifi_networks():
     """Scan for nearby WiFi networks and return as JSON list."""
     try:
         # Rescan for networks
-        subprocess.run(['nmcli', 'dev', 'wifi', 'rescan'], capture_output=True)
+        subprocess.run(['sudo', 'nmcli', 'dev', 'wifi', 'rescan'], capture_output=True)
         # Get list of networks
         result = subprocess.run(
-            ['nmcli', '-t', '-f', 'SSID,SIGNAL,SECURITY', 'dev', 'wifi', 'list'],
+            ['nmcli', '-t', '-f', 'IN-USE,SSID,SIGNAL,SECURITY', 'dev', 'wifi', 'list'],
             capture_output=True, text=True
         )
         networks = []
@@ -119,50 +162,36 @@ def scan_wifi_networks():
         for line in result.stdout.strip().split('\n'):
             if line:
                 parts = line.split(':')
-                if len(parts) >= 3:
-                    ssid = parts[0]
-                    if ssid and ssid not in seen:  # Skip empty and duplicates
+                if len(parts) >= 4:
+                    in_use = parts[0] == '*'
+                    ssid = parts[1]
+                    if ssid and ssid not in seen:
                         seen.add(ssid)
                         networks.append({
                             'ssid': ssid,
-                            'signal': int(parts[1]) if parts[1].isdigit() else 0,
-                            'security': parts[2] if parts[2] else 'Open'
+                            'signal': int(parts[2]) if parts[2].isdigit() else 0,
+                            'security': parts[3] if parts[3] else 'Open',
+                            'connected': in_use
                         })
-        # Sort by signal strength (strongest first)
         networks.sort(key=lambda x: x['signal'], reverse=True)
-        return networks[:10]  # Return top 10
+        return networks[:15]
     except Exception as e:
         logger.error(f'Error scanning WiFi: {e}')
         return []
 
-
 class InvalidArgsException(dbus.exceptions.DBusException):
     _dbus_error_name = "org.freedesktop.DBus.Error.InvalidArgs"
-
 
 class NotSupportedException(dbus.exceptions.DBusException):
     _dbus_error_name = "org.bluez.Error.NotSupported"
 
-
-class NotPermittedException(dbus.exceptions.DBusException):
-    _dbus_error_name = "org.bluez.Error.NotPermitted"
-
-
-# ==============================
-# Advertisement
-# ==============================
-
 class Advertisement(dbus.service.Object):
     PATH_BASE = "/org/bluez/example/advertisement"
-
     def __init__(self, bus, index, advertising_type):
         self.path = self.PATH_BASE + str(index)
         self.bus = bus
         self.ad_type = advertising_type
         self.service_uuids = None
-        self.manufacturer_data = None
-        self.solicit_uuids = None
-        self.service_data = None
         self.local_name = None
         self.include_tx_power = False
         dbus.service.Object.__init__(self, bus, self.path)
@@ -172,12 +201,6 @@ class Advertisement(dbus.service.Object):
         properties["Type"] = self.ad_type
         if self.service_uuids is not None:
             properties["ServiceUUIDs"] = dbus.Array(self.service_uuids, signature='s')
-        if self.solicit_uuids is not None:
-            properties["SolicitUUIDs"] = dbus.Array(self.solicit_uuids, signature='s')
-        if self.manufacturer_data is not None:
-            properties["ManufacturerData"] = dbus.Dictionary(self.manufacturer_data, signature='qv')
-        if self.service_data is not None:
-            properties["ServiceData"] = dbus.Dictionary(self.service_data, signature='sv')
         if self.local_name is not None:
             properties["LocalName"] = dbus.String(self.local_name)
         if self.include_tx_power:
@@ -197,18 +220,12 @@ class Advertisement(dbus.service.Object):
     def Release(self):
         logger.info('%s: Released!' % self.path)
 
-
 class ProvisioningAdvertisement(Advertisement):
     def __init__(self, bus, index):
         Advertisement.__init__(self, bus, index, "peripheral")
         self.service_uuids = [SERVICE_UUID]
         self.local_name = "PaperDrop"
         self.include_tx_power = True
-
-
-# ==============================
-# GATT Application
-# ==============================
 
 class Application(dbus.service.Object):
     def __init__(self, bus):
@@ -230,15 +247,10 @@ class Application(dbus.service.Object):
             chrcs = service.get_characteristics()
             for chrc in chrcs:
                 response[chrc.get_path()] = chrc.get_properties()
-                descs = chrc.get_descriptors()
-                for desc in descs:
-                    response[desc.get_path()] = desc.get_properties()
         return response
-
 
 class Service(dbus.service.Object):
     PATH_BASE = "/org/bluez/example/service"
-
     def __init__(self, bus, index, uuid, primary):
         self.path = self.PATH_BASE + str(index)
         self.bus = bus
@@ -252,9 +264,7 @@ class Service(dbus.service.Object):
             GATT_SERVICE_IFACE: {
                 'UUID': self.uuid,
                 'Primary': self.primary,
-                'Characteristics': dbus.Array(
-                    self.get_characteristic_paths(),
-                    signature='o')
+                'Characteristics': dbus.Array(self.get_characteristic_paths(), signature='o')
             }
         }
 
@@ -265,10 +275,7 @@ class Service(dbus.service.Object):
         self.characteristics.append(characteristic)
 
     def get_characteristic_paths(self):
-        result = []
-        for chrc in self.characteristics:
-            result.append(chrc.get_path())
-        return result
+        return [chrc.get_path() for chrc in self.characteristics]
 
     def get_characteristics(self):
         return self.characteristics
@@ -279,7 +286,6 @@ class Service(dbus.service.Object):
             raise InvalidArgsException()
         return self.get_properties()[GATT_SERVICE_IFACE]
 
-
 class Characteristic(dbus.service.Object):
     def __init__(self, bus, index, uuid, flags, service):
         self.path = service.path + '/char' + str(index)
@@ -287,7 +293,6 @@ class Characteristic(dbus.service.Object):
         self.uuid = uuid
         self.service = service
         self.flags = flags
-        self.descriptors = []
         dbus.service.Object.__init__(self, bus, self.path)
 
     def get_properties(self):
@@ -296,26 +301,12 @@ class Characteristic(dbus.service.Object):
                 'Service': self.service.get_path(),
                 'UUID': self.uuid,
                 'Flags': self.flags,
-                'Descriptors': dbus.Array(
-                    self.get_descriptor_paths(),
-                    signature='o')
+                'Descriptors': dbus.Array([], signature='o')
             }
         }
 
     def get_path(self):
         return dbus.ObjectPath(self.path)
-
-    def add_descriptor(self, descriptor):
-        self.descriptors.append(descriptor)
-
-    def get_descriptor_paths(self):
-        result = []
-        for desc in self.descriptors:
-            result.append(desc.get_path())
-        return result
-
-    def get_descriptors(self):
-        return self.descriptors
 
     @dbus.service.method(DBUS_PROP_IFACE, in_signature='s', out_signature='a{sv}')
     def GetAll(self, interface):
@@ -325,32 +316,23 @@ class Characteristic(dbus.service.Object):
 
     @dbus.service.method(GATT_CHRC_IFACE, in_signature='a{sv}', out_signature='ay')
     def ReadValue(self, options):
-        logger.info('Default ReadValue called, returning error')
         raise NotSupportedException()
 
     @dbus.service.method(GATT_CHRC_IFACE, in_signature='aya{sv}')
     def WriteValue(self, value, options):
-        logger.info('Default WriteValue called, returning error')
         raise NotSupportedException()
 
     @dbus.service.method(GATT_CHRC_IFACE)
     def StartNotify(self):
-        logger.info('Default StartNotify called, returning error')
         raise NotSupportedException()
 
     @dbus.service.method(GATT_CHRC_IFACE)
     def StopNotify(self):
-        logger.info('Default StopNotify called, returning error')
         raise NotSupportedException()
 
     @dbus.service.signal(DBUS_PROP_IFACE, signature='sa{sv}as')
     def PropertiesChanged(self, interface, changed, invalidated):
         pass
-
-
-# ==============================
-# PaperDrop Provisioning Service
-# ==============================
 
 class ProvisioningService(Service):
     def __init__(self, bus, index):
@@ -362,178 +344,83 @@ class ProvisioningService(Service):
         wifi_status_obj = WifiStatusCharacteristic(bus, 3, self)
         self.add_characteristic(wifi_status_obj)
 
-
 class DeviceIdCharacteristic(Characteristic):
     def __init__(self, bus, index, service):
-        Characteristic.__init__(
-            self, bus, index,
-            DEVICE_ID_CHRC_UUID,
-            ['read'],
-            service)
-
+        Characteristic.__init__(self, bus, index, DEVICE_ID_CHRC_UUID, ['read'], service)
     def ReadValue(self, options):
         device_id = get_device_id()
-        logger.info(f'Reading Device ID: {device_id}')
         return [dbus.Byte(b) for b in device_id.encode('utf-8')]
-
 
 class WifiConfigCharacteristic(Characteristic):
     def __init__(self, bus, index, service):
-        Characteristic.__init__(
-            self, bus, index,
-            WIFI_CONFIG_CHRC_UUID,
-            ['write'],
-            service)
-
+        Characteristic.__init__(self, bus, index, WIFI_CONFIG_CHRC_UUID, ['write'], service)
     def WriteValue(self, value, options):
         try:
             text = bytes(value).decode('utf-8')
-            logger.info(f'Received WiFi config: {text}')
-            
             data = json.loads(text)
             ssid = data.get('ssid')
             password = data.get('password')
-            
             if ssid and password:
-                # Run connection in background thread to avoid blocking BLE
-                import threading
                 thread = threading.Thread(target=connect_wifi_task, args=(ssid, password))
                 thread.daemon = True
                 thread.start()
             else:
-                logger.error('Missing ssid or password')
-                update_wifi_status("failed")
+                update_wifi_status("failed", "Missing SSID or password")
         except Exception as e:
-            logger.error(f'Error processing WiFi config: {e}')
-            update_wifi_status("failed")
-
+            update_wifi_status("failed", str(e))
 
 class WifiNetworksCharacteristic(Characteristic):
-    """Characteristic that returns list of nearby WiFi networks as JSON."""
     def __init__(self, bus, index, service):
-        Characteristic.__init__(
-            self, bus, index,
-            WIFI_NETWORKS_CHRC_UUID,
-            ['read'],
-            service)
-
+        Characteristic.__init__(self, bus, index, WIFI_NETWORKS_CHRC_UUID, ['read'], service)
     def ReadValue(self, options):
-        logger.info('Scanning for WiFi networks...')
         networks = scan_wifi_networks()
-        result = json.dumps(networks)
-        logger.info(f'Found {len(networks)} networks')
-        return [dbus.Byte(b) for b in result.encode('utf-8')]
-
+        return [dbus.Byte(b) for b in json.dumps(networks).encode('utf-8')]
 
 class WifiStatusCharacteristic(Characteristic):
-    """Characteristic that returns current WiFi connection status."""
     def __init__(self, bus, index, service):
-        Characteristic.__init__(
-            self, bus, index,
-            WIFI_STATUS_CHRC_UUID,
-            ['read', 'notify'],
-            service)
+        Characteristic.__init__(self, bus, index, WIFI_STATUS_CHRC_UUID, ['read', 'notify'], service)
         self.notifying = False
-
     def ReadValue(self, options):
-        global wifi_status
-        logger.info(f'Reading WiFi Status: {wifi_status}')
-        return [dbus.Byte(b) for b in wifi_status.encode('utf-8')]
-
+        status_data = json.dumps({"status": wifi_status, "error": wifi_error})
+        return [dbus.Byte(b) for b in status_data.encode('utf-8')]
     def StartNotify(self):
-        if self.notifying:
-            return
         self.notifying = True
-        logger.info('WiFi Status notifications started')
-
     def StopNotify(self):
-        if not self.notifying:
-            return
         self.notifying = False
-        logger.info('WiFi Status notifications stopped')
-
-
-# ==============================
-# Main
-# ==============================
 
 def find_adapter(bus):
-    remote_om = dbus.Interface(bus.get_object(BLUEZ_SERVICE_NAME, '/'),
-                               DBUS_OM_IFACE)
+    remote_om = dbus.Interface(bus.get_object(BLUEZ_SERVICE_NAME, '/'), DBUS_OM_IFACE)
     objects = remote_om.GetManagedObjects()
-
     for o, props in objects.items():
         if GATT_MANAGER_IFACE in props.keys():
             return o
     return None
 
-
-def register_ad_cb():
-    logger.info('Advertisement registered')
-
-
-def register_ad_error_cb(error):
-    logger.error(f'Failed to register advertisement: {error}')
-    mainloop.quit()
-
-
-def register_app_cb():
-    logger.info('GATT application registered')
-
-
-def register_app_error_cb(error):
-    logger.error(f'Failed to register application: {error}')
-    mainloop.quit()
-
-
 def main():
-    global mainloop
-
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
-
     bus = dbus.SystemBus()
-
     adapter = find_adapter(bus)
     if not adapter:
         logger.error('GattManager1 interface not found')
         return
 
-    logger.info(f'Found adapter: {adapter}')
-
-    service_manager = dbus.Interface(
-        bus.get_object(BLUEZ_SERVICE_NAME, adapter),
-        GATT_MANAGER_IFACE)
-
-    ad_manager = dbus.Interface(
-        bus.get_object(BLUEZ_SERVICE_NAME, adapter),
-        LE_ADVERTISING_MANAGER_IFACE)
-
+    service_manager = dbus.Interface(bus.get_object(BLUEZ_SERVICE_NAME, adapter), GATT_MANAGER_IFACE)
+    ad_manager = dbus.Interface(bus.get_object(BLUEZ_SERVICE_NAME, adapter), LE_ADVERTISING_MANAGER_IFACE)
+    
     app = Application(bus)
     app.add_service(ProvisioningService(bus, 0))
-
     adv = ProvisioningAdvertisement(bus, 0)
-
+    
     mainloop = GLib.MainLoop()
-
-    logger.info('Registering GATT application...')
-    service_manager.RegisterApplication(
-        app.get_path(), {},
-        reply_handler=register_app_cb,
-        error_handler=register_app_error_cb)
-
-    logger.info('Registering advertisement...')
-    ad_manager.RegisterAdvertisement(
-        adv.get_path(), {},
-        reply_handler=register_ad_cb,
-        error_handler=register_ad_error_cb)
-
-    device_id = get_device_id()
-    logger.info(f'BLE Provisioning started. Device ID: {device_id}')
-    logger.info(f'Service UUID: {SERVICE_UUID}')
-    logger.info('Waiting for connections...')
-
+    service_manager.RegisterApplication(app.get_path(), {}, 
+                                       reply_handler=lambda: logger.info('GATT application registered'),
+                                       error_handler=lambda e: logger.error(f'Failed to register application: {e}'))
+    ad_manager.RegisterAdvertisement(adv.get_path(), {},
+                                    reply_handler=lambda: logger.info('Advertisement registered'),
+                                    error_handler=lambda e: logger.error(f'Failed to register advertisement: {e}'))
+    
+    logger.info(f'BLE Provisioning started. Device ID: {get_device_id()}')
     mainloop.run()
-
 
 if __name__ == '__main__':
     main()

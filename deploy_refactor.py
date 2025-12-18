@@ -3,7 +3,7 @@ import os
 import sys
 
 # Configuration
-IPS = ['192.168.86.20', '192.168.86.249', 'paperdrop-20ea.lan']
+IPS = ['192.168.1.126', '192.168.86.20', '192.168.86.249', 'paperdrop-20ea.lan', 'paperdrop-20ea.local']
 USERNAME = 'pi'
 PASSWORD = 'raspberry'
 

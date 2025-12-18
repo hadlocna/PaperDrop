@@ -171,6 +171,11 @@ export const setupWebSocket = () => {
                         deviceId: deviceId,
                         status: 'queued'
                     },
+                    include: {
+                        sender: {
+                            select: { name: true }
+                        }
+                    },
                     orderBy: { createdAt: 'asc' }
                 });
 
@@ -186,7 +191,8 @@ export const setupWebSocket = () => {
                             id: message.id,
                             content: content,
                             contentType: message.contentType,
-                            createdAt: message.createdAt
+                            createdAt: message.createdAt,
+                            senderName: message.sender?.name || 'Unknown'
                         }
                     });
 
@@ -211,17 +217,22 @@ export const setupWebSocket = () => {
 };
 
 const handleDeviceMessage = async (deviceId: string, message: any) => {
-    if (message.type === 'device_hello') {
+    if (message.type === 'device_hello' || message.type === 'heartbeat') {
         try {
+            const metrics = message.metrics || {};
             await prisma.device.update({
                 where: { id: deviceId },
                 data: {
+                    status: 'online',
+                    lastSeenAt: new Date(),
+                    lastHeartbeat: new Date(),
                     firmwareVersion: message.firmware_version,
-                    lastSeenAt: new Date()
+                    wifiSignal: metrics.rssi !== undefined ? metrics.rssi : undefined,
+                    ipAddress: metrics.ip || undefined
                 }
             });
         } catch (e) {
-            console.error('Error updating device hello:', e);
+            console.error(`Error updating device ${message.type}:`, e);
         }
     }
     else if (message.type === 'print_status') {
@@ -238,20 +249,6 @@ const handleDeviceMessage = async (deviceId: string, message: any) => {
             }
         } catch (e) {
             console.error('Error updating print status:', e);
-        }
-    }
-    else if (message.type === 'heartbeat') {
-        try {
-            await prisma.device.update({
-                where: { id: deviceId },
-                data: {
-                    status: 'online',
-                    lastSeenAt: new Date(),
-                    firmwareVersion: message.firmware_version
-                }
-            });
-        } catch (e) {
-            console.error('Error updating device heartbeat:', e);
         }
     }
     else if (message.type === 'shell_output') {

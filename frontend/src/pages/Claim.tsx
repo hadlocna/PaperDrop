@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Layout } from '../components/Layout';
-
-const API_BASE = import.meta.env.VITE_API_URL || '';
+import { claimDevice } from '../api/client';
 
 export function Claim() {
     const [searchParams] = useSearchParams();
@@ -43,19 +42,7 @@ export function Claim() {
         setError(null);
 
         try {
-            const response = await fetch(`${API_BASE}/api/devices/claim`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                credentials: 'include',
-                body: JSON.stringify({ deviceCode: code, userId: user.id }),
-            });
-
-            if (!response.ok) {
-                const data = await response.json();
-                throw new Error(data.error || 'Failed to claim device');
-            }
+            await claimDevice(code);
 
             // Clear the stored code
             sessionStorage.removeItem('pendingDeviceCode');
@@ -66,9 +53,9 @@ export function Claim() {
                 navigate('/');
             }, 2000);
 
-        } catch (e) {
+        } catch (e: any) {
             console.error('Claim error:', e);
-            setError(e instanceof Error ? e.message : 'Failed to claim device');
+            setError(e.response?.data?.error || 'Failed to claim device');
         } finally {
             setClaiming(false);
         }
