@@ -20,6 +20,7 @@ export const setupWebSocket = () => {
 
     wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
         console.log(`[WS] CONNECTION ATTEMPT: ${req.url}`);
+        ws.send(JSON.stringify({ type: 'connection_established' }));
         let deviceId: string | null = null;
         let deviceCode: string | null = null;
 

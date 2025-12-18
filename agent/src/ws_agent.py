@@ -106,8 +106,7 @@ async def connect_to_backend():
                 logger.info("Connected to backend!")
                 
                 # Wait a bit before sending hello to ensure backend is ready
-                # Increased to 3 seconds to allow for DB lookup and verification
-                await asyncio.sleep(3)
+                await asyncio.sleep(1)
                 
                 # Send initial hello/heartbeat
                 logger.info("Sending device_hello...")
