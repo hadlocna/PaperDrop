@@ -88,14 +88,14 @@ function DeviceSettingsModal({ deviceId, onClose, onUpdate }: { deviceId: string
         e.preventDefault();
         if (!user?.id) return;
         setInviteLoading(true);
-        setInviteMessage('');
+        setInviteLoading(true);
         try {
             const data = await createInviteLink(deviceId, user.id, inviteEmail || undefined);
             const link = `${window.location.origin}/invite/${data.token}`;
             setInviteLink(link);
-            setInviteMessage('Share this link with your friend.');
+            setInviteLink(link);
         } catch (err: any) {
-            setInviteMessage(err.response?.data?.error || 'Failed to create invite');
+            alert(err.response?.data?.error || 'Failed to create invite');
         } finally {
             setInviteLoading(false);
         }
