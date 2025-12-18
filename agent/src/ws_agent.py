@@ -78,6 +78,13 @@ async def handle_print_job(websocket, message_data):
             'status': 'failed',
             'error': str(e)
         }))
+    finally:
+        if 'p' in locals() and p:
+            try:
+                p.close()
+                logger.info("Printer connection closed")
+            except Exception as e:
+                logger.warning(f"Error closing printer: {e}")
 
 async def connect_to_backend():
     # Ensure config is initialized (loads device info)
