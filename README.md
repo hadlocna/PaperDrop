@@ -68,10 +68,88 @@ paperdrop/
 
 ## 🖨️ Hardware Requirements
 
-- **Raspberry Pi 4** (or Pi Zero 2 W)
+- **Raspberry Pi 5** (recommended) or Pi 4
 - **Epson TM-T20III** thermal printer (USB)
-- **USB WiFi Adapter** (optional, for dual-network setups)
+- **MicroSD Card** (16GB+ recommended)
 - **Power supply** for both Pi and printer
+
+## 💾 Creating Your Own Device
+
+### Option 1: Clone an Existing SD Card
+
+If you have a working PaperDrop device and want to create another:
+
+**On macOS:**
+```bash
+# 1. Insert the SD card and find its disk identifier
+diskutil list
+
+# 2. Unmount the disk (replace diskX with your disk)
+diskutil unmountDisk /dev/diskX
+
+# 3. Create an image (this may take 10-20 minutes)
+sudo dd if=/dev/rdiskX of=~/paperdrop-image.img bs=1m status=progress
+
+# 4. Insert your new SD card and find its identifier
+diskutil list
+
+# 5. Unmount the new card
+diskutil unmountDisk /dev/diskX
+
+# 6. Write the image to the new card
+sudo dd if=~/paperdrop-image.img of=/dev/rdiskX bs=1m status=progress
+
+# 7. Eject the card
+diskutil eject /dev/diskX
+```
+
+**On Linux:**
+```bash
+# 1. Find the SD card device
+lsblk
+
+# 2. Create an image
+sudo dd if=/dev/sdX of=~/paperdrop-image.img bs=4M status=progress
+
+# 3. Write to new card
+sudo dd if=~/paperdrop-image.img of=/dev/sdX bs=4M status=progress
+```
+
+**On Windows:**
+- Use [Raspberry Pi Imager](https://www.raspberrypi.com/software/) or [Win32 Disk Imager](https://sourceforge.net/projects/win32diskimager/)
+
+### Option 2: Fresh Install
+
+1. Flash Raspberry Pi OS Lite (64-bit) to an SD card
+2. Enable SSH and configure WiFi in Raspberry Pi Imager
+3. Boot the Pi and SSH in
+4. Clone this repository and run the installer:
+```bash
+git clone https://github.com/hadlocna/PaperDrop.git
+cd PaperDrop
+sudo ./install_paperdrop.sh
+```
+
+### Important: Reset Device Identity
+
+After cloning an SD card, **you must reset the device identity** so it gets a new unique ID:
+
+```bash
+# SSH into the new device
+ssh pi@<new-device-ip>
+
+# Remove the old device identity
+sudo rm -f /etc/paperdrop/device.json
+sudo rm -f /etc/paperdrop/device-id
+sudo rm -f /etc/paperdrop/wifi.json
+sudo rm -f /etc/paperdrop/wifi-provisioned
+
+# Restart services to generate new identity
+sudo systemctl restart paperdrop-ble
+sudo systemctl restart paperdrop-ws-agent
+```
+
+The device will now generate a new unique ID and be ready for provisioning.
 
 ## 🚀 User Provisioning Flow
 
