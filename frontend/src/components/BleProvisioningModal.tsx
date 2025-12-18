@@ -122,7 +122,7 @@ export function BleProvisioningModal({ isOpen, onClose, onSuccess }: BleProvisio
                 const initialStatus = new TextDecoder().decode(initialStatusValue);
                 console.log('Initial BLE Status:', initialStatus);
 
-                if (initialStatus === 'connected') {
+                if (initialStatus === 'connected' || initialStatus.includes('"status": "connected"')) {
                     setConnectionProgress(100);
                     // Don't set step to success immediately, let user see it's connected
                     // but we'll show a "Proceed" button in the wifi step
@@ -147,8 +147,19 @@ export function BleProvisioningModal({ isOpen, onClose, onSuccess }: BleProvisio
         }
     };
 
-    const handleStatusChange = (status: string) => {
-        console.log('BLE Status Change:', status);
+    const handleStatusChange = (statusStr: string) => {
+        console.log('BLE Status Change:', statusStr);
+        let status = statusStr;
+
+        try {
+            if (statusStr.startsWith('{')) {
+                const parsed = JSON.parse(statusStr);
+                status = parsed.status;
+            }
+        } catch (e) {
+            console.warn('Failed to parse status JSON:', e);
+        }
+
         switch (status) {
             case 'connecting':
                 setConnectionProgress(30);
@@ -156,7 +167,6 @@ export function BleProvisioningModal({ isOpen, onClose, onSuccess }: BleProvisio
             case 'connected':
                 setConnectionProgress(100);
                 setStep('success');
-                // onSuccess is called in the provisionDevice catch/finally or success block
                 break;
             case 'failed':
                 setError('Device failed to connect to WiFi. Please check your credentials.');
