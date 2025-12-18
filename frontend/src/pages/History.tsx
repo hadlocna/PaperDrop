@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
-import { client as api } from '../api/client';
+import { client as api, clearMessageQueue } from '../api/client';
+import { RefreshCw } from 'lucide-react';
 
 interface Message {
     id: string;
@@ -54,7 +55,27 @@ export function History() {
     return (
         <Layout>
             <div className="max-w-2xl mx-auto mt-8 px-4">
-                <h1 className="text-xl font-semibold mb-6 text-charcoal-700">Message History</h1>
+                <div className="flex justify-between items-center mb-6">
+                    <h1 className="text-xl font-semibold text-charcoal-700">Message History</h1>
+                    <button
+                        onClick={async () => {
+                            if (!id || !confirm('Are you sure you want to clear the message queue?')) return;
+                            try {
+                                await clearMessageQueue(id);
+                                alert('Queue cleared');
+                                // Refresh history
+                                const res = await api.get('/messages', { params: { userId: user?.id, deviceId: id } });
+                                setMessages(res.data.messages);
+                            } catch (err) {
+                                alert('Failed to clear queue');
+                            }
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-coral-600 hover:bg-coral-50 rounded-xl transition"
+                    >
+                        <RefreshCw size={16} />
+                        Clear Queue
+                    </button>
+                </div>
 
                 {loading ? (
                     <div>Loading...</div>

@@ -6,7 +6,6 @@ import { Dashboard } from './pages/Dashboard';
 import { Setup } from './pages/Setup';
 import { Compose } from './pages/Compose';
 import { History } from './pages/History';
-import { DeviceSettings } from './pages/DeviceSettings';
 import { Claim } from './pages/Claim';
 import { Admin } from './pages/Admin';
 import { InviteAccept } from './pages/InviteAccept';
@@ -72,14 +71,6 @@ function App() {
                         element={
                             <ProtectedRoute>
                                 <History />
-                            </ProtectedRoute>
-                        }
-                    />
-                    <Route
-                        path="/device/:id/settings"
-                        element={
-                            <ProtectedRoute>
-                                <DeviceSettings />
                             </ProtectedRoute>
                         }
                     />

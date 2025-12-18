@@ -266,6 +266,9 @@ const handleDeviceMessage = async (deviceId: string, message: any) => {
             pendingLogRequests.delete(message.request_id);
         }
     }
+    else if (message.type === 'test_connection') {
+        broadcastToDevice(deviceId, { type: 'test_response', timestamp: new Date().toISOString() });
+    }
 };
 
 export const broadcastToDevice = (deviceId: string, data: any): boolean => {

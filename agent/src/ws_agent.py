@@ -102,8 +102,9 @@ async def connect_to_backend():
     
     while True:
         try:
+            logger.info(f"Connecting to WebSocket: {ws_url}")
             async with websockets.connect(ws_url) as websocket:
-                logger.info("Connected to backend!")
+                logger.info("Handshake successful! Connected to backend.")
                 
                 # Start background listener immediately to catch early messages
                 async def listen():
@@ -118,10 +119,13 @@ async def connect_to_backend():
                                     await handle_print_job(websocket, data)
                                 elif data.get('type') == 'error':
                                     logger.error(f"Backend error: {data.get('message')}")
+                                elif data.get('type') == 'test_connection':
+                                    logger.info("Received connection test request")
+                                    await websocket.send(json.dumps({'type': 'test_response', 'status': 'ok'}))
                             except json.JSONDecodeError:
                                 logger.warning(f"Received non-JSON message: {message}")
                     except websockets.exceptions.ConnectionClosed as e:
-                        logger.warning(f"Connection closed in listener: Code={e.code}")
+                        logger.warning(f"Connection closed in listener: Code={e.code}, Reason={e.reason}")
                     except Exception as e:
                         logger.error(f"Error in listener: {e}")
 
