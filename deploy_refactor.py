@@ -8,7 +8,7 @@ USERNAME = 'pi'
 PASSWORD = 'raspberry'
 
 LOCAL_AGENT_DIR = '/Users/nathanhadlock/CascadeProjects/PaperDrop/agent/src'
-REMOTE_SRC_DIR = '/home/paperdrop/agent/src' # Based on my previous successful write
+REMOTE_SRC_DIR = '/opt/paperdrop'
 REMOTE_BIN_DIR = '/usr/local/bin'
 
 def deploy():
@@ -51,15 +51,32 @@ def deploy():
         print("Uploading paperdrop-wifi.sh...")
         sftp.put(os.path.join(LOCAL_AGENT_DIR, 'paperdrop-wifi.sh'), '/tmp/paperdrop-wifi.sh')
         
+        print("Uploading ws_agent.py...")
+        sftp.put(os.path.join(LOCAL_AGENT_DIR, 'ws_agent.py'), '/tmp/ws_agent.py')
+        
         print("Installing files...")
         # We might need sudo for these
-        ssh.exec_command('sudo mv /tmp/ble_provisioning.py ' + os.path.join(REMOTE_SRC_DIR, 'ble_provisioning.py'))
-        ssh.exec_command('sudo mv /tmp/paperdrop-wifi.sh ' + os.path.join(REMOTE_BIN_DIR, 'paperdrop-wifi.sh'))
-        ssh.exec_command('sudo chmod +x ' + os.path.join(REMOTE_BIN_DIR, 'paperdrop-wifi.sh'))
+        _, stdout, stderr = ssh.exec_command('sudo mv /tmp/ble_provisioning.py ' + os.path.join(REMOTE_SRC_DIR, 'ble_provisioning.py'))
+        stdout.channel.recv_exit_status()
+        
+        _, stdout, stderr = ssh.exec_command('sudo mv /tmp/paperdrop-wifi.sh ' + os.path.join(REMOTE_BIN_DIR, 'paperdrop-wifi.sh'))
+        stdout.channel.recv_exit_status()
+        
+        _, stdout, stderr = ssh.exec_command('sudo mv /tmp/ws_agent.py ' + os.path.join(REMOTE_SRC_DIR, 'ws_agent.py'))
+        stdout.channel.recv_exit_status()
+        
+        _, stdout, stderr = ssh.exec_command('sudo chmod +x ' + os.path.join(REMOTE_BIN_DIR, 'paperdrop-wifi.sh'))
+        stdout.channel.recv_exit_status()
         
         print("Restarting services...")
-        ssh.exec_command('sudo systemctl restart paperdrop-ble.service')
-        ssh.exec_command('sudo systemctl restart paperdrop-wifi.service')
+        _, stdout, stderr = ssh.exec_command('sudo systemctl restart paperdrop-ble.service')
+        stdout.channel.recv_exit_status()
+        
+        _, stdout, stderr = ssh.exec_command('sudo systemctl restart paperdrop-wifi.service')
+        stdout.channel.recv_exit_status()
+        
+        _, stdout, stderr = ssh.exec_command('sudo systemctl restart paperdrop-ws-agent.service')
+        stdout.channel.recv_exit_status()
         
         print("Deployment complete!")
     finally:

@@ -3,7 +3,7 @@ import { Layout } from '../components/Layout';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
-import { Terminal as TerminalIcon, Power, Wifi, WifiOff, Package, Upload, Rocket } from 'lucide-react';
+import { Terminal as TerminalIcon, Power, Wifi, WifiOff, Package, Upload, Rocket, Trash2 } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const WS_BASE = API_BASE.replace('http', 'ws');
@@ -120,6 +120,25 @@ export function Admin() {
             setTimeout(() => setDeployStatus(''), 3000);
         } catch (e) {
             setDeployStatus('Deploy failed');
+        }
+    };
+
+    const unprovisionDevice = async (deviceId: string) => {
+        if (!confirm('Are you sure you want to unprovision this device? It will be permanently deleted from the database.')) return;
+        try {
+            const res = await fetch(`${API_BASE}/api/admin/devices/${deviceId}`, {
+                method: 'DELETE',
+                headers: { 'x-admin-password': password }
+            });
+            if (res.ok) {
+                setDeployStatus('Device unprovisioned');
+                refreshDevices();
+                setTimeout(() => setDeployStatus(''), 3000);
+            } else {
+                setDeployStatus('Failed to unprovision device');
+            }
+        } catch (e) {
+            setDeployStatus('Error unprovisioning device');
         }
     };
 
@@ -545,13 +564,22 @@ export function Admin() {
                                                 </div>
                                             </td>
                                             <td className="p-4">
-                                                <button
-                                                    onClick={() => setSelectedDevice(device)}
-                                                    className="bg-slate-800 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2"
-                                                >
-                                                    <TerminalIcon size={16} />
-                                                    Terminal
-                                                </button>
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        onClick={() => setSelectedDevice(device)}
+                                                        className="bg-slate-800 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2"
+                                                    >
+                                                        <TerminalIcon size={16} />
+                                                        Terminal
+                                                    </button>
+                                                    <button
+                                                        onClick={() => unprovisionDevice(device.id)}
+                                                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
+                                                        title="Unprovision Device"
+                                                    >
+                                                        <Trash2 size={18} />
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     );
@@ -566,27 +594,29 @@ export function Admin() {
             </div>
 
             {/* Terminal Modal */}
-            {selectedDevice && (
-                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-slate-900 w-full max-w-4xl rounded-2xl overflow-hidden shadow-2xl border border-slate-700 flex flex-col h-[600px]">
-                        <div className="bg-slate-800 p-4 flex justify-between items-center border-b border-slate-700">
-                            <div className="flex items-center gap-2">
-                                <TerminalIcon className="text-green-400" size={20} />
-                                <span className="text-white font-mono font-bold">root@{selectedDevice.code} ~</span>
+            {
+                selectedDevice && (
+                    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                        <div className="bg-slate-900 w-full max-w-4xl rounded-2xl overflow-hidden shadow-2xl border border-slate-700 flex flex-col h-[600px]">
+                            <div className="bg-slate-800 p-4 flex justify-between items-center border-b border-slate-700">
+                                <div className="flex items-center gap-2">
+                                    <TerminalIcon className="text-green-400" size={20} />
+                                    <span className="text-white font-mono font-bold">root@{selectedDevice.code} ~</span>
+                                </div>
+                                <button
+                                    onClick={() => setSelectedDevice(null)}
+                                    className="text-slate-400 hover:text-white transition-colors"
+                                >
+                                    <Power size={20} />
+                                </button>
                             </div>
-                            <button
-                                onClick={() => setSelectedDevice(null)}
-                                className="text-slate-400 hover:text-white transition-colors"
-                            >
-                                <Power size={20} />
-                            </button>
-                        </div>
-                        <div className="flex-1 p-4 bg-[#1e1e1e] overflow-hidden">
-                            <div ref={termRef} className="h-full w-full" />
+                            <div className="flex-1 p-4 bg-[#1e1e1e] overflow-hidden">
+                                <div ref={termRef} className="h-full w-full" />
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
-        </Layout>
+                )
+            }
+        </Layout >
     );
 }

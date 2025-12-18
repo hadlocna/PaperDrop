@@ -185,5 +185,25 @@ router.post('/firmware/upload', upload.single('file'), async (req, res) => {
     }
 });
 
+// Delete a device (Unprovision)
+router.delete('/devices/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Delete device and all associated records
+        // In our schema, DeviceAccess and DeviceInvite have onDelete: Cascade.
+        // Message does not have onDelete: Cascade, so we delete them first.
+        await prisma.$transaction([
+            prisma.message.deleteMany({ where: { deviceId: id } }),
+            prisma.device.delete({ where: { id } })
+        ]);
+
+        res.json({ success: true, message: 'Device unprovisioned' });
+    } catch (e) {
+        console.error('Error unprovisioning device:', e);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 export default router;
 

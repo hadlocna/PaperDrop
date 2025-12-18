@@ -103,15 +103,20 @@ async def connect_to_backend():
                 logger.info("Connected to backend!")
                 
                 # Wait a bit before sending hello to ensure backend is ready
-                await asyncio.sleep(1)
+                # Increased to 3 seconds to allow for DB lookup and verification
+                await asyncio.sleep(3)
                 
                 # Send initial hello/heartbeat
                 logger.info("Sending device_hello...")
-                await websocket.send(json.dumps({
-                    'type': 'device_hello',
-                    'firmware_version': config.firmware_version,
-                    'mac_address': 'unknown' 
-                }))
+                try:
+                    await websocket.send(json.dumps({
+                        'type': 'device_hello',
+                        'firmware_version': config.firmware_version,
+                        'mac_address': 'unknown' 
+                    }))
+                except Exception as e:
+                    logger.error(f"Failed to send device_hello: {e}")
+                    raise
                 
                 # Keep connection alive and handle messages
                 async for message in websocket:

@@ -22,7 +22,7 @@ export const setupWebSocket = () => {
         let deviceId: string | null = null;
         let deviceCode: string | null = null;
 
-        console.log('New device connection attempt');
+        console.log(`[WS] New connection attempt from ${req.socket.remoteAddress}`);
 
         // Keep-alive ping every 30 seconds
         const pingInterval = setInterval(() => {
@@ -35,6 +35,8 @@ export const setupWebSocket = () => {
             // Connection is alive
         });
 
+        const messageBuffer: any[] = [];
+
         // Single message listener to avoid race conditions
         ws.on('message', async (message) => {
             try {
@@ -42,11 +44,11 @@ export const setupWebSocket = () => {
                 if (deviceId) {
                     await handleDeviceMessage(deviceId, data);
                 } else {
-                    console.log('Message received before device verification, ignoring or buffering might be needed');
-                    // device_hello is usually the first message and we handle it in the verification block below if needed
+                    console.log(`[${deviceCode || 'unknown'}] Buffering message received before verification: ${data.type}`);
+                    messageBuffer.push(data);
                 }
             } catch (e) {
-                console.error('Error handling device message:', e);
+                console.error(`[${deviceCode || 'unknown'}] Error parsing device message:`, e);
             }
         });
 
@@ -86,10 +88,12 @@ export const setupWebSocket = () => {
             const deviceSecret = (query['deviceSecret'] as string) || (req.headers['x-device-secret'] as string);
 
             if (!deviceCode || !deviceSecret) {
-                console.log('Connection rejected: Missing credentials');
+                console.log(`[WS] Connection rejected: Missing credentials (code: ${deviceCode}, secret: ${!!deviceSecret})`);
                 ws.close(4001, 'Missing authentication');
                 return;
             }
+
+            console.log(`[WS] Verifying device: ${deviceCode}`);
 
             // Verify or Create device
             let device = await prisma.device.findUnique({
@@ -107,6 +111,7 @@ export const setupWebSocket = () => {
                         lastSeenAt: new Date()
                     }
                 });
+                console.log(`[WS] Created new device: ${deviceCode} (${device.id})`);
             } else if (device.deviceSecret !== deviceSecret) {
                 if (!device.ownerId) {
                     console.log(`Updating secret for unclaimed device: ${deviceCode}`);
@@ -122,14 +127,15 @@ export const setupWebSocket = () => {
             }
 
             deviceId = device.id;
-            console.log(`Device connected and verified: ${deviceCode} (${deviceId})`);
+            console.log(`[WS] Device verified: ${deviceCode} (${deviceId})`);
 
             const oldWs = deviceConnections.get(deviceId);
             if (oldWs && oldWs !== ws) {
-                console.log(`Closing old connection for device: ${deviceCode}`);
+                console.log(`[WS] Closing old connection for device: ${deviceCode}`);
                 oldWs.close(4009, 'New connection established');
             }
             deviceConnections.set(deviceId, ws);
+            console.log(`[WS] Active connections: ${deviceConnections.size}`);
 
             // Update status to online
             try {
@@ -138,7 +144,16 @@ export const setupWebSocket = () => {
                     data: { status: 'online', lastSeenAt: new Date() }
                 });
             } catch (e) {
-                console.error('Error updating device status:', e);
+                console.error(`[${deviceCode}] Error updating device status:`, e);
+            }
+
+            // Process buffered messages
+            if (messageBuffer.length > 0) {
+                console.log(`[${deviceCode}] Processing ${messageBuffer.length} buffered messages`);
+                for (const msg of messageBuffer) {
+                    await handleDeviceMessage(deviceId, msg);
+                }
+                messageBuffer.length = 0;
             }
 
             // Send pending messages
