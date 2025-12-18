@@ -18,6 +18,16 @@ export const setupWebSocket = (server: Server) => {
     const wss = new WebSocketServer({ server, path: '/api/device/connect' });
 
     wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
+        // Attach listeners immediately to avoid race conditions
+        ws.on('message', async (message) => {
+            try {
+                const data = JSON.parse(message.toString());
+                // We'll handle it later once we have deviceId
+            } catch (e) {
+                console.error('Error handling device message:', e);
+            }
+        });
+
         try {
             const parsedUrl = url.parse(req.url || '', true);
             const query = parsedUrl.query;
@@ -69,8 +79,7 @@ export const setupWebSocket = (server: Server) => {
 
             deviceConnections.set(deviceId, ws);
 
-            // Update status to online (DISABLED FOR DEBUG)
-            /*
+            // Update status to online
             try {
                 await prisma.device.update({
                     where: { id: deviceId },
@@ -79,10 +88,8 @@ export const setupWebSocket = (server: Server) => {
             } catch (e) {
                 console.error('Error updating device status:', e);
             }
-            */
 
-            // Send pending messages (DISABLED FOR DEBUG)
-            /*
+            // Send pending messages
             try {
                 const pendingMessages = await prisma.message.findMany({
                     where: {
@@ -119,12 +126,12 @@ export const setupWebSocket = (server: Server) => {
             } catch (e) {
                 console.error('Error sending pending messages:', e);
             }
-            */
 
+            // Re-attach proper message handler with deviceId
+            ws.removeAllListeners('message');
             ws.on('message', async (message) => {
                 try {
                     const data = JSON.parse(message.toString());
-                    console.log(`Received from ${deviceCode}:`, data.type);
                     await handleDeviceMessage(deviceId, data);
                 } catch (e) {
                     console.error('Error handling device message:', e);
@@ -135,8 +142,7 @@ export const setupWebSocket = (server: Server) => {
                 console.log(`Device disconnected: ${deviceCode}`);
                 deviceConnections.delete(deviceId);
 
-                // Update status to offline (DISABLED FOR DEBUG)
-                /*
+                // Update status to offline
                 try {
                     await prisma.device.update({
                         where: { id: deviceId },
@@ -145,7 +151,6 @@ export const setupWebSocket = (server: Server) => {
                 } catch (e) {
                     console.error('Error updating device offline status:', e);
                 }
-                */
             });
         } catch (error) {
             console.error('Critical error in WebSocket connection handler:', error);
@@ -172,15 +177,19 @@ const handleDeviceMessage = async (deviceId: string, message: any) => {
         }
     }
     else if (message.type === 'print_status') {
-        if (message.message_id) {
-            await prisma.message.update({
-                where: { id: message.message_id },
-                data: {
-                    status: message.status,
-                    errorMessage: message.error || null,
-                    printedAt: message.status === 'printed' ? new Date() : null
-                }
-            });
+        try {
+            if (message.message_id) {
+                await prisma.message.update({
+                    where: { id: message.message_id },
+                    data: {
+                        status: message.status,
+                        errorMessage: message.error || null,
+                        printedAt: message.status === 'printed' ? new Date() : null
+                    }
+                });
+            }
+        } catch (e) {
+            console.error('Error updating print status:', e);
         }
     }
     else if (message.type === 'heartbeat') {
@@ -190,8 +199,6 @@ const handleDeviceMessage = async (deviceId: string, message: any) => {
                 data: {
                     status: 'online',
                     lastSeenAt: new Date(),
-                    // lastHeartbeat: new Date(), // Column missing in prod DB
-                    // wifiSignal: message.wifi_signal, // Column missing in prod DB
                     firmwareVersion: message.firmware_version
                 }
             });
