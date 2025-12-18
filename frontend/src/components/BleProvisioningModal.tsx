@@ -117,6 +117,17 @@ export function BleProvisioningModal({ isOpen, onClose, onSuccess }: BleProvisio
             try {
                 const statusCharacteristic = await service.getCharacteristic(WIFI_STATUS_UUID);
 
+                // Read initial status
+                const initialStatusValue = await statusCharacteristic.readValue();
+                const initialStatus = new TextDecoder().decode(initialStatusValue);
+                console.log('Initial BLE Status:', initialStatus);
+
+                if (initialStatus === 'connected') {
+                    setConnectionProgress(100);
+                    // Don't set step to success immediately, let user see it's connected
+                    // but we'll show a "Proceed" button in the wifi step
+                }
+
                 await statusCharacteristic.startNotifications();
                 statusCharacteristic.addEventListener('characteristicvaluechanged', (event: any) => {
                     const value = new TextDecoder().decode(event.target.value);
@@ -279,6 +290,33 @@ export function BleProvisioningModal({ isOpen, onClose, onSuccess }: BleProvisio
                                     <p className="text-sm text-green-600 font-mono">{deviceId}</p>
                                 </div>
                             </div>
+
+                            {connectionProgress === 100 ? (
+                                <div className="space-y-4">
+                                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center gap-3">
+                                        <Wifi className="w-5 h-5 text-blue-600 shrink-0" />
+                                        <div>
+                                            <p className="text-sm font-medium text-blue-800">Already Connected!</p>
+                                            <p className="text-sm text-blue-600">This device is already connected to a WiFi network.</p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => setStep('success')}
+                                        className="w-full py-3 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl font-medium hover:from-green-600 hover:to-green-700 transition flex items-center justify-center gap-2"
+                                    >
+                                        <CheckCircle className="w-5 h-5" />
+                                        Claim Device
+                                    </button>
+                                    <div className="relative my-6">
+                                        <div className="absolute inset-0 flex items-center">
+                                            <div className="w-full border-t border-gray-200"></div>
+                                        </div>
+                                        <div className="relative flex justify-center text-sm">
+                                            <span className="px-2 bg-white text-gray-500">Or change network</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : null}
 
                             <div className="flex items-center gap-2 mb-4">
                                 <Wifi className="w-5 h-5 text-gray-600" />
