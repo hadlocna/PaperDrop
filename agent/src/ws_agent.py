@@ -137,7 +137,7 @@ def add_watermark(img, text):
         for path in font_paths:
             if os.path.exists(path):
                 try:
-                    font = ImageFont.truetype(path, 18)
+                    font = ImageFont.truetype(path, 12)
                     break
                 except:
                     continue
@@ -156,14 +156,11 @@ def add_watermark(img, text):
             textwidth, textheight = draw.textsize(text, font=font)
             
         width, height = img.size
-        margin = 10
+        margin = 4
         x = width - textwidth - margin
         y = height - textheight - margin
         
-        # Draw a small white rectangle behind the text for legibility on dark backgrounds
-        draw.rectangle([x-2, y-2, x+textwidth+2, y+textheight+2], fill="white")
-        
-        # Draw main text
+        # Draw main text (no background for minimal impact)
         draw.text((x, y), text, font=font, fill="black")
         
         return img
