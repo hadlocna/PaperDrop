@@ -61,8 +61,14 @@ import path from 'path';
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Basic health check
-app.get('/health', (req, res) => {
-    res.json({ status: 'ok', version: '1.0.0' });
+app.get('/health', async (req, res) => {
+    try {
+        const deviceCount = await prisma.device.count();
+        res.json({ status: 'ok', version: '1.0.0', db: 'connected', devices: deviceCount });
+    } catch (e) {
+        console.error('Health check DB error:', e);
+        res.status(500).json({ status: 'error', db: 'disconnected', error: String(e) });
+    }
 });
 
 // Start scheduled message processor
