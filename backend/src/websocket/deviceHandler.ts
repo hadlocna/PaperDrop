@@ -50,9 +50,19 @@ export const setupWebSocket = (server: Server) => {
                     }
                 });
             } else if (device.deviceSecret !== deviceSecret) {
-                console.log(`Connection rejected: Invalid credentials for ${deviceCode}`);
-                ws.close(4001, 'Invalid authentication');
-                return;
+                // If the device is not yet claimed, allow updating the secret
+                // This handles the case where a device is factory reset before being claimed
+                if (!device.ownerId) {
+                    console.log(`Updating secret for unclaimed device: ${deviceCode}`);
+                    device = await prisma.device.update({
+                        where: { id: device.id },
+                        data: { deviceSecret }
+                    });
+                } else {
+                    console.log(`Connection rejected: Invalid credentials for ${deviceCode} (claimed by ${device.ownerId})`);
+                    ws.close(4003, 'Invalid authentication: secret mismatch');
+                    return;
+                }
             }
 
             const deviceId = device.id;
