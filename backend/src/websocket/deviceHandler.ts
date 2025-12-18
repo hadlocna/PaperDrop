@@ -96,14 +96,16 @@ export const setupWebSocket = () => {
             }
 
             console.log(`[WS] Verifying device: ${deviceCode}`);
+            const startTime = Date.now();
 
             // Verify or Create device
             let device = await prisma.device.findUnique({
                 where: { deviceCode }
             });
+            console.log(`[WS] DB lookup took ${Date.now() - startTime}ms`);
 
             if (!device) {
-                console.log(`New device verified: ${deviceCode}`);
+                console.log(`[WS] Creating new device: ${deviceCode}`);
                 device = await prisma.device.create({
                     data: {
                         deviceCode,
@@ -113,16 +115,16 @@ export const setupWebSocket = () => {
                         lastSeenAt: new Date()
                     }
                 });
-                console.log(`[WS] Created new device: ${deviceCode} (${device.id})`);
             } else if (device.deviceSecret !== deviceSecret) {
+                console.log(`[WS] Secret mismatch for ${deviceCode}`);
                 if (!device.ownerId) {
-                    console.log(`Updating secret for unclaimed device: ${deviceCode}`);
+                    console.log(`[WS] Updating secret for unclaimed device: ${deviceCode}`);
                     device = await prisma.device.update({
                         where: { id: device.id },
                         data: { deviceSecret }
                     });
                 } else {
-                    console.log(`Connection rejected: Invalid credentials for ${deviceCode}`);
+                    console.log(`[WS] Connection rejected: Invalid credentials for ${deviceCode}`);
                     ws.close(4003, 'Invalid authentication: secret mismatch');
                     return;
                 }

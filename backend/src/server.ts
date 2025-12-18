@@ -20,6 +20,14 @@ import { prisma } from './lib/prisma';
 const app = express();
 const server = createServer(app);
 
+process.on('uncaughtException', (err) => {
+    console.error('UNCAUGHT EXCEPTION:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('UNHANDLED REJECTION at:', promise, 'reason:', reason);
+});
+
 // Setup WebSockets
 const deviceWss = setupWebSocket();
 const adminWss = setupAdminWebSocket();
