@@ -140,7 +140,7 @@ export const clearQueue = async (req: Request, res: Response) => {
         const result = await prisma.message.deleteMany({
             where: {
                 deviceId: String(targetDeviceId),
-                status: 'queued'
+                status: { not: 'printed' }
             }
         });
 

@@ -131,7 +131,7 @@ export function Dashboard() {
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
-                                navigate(`/settings/${device.id}`);
+                                navigate(`/device/${device.id}/settings`);
                             }}
                             className="p-2 text-gray-400 hover:text-coral-500 hover:bg-gray-200 rounded-lg transition"
                             title="Device Settings"
