@@ -324,3 +324,32 @@ export const revokeAccess = async (req: Request, res: Response) => {
         res.status(500).json({ error: 'Internal server error' });
     }
 };
+
+export const unclaimDevice = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const { userId } = req.body;
+
+        const device = await prisma.device.findUnique({ where: { id } });
+        if (!device) return res.status(404).json({ error: 'Device not found' });
+
+        if (device.ownerId !== userId) {
+            return res.status(403).json({ error: 'Only owner can disconnect device' });
+        }
+
+        await prisma.$transaction([
+            prisma.device.update({
+                where: { id },
+                data: { ownerId: null, status: 'offline' }
+            }),
+            prisma.deviceAccess.deleteMany({
+                where: { deviceId: id }
+            })
+        ]);
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Unclaim device error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+};

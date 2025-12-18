@@ -26,7 +26,12 @@ export const updateDevice = async (deviceId: string, data: any) => {
 };
 
 export const unclaimDevice = async (deviceId: string, userId: string) => {
-    const response = await client.delete(`/devices/${deviceId}/access/${userId}`);
+    const response = await client.delete(`/devices/${deviceId}/claim`, { data: { userId } });
+    return response.data;
+};
+
+export const clearMessageQueue = async (deviceId: string) => {
+    const response = await client.delete('/messages/queue', { data: { deviceId } });
     return response.data;
 };
 

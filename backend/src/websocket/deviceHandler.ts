@@ -19,16 +19,57 @@ export const setupWebSocket = () => {
     const wss = new WebSocketServer({ noServer: true });
 
     wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
-        console.log('New device connection established');
+        let deviceId: string | null = null;
+        let deviceCode: string | null = null;
 
-        // Attach listeners immediately to avoid race conditions
+        console.log('New device connection attempt');
+
+        // Keep-alive ping every 30 seconds
+        const pingInterval = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.ping();
+            }
+        }, 30000);
+
+        ws.on('pong', () => {
+            // Connection is alive
+        });
+
+        // Single message listener to avoid race conditions
         ws.on('message', async (message) => {
             try {
                 const data = JSON.parse(message.toString());
-                // We'll handle it later once we have deviceId
+                if (deviceId) {
+                    await handleDeviceMessage(deviceId, data);
+                } else {
+                    console.log('Message received before device verification, ignoring or buffering might be needed');
+                    // device_hello is usually the first message and we handle it in the verification block below if needed
+                }
             } catch (e) {
                 console.error('Error handling device message:', e);
             }
+        });
+
+        ws.on('close', async (code, reason) => {
+            clearInterval(pingInterval);
+            if (deviceCode) {
+                console.log(`Device disconnected: ${deviceCode} (Code: ${code}, Reason: ${reason})`);
+            }
+            if (deviceId) {
+                deviceConnections.delete(deviceId);
+                try {
+                    await prisma.device.update({
+                        where: { id: deviceId },
+                        data: { status: 'offline' }
+                    });
+                } catch (e) {
+                    console.error('Error updating device offline status:', e);
+                }
+            }
+        });
+
+        ws.on('error', (err) => {
+            console.error('WebSocket error:', err);
         });
 
         try {
@@ -36,7 +77,7 @@ export const setupWebSocket = () => {
             const query = parsedUrl.query;
 
             // Extract device ID and secret from query params or headers
-            const deviceCode = (query['deviceCode'] as string) || (req.headers['x-device-code'] as string);
+            deviceCode = (query['deviceCode'] as string) || (req.headers['x-device-code'] as string);
             const deviceSecret = (query['deviceSecret'] as string) || (req.headers['x-device-secret'] as string);
 
             if (!deviceCode || !deviceSecret) {
@@ -52,7 +93,6 @@ export const setupWebSocket = () => {
 
             if (!device) {
                 console.log(`New device verified: ${deviceCode}`);
-                // Create new device
                 device = await prisma.device.create({
                     data: {
                         deviceCode,
@@ -63,7 +103,6 @@ export const setupWebSocket = () => {
                     }
                 });
             } else if (device.deviceSecret !== deviceSecret) {
-                // If the device is not yet claimed, allow updating the secret
                 if (!device.ownerId) {
                     console.log(`Updating secret for unclaimed device: ${deviceCode}`);
                     device = await prisma.device.update({
@@ -77,8 +116,8 @@ export const setupWebSocket = () => {
                 }
             }
 
-            const deviceId = device.id;
-            console.log(`Device connected: ${deviceCode} (${deviceId})`);
+            deviceId = device.id;
+            console.log(`Device connected and verified: ${deviceCode} (${deviceId})`);
 
             deviceConnections.set(deviceId, ws);
 
@@ -106,8 +145,7 @@ export const setupWebSocket = () => {
                     let content = message.content;
                     try {
                         content = JSON.parse(message.content);
-                    } catch (e) {
-                    }
+                    } catch (e) { }
 
                     const broadcastResult = broadcastToDevice(deviceId, {
                         type: 'new_message',
@@ -130,31 +168,6 @@ export const setupWebSocket = () => {
                 console.error('Error sending pending messages:', e);
             }
 
-            // Re-attach proper message handler with deviceId
-            ws.removeAllListeners('message');
-            ws.on('message', async (message) => {
-                try {
-                    const data = JSON.parse(message.toString());
-                    await handleDeviceMessage(deviceId, data);
-                } catch (e) {
-                    console.error('Error handling device message:', e);
-                }
-            });
-
-            ws.on('close', async () => {
-                console.log(`Device disconnected: ${deviceCode}`);
-                deviceConnections.delete(deviceId);
-
-                // Update status to offline
-                try {
-                    await prisma.device.update({
-                        where: { id: deviceId },
-                        data: { status: 'offline' }
-                    });
-                } catch (e) {
-                    console.error('Error updating device offline status:', e);
-                }
-            });
         } catch (error) {
             console.error('Critical error in WebSocket connection handler:', error);
             ws.close(1011, 'Internal server error');

@@ -8,12 +8,14 @@ import {
     getAccess,
     grantAccess,
     revokeAccess,
-    downloadLogs
+    downloadLogs,
+    unclaimDevice
 } from '../controllers/deviceController';
 
 const router = Router();
 
 router.post('/claim', claimDevice);
+router.delete('/:id/claim', unclaimDevice);
 router.get('/', getDevices);
 router.get('/:id', getDevice);
 router.patch('/:id', updateDevice);

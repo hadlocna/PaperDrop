@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
-import { client as api, updateDevice, unclaimDevice, createInviteLink, downloadDeviceLogs } from '../api/client';
+import { client as api, updateDevice, unclaimDevice, clearMessageQueue, createInviteLink, downloadDeviceLogs } from '../api/client';
 
 export function DeviceSettings() {
     const { id } = useParams();
@@ -50,6 +50,16 @@ export function DeviceSettings() {
             alert('Failed to update device');
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleClearQueue = async () => {
+        if (!confirm('Are you sure you want to clear the message queue? This will delete all pending messages.')) return;
+        try {
+            await clearMessageQueue(id!);
+            alert('Message queue cleared');
+        } catch (err) {
+            alert('Failed to clear message queue');
         }
     };
 
@@ -223,14 +233,32 @@ export function DeviceSettings() {
                 </div>
 
                 <div className="bg-white rounded-2xl p-6 shadow-sm border border-red-100">
-                    <h2 className="text-lg font-medium mb-2 text-red-600">Danger Zone</h2>
-                    <p className="text-gray-500 mb-4 text-sm">Remove this device from your account.</p>
-                    <button
-                        onClick={handleUnclaim}
-                        className="px-4 py-2 border border-red-200 text-red-600 rounded-xl hover:bg-red-50 transition"
-                    >
-                        Unclaim Device
-                    </button>
+                    <div className="flex flex-col gap-4">
+                        <div className="flex justify-between items-center">
+                            <div>
+                                <p className="text-gray-700 font-medium">Message Queue</p>
+                                <p className="text-gray-500 text-sm">Clear all pending messages for this device.</p>
+                            </div>
+                            <button
+                                onClick={handleClearQueue}
+                                className="px-4 py-2 border border-gray-200 rounded-xl hover:bg-gray-50 transition"
+                            >
+                                Clear Queue
+                            </button>
+                        </div>
+                        <div className="pt-4 border-t border-red-100 flex justify-between items-center">
+                            <div>
+                                <p className="text-red-600 font-medium">Unclaim Device</p>
+                                <p className="text-gray-500 text-sm">Remove this device from your account.</p>
+                            </div>
+                            <button
+                                onClick={handleUnclaim}
+                                className="px-4 py-2 border border-red-200 text-red-600 rounded-xl hover:bg-red-50 transition"
+                            >
+                                Unclaim Device
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </Layout>
