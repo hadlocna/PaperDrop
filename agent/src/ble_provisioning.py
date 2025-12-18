@@ -54,10 +54,32 @@ def connect_wifi_task(ssid, password):
     update_wifi_status("connecting")
     try:
         logger.info(f"Connecting to WiFi: {ssid}")
+        
+        # Delete any existing connection for this SSID first
+        subprocess.run(['nmcli', 'connection', 'delete', ssid], 
+                       capture_output=True, text=True)
+        
+        # Create new connection with proper WPA-PSK settings
+        result = subprocess.run([
+            'nmcli', 'connection', 'add',
+            'type', 'wifi',
+            'con-name', ssid,
+            'ssid', ssid,
+            'wifi-sec.key-mgmt', 'wpa-psk',
+            'wifi-sec.psk', password
+        ], capture_output=True, text=True, timeout=30)
+        
+        if result.returncode != 0:
+            logger.error(f"Failed to create connection: {result.stderr}")
+            update_wifi_status("failed")
+            return
+        
+        # Now activate the connection
         result = subprocess.run(
-            ['nmcli', 'dev', 'wifi', 'connect', ssid, 'password', password],
+            ['nmcli', 'connection', 'up', ssid],
             capture_output=True, text=True, timeout=30
         )
+        
         if result.returncode == 0:
             logger.info("WiFi connected successfully!")
             try:
