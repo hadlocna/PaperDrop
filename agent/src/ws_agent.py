@@ -131,10 +131,7 @@ async def connect_to_backend():
 
                 listener_task = asyncio.create_task(listen())
 
-                # Wait a bit before sending hello to ensure backend is ready
-                await asyncio.sleep(1)
-                
-                # Send initial hello/heartbeat
+                # Send initial hello/heartbeat immediately
                 logger.info("Sending device_hello...")
                 try:
                     await websocket.send(json.dumps({
