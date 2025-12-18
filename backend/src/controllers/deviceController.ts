@@ -93,11 +93,14 @@ export const getDevices = async (req: Request, res: Response) => {
             }
         });
 
-        // Add isOnline status from connection map? 
-        // Real-time status in DB might lag if we rely solely on 'status' field updates.
-        // For now, DB status is fine as updated by WS handler.
+        // Calculate real-time status based on lastSeenAt
+        const now = new Date().getTime();
+        const devicesWithStatus = devices.map(d => ({
+            ...d,
+            status: d.lastSeenAt && (now - new Date(d.lastSeenAt).getTime() < 60000) ? 'online' : 'offline'
+        }));
 
-        res.json(devices);
+        res.json(devicesWithStatus);
     } catch (error) {
         console.error('Get devices error:', error);
         res.status(500).json({ error: 'Internal server error' });
@@ -135,7 +138,14 @@ export const getDevice = async (req: Request, res: Response) => {
             return res.status(403).json({ error: 'Access denied' });
         }
 
-        res.json(device);
+        // Calculate real-time status
+        const isOnline = device.lastSeenAt && (new Date().getTime() - new Date(device.lastSeenAt).getTime() < 60000);
+        const deviceWithStatus = {
+            ...device,
+            status: isOnline ? 'online' : 'offline'
+        };
+
+        res.json(deviceWithStatus);
     } catch (error) {
         res.status(500).json({ error: 'Internal server error' });
     }

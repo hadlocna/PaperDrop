@@ -33,6 +33,45 @@ SERVICE_UUID = "12345678-1234-5678-1234-56789abcdef0"
 DEVICE_ID_CHRC_UUID = "12345678-1234-5678-1234-56789abcdef1"
 WIFI_CONFIG_CHRC_UUID = "12345678-1234-5678-1234-56789abcdef2"
 WIFI_NETWORKS_CHRC_UUID = "12345678-1234-5678-1234-56789abcdef3"
+WIFI_STATUS_CHRC_UUID = "12345678-1234-5678-1234-56789abcdef4"
+
+# Global status
+wifi_status = "idle"  # idle, connecting, connected, failed
+wifi_status_obj = None
+
+def update_wifi_status(new_status):
+    global wifi_status
+    wifi_status = new_status
+    logger.info(f"WiFi Status updated: {wifi_status}")
+    if wifi_status_obj:
+        wifi_status_obj.PropertiesChanged(
+            GATT_CHRC_IFACE,
+            {'Value': [dbus.Byte(b) for b in wifi_status.encode('utf-8')]},
+            []
+        )
+
+def connect_wifi_task(ssid, password):
+    update_wifi_status("connecting")
+    try:
+        logger.info(f"Connecting to WiFi: {ssid}")
+        result = subprocess.run(
+            ['nmcli', 'dev', 'wifi', 'connect', ssid, 'password', password],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode == 0:
+            logger.info("WiFi connected successfully!")
+            try:
+                with open('/etc/paperdrop/wifi-provisioned', 'w') as f:
+                    f.write('1')
+            except:
+                pass
+            update_wifi_status("connected")
+        else:
+            logger.error(f"WiFi connection failed: {result.stderr}")
+            update_wifi_status("failed")
+    except Exception as e:
+        logger.error(f"Error in WiFi connection task: {e}")
+        update_wifi_status("failed")
 
 
 def get_device_id():
@@ -293,10 +332,13 @@ class Characteristic(dbus.service.Object):
 
 class ProvisioningService(Service):
     def __init__(self, bus, index):
+        global wifi_status_obj
         Service.__init__(self, bus, index, SERVICE_UUID, True)
         self.add_characteristic(DeviceIdCharacteristic(bus, 0, self))
         self.add_characteristic(WifiConfigCharacteristic(bus, 1, self))
         self.add_characteristic(WifiNetworksCharacteristic(bus, 2, self))
+        wifi_status_obj = WifiStatusCharacteristic(bus, 3, self)
+        self.add_characteristic(wifi_status_obj)
 
 
 class DeviceIdCharacteristic(Characteristic):
@@ -331,24 +373,17 @@ class WifiConfigCharacteristic(Characteristic):
             password = data.get('password')
             
             if ssid and password:
-                logger.info(f'Connecting to WiFi: {ssid}')
-                result = subprocess.run(
-                    ['nmcli', 'dev', 'wifi', 'connect', ssid, 'password', password],
-                    capture_output=True, text=True
-                )
-                if result.returncode == 0:
-                    logger.info('WiFi connected successfully!')
-                    try:
-                        with open('/etc/paperdrop/wifi-provisioned', 'w') as f:
-                            f.write('1')
-                    except:
-                        pass
-                else:
-                    logger.error(f'WiFi connection failed: {result.stderr}')
+                # Run connection in background thread to avoid blocking BLE
+                import threading
+                thread = threading.Thread(target=connect_wifi_task, args=(ssid, password))
+                thread.daemon = True
+                thread.start()
             else:
                 logger.error('Missing ssid or password')
+                update_wifi_status("failed")
         except Exception as e:
             logger.error(f'Error processing WiFi config: {e}')
+            update_wifi_status("failed")
 
 
 class WifiNetworksCharacteristic(Characteristic):
@@ -366,6 +401,34 @@ class WifiNetworksCharacteristic(Characteristic):
         result = json.dumps(networks)
         logger.info(f'Found {len(networks)} networks')
         return [dbus.Byte(b) for b in result.encode('utf-8')]
+
+
+class WifiStatusCharacteristic(Characteristic):
+    """Characteristic that returns current WiFi connection status."""
+    def __init__(self, bus, index, service):
+        Characteristic.__init__(
+            self, bus, index,
+            WIFI_STATUS_CHRC_UUID,
+            ['read', 'notify'],
+            service)
+        self.notifying = False
+
+    def ReadValue(self, options):
+        global wifi_status
+        logger.info(f'Reading WiFi Status: {wifi_status}')
+        return [dbus.Byte(b) for b in wifi_status.encode('utf-8')]
+
+    def StartNotify(self):
+        if self.notifying:
+            return
+        self.notifying = True
+        logger.info('WiFi Status notifications started')
+
+    def StopNotify(self):
+        if not self.notifying:
+            return
+        self.notifying = False
+        logger.info('WiFi Status notifications stopped')
 
 
 # ==============================

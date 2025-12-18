@@ -56,14 +56,19 @@ export const setupWebSocket = () => {
                 console.log(`Device disconnected: ${deviceCode} (Code: ${code}, Reason: ${reason})`);
             }
             if (deviceId) {
-                deviceConnections.delete(deviceId);
-                try {
-                    await prisma.device.update({
-                        where: { id: deviceId },
-                        data: { status: 'offline' }
-                    });
-                } catch (e) {
-                    console.error('Error updating device offline status:', e);
+                if (deviceConnections.get(deviceId) === ws) {
+                    console.log(`Removing ${deviceCode} from active connections`);
+                    deviceConnections.delete(deviceId);
+                    try {
+                        await prisma.device.update({
+                            where: { id: deviceId },
+                            data: { status: 'offline' }
+                        });
+                    } catch (e) {
+                        console.error('Error updating device offline status:', e);
+                    }
+                } else {
+                    console.log(`Device ${deviceCode} disconnected, but a newer connection is already active. Skipping map deletion.`);
                 }
             }
         });
@@ -119,6 +124,11 @@ export const setupWebSocket = () => {
             deviceId = device.id;
             console.log(`Device connected and verified: ${deviceCode} (${deviceId})`);
 
+            const oldWs = deviceConnections.get(deviceId);
+            if (oldWs && oldWs !== ws) {
+                console.log(`Closing old connection for device: ${deviceCode}`);
+                oldWs.close(4009, 'New connection established');
+            }
             deviceConnections.set(deviceId, ws);
 
             // Update status to online

@@ -59,18 +59,15 @@ start_ap_mode() {
 }
 
 main() {
-    log "PaperDrop WiFi Service (Dual-Interface)"
+    log "PaperDrop WiFi Service (BLE-Only Mode)"
     
     # Wait for NM
     sleep 10
     
-    # In Dual-Interface mode, we ALWAYS run the AP on the secondary interface
-    # regardless of whether the primary is connected or not.
-    # This allows provisioning even if the device is already online via Ethernet/wlan0.
-    
     while true; do
-        start_ap_mode
-        sleep 5
+        # Just stay alive and log status occasionally
+        log "WiFi service active (BLE-Only)"
+        sleep 3600
     done
 }
 

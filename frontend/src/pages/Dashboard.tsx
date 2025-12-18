@@ -6,7 +6,7 @@ import { ActivityFeed } from '../components/ActivityFeed';
 import { BleProvisioningModal } from '../components/BleProvisioningModal';
 import { useAuth } from '../context/AuthContext';
 import { client as api } from '../api/client';
-import { X, Activity, Printer, Bluetooth } from 'lucide-react';
+import { X, Activity, Printer, Bluetooth, Settings } from 'lucide-react';
 
 interface Device {
     id: string;
@@ -112,13 +112,13 @@ export function Dashboard() {
             <div className="space-y-2 flex-1 overflow-y-auto">
                 {loading && <div>Loading...</div>}
                 {devices.map(device => (
-                    <button
+                    <div
                         key={device.id}
                         onClick={() => {
                             setSelectedDeviceId(device.id);
                             setShowPrinters(false); // Close drawer on mobile selection
                         }}
-                        className={`w-full flex items-center gap-3 p-3 rounded-xl transition text-left ${selectedDeviceId === device.id
+                        className={`w-full flex items-center gap-3 p-3 rounded-xl transition text-left cursor-pointer ${selectedDeviceId === device.id
                             ? 'bg-white shadow-sm ring-1 ring-black/5'
                             : 'hover:bg-gray-100 text-gray-600'
                             }`}
@@ -128,7 +128,17 @@ export function Dashboard() {
                             <div className="font-medium text-charcoal-800 truncate">{device.friendlyName}</div>
                             <div className="text-xs text-gray-400 font-mono">{device.deviceCode}</div>
                         </div>
-                    </button>
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/settings/${device.id}`);
+                            }}
+                            className="p-2 text-gray-400 hover:text-coral-500 hover:bg-gray-200 rounded-lg transition"
+                            title="Device Settings"
+                        >
+                            <Settings size={18} />
+                        </button>
+                    </div>
                 ))}
                 <button
                     onClick={() => setShowBleModal(true)}

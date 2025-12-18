@@ -41,11 +41,23 @@ class Config:
                 print(f"Error reading device info: {e}")
 
         if not self._device_code:
+            # Try to read from system identity file (created by first-boot)
+            try:
+                device_id_path = Path("/etc/paperdrop/device-id")
+                if device_id_path.exists():
+                    self._device_code = device_id_path.read_text().strip()
+            except Exception:
+                pass
+
+        if not self._device_code:
             # Generate a random code if missing (Development / First Boot)
             # In production, this might be pre-provisioned.
             self._device_code = str(uuid.uuid4()).split('-')[0].upper()
+            
+        if not self._device_secret:
             self._device_secret = str(uuid.uuid4())
-            self._save_device_info()
+            
+        self._save_device_info()
     
     def _save_device_info(self):
         """Save device info to file"""

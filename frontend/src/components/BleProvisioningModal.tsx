@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Bluetooth, Wifi, CheckCircle, AlertCircle, Loader2, Router } from 'lucide-react';
 
 // Fresh UUIDs matching the Pi BLE server
@@ -6,6 +6,7 @@ const SERVICE_UUID = '12345678-1234-5678-1234-56789abcdef0';
 const DEVICE_ID_UUID = '12345678-1234-5678-1234-56789abcdef1';
 const WIFI_CONFIG_UUID = '12345678-1234-5678-1234-56789abcdef2';
 const WIFI_NETWORKS_UUID = '12345678-1234-5678-1234-56789abcdef3';
+const WIFI_STATUS_UUID = '12345678-1234-5678-1234-56789abcdef4';
 
 type Step = 'scan' | 'connect' | 'wifi' | 'connecting_wifi' | 'success' | 'error';
 
@@ -112,6 +113,19 @@ export function BleProvisioningModal({ isOpen, onClose, onSuccess }: BleProvisio
             }
             setScanningNetworks(false);
 
+            // Get Status characteristic and subscribe
+            try {
+                const statusCharacteristic = await service.getCharacteristic(WIFI_STATUS_UUID);
+
+                await statusCharacteristic.startNotifications();
+                statusCharacteristic.addEventListener('characteristicvaluechanged', (event: any) => {
+                    const value = new TextDecoder().decode(event.target.value);
+                    handleStatusChange(value);
+                });
+            } catch (e) {
+                console.warn('Could not subscribe to status:', e);
+            }
+
             setStep('wifi');
         } catch (err) {
             console.error('BLE Error:', err);
@@ -122,38 +136,70 @@ export function BleProvisioningModal({ isOpen, onClose, onSuccess }: BleProvisio
         }
     };
 
+    const handleStatusChange = (status: string) => {
+        console.log('BLE Status Change:', status);
+        switch (status) {
+            case 'connecting':
+                setConnectionProgress(30);
+                break;
+            case 'connected':
+                setConnectionProgress(100);
+                setStep('success');
+                // onSuccess is called in the provisionDevice catch/finally or success block
+                break;
+            case 'failed':
+                setError('Device failed to connect to WiFi. Please check your credentials.');
+                setStep('error');
+                break;
+        }
+    };
+
     const provisionDevice = async () => {
         if (!wifiConfigChar || !ssid || !password) return;
 
         setLoading(true);
         setError('');
         setStep('connecting_wifi');
-        setConnectionProgress(0);
+        setConnectionProgress(10); // Initial progress after sending
 
         try {
             const config = JSON.stringify({ ssid, password });
             const encoder = new TextEncoder();
             await wifiConfigChar.writeValue(encoder.encode(config));
 
-            // Animate the connection progress
-            for (let i = 1; i <= 10; i++) {
-                await new Promise(r => setTimeout(r, 500));
-                setConnectionProgress(i * 10);
-            }
+            // We now wait for notifications from the status characteristic
+            // The handleStatusChange will update the UI
 
-            // Wait a bit more for actual connection
-            await new Promise(r => setTimeout(r, 2000));
+            // Fallback timeout in case device never responds
+            const timeout = setTimeout(() => {
+                if (step === 'connecting_wifi') {
+                    setError('Connection timed out. Please check the device.');
+                    setStep('error');
+                    setLoading(false);
+                }
+            }, 45000);
 
-            setStep('success');
-            onSuccess(deviceId);
+            // We don't call onSuccess here anymore, we wait for 'connected' status
+            // But we need to keep track of the timeout
+            (window as any).provisionTimeout = timeout;
+
         } catch (err) {
             console.error('Provision Error:', err);
             setError(err instanceof Error ? err.message : 'Failed to configure WiFi');
             setStep('error');
-        } finally {
             setLoading(false);
         }
     };
+
+    // Update success step to call onSuccess
+    useEffect(() => {
+        if (step === 'success' && deviceId) {
+            if ((window as any).provisionTimeout) {
+                clearTimeout((window as any).provisionTimeout);
+            }
+            onSuccess(deviceId);
+        }
+    }, [step, deviceId, onSuccess]);
 
     if (!isOpen) return null;
 
