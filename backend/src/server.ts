@@ -20,8 +20,25 @@ const app = express();
 const server = createServer(app);
 
 // Setup WebSockets
-setupWebSocket(server);
-setupAdminWebSocket(server);
+const deviceWss = setupWebSocket();
+const adminWss = setupAdminWebSocket();
+
+// Handle WebSocket upgrades manually
+server.on('upgrade', (request, socket, head) => {
+    const { pathname } = url.parse(request.url || '');
+
+    if (pathname === '/api/device/connect') {
+        deviceWss.handleUpgrade(request, socket, head, (ws) => {
+            deviceWss.emit('connection', ws, request);
+        });
+    } else if (pathname === '/api/admin/connect') {
+        adminWss.handleUpgrade(request, socket, head, (ws) => {
+            adminWss.emit('connection', ws, request);
+        });
+    } else {
+        socket.destroy();
+    }
+});
 
 // Middleware
 app.use(helmet());
