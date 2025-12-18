@@ -15,6 +15,7 @@ import { IncomingMessage } from 'http';
 import url from 'url';
 import { setupWebSocket } from './websocket/deviceHandler';
 import { setupAdminWebSocket } from './websocket/adminHandler';
+import { prisma } from './lib/prisma';
 
 const app = express();
 const server = createServer(app);
@@ -64,7 +65,7 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 app.get('/health', async (req, res) => {
     try {
         const deviceCount = await prisma.device.count();
-        res.json({ status: 'ok', version: '1.0.0', db: 'connected', devices: deviceCount });
+        res.json({ status: 'ok', version: '1.0.1-debug', db: 'connected', devices: deviceCount });
     } catch (e) {
         console.error('Health check DB error:', e);
         res.status(500).json({ status: 'error', db: 'disconnected', error: String(e) });
