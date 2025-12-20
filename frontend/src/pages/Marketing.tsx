@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import rocketBoy from '../assets/rocket-boy.png';
 import iconCreate from '../assets/icon-create.png';
@@ -60,7 +60,14 @@ const StopMotionFloat = ({ children, delay = 0 }: { children: React.ReactNode; d
 // --- Main Page ---
 
 export function Marketing() {
-    const { user } = useAuth();
+    const { user, isLoading } = useAuth();
+    const navigate = useNavigate();
+
+    useEffect(() => {
+        if (!isLoading && user) {
+            navigate('/dashboard', { replace: true });
+        }
+    }, [user, isLoading, navigate]);
 
     useEffect(() => {
         const script = document.createElement('script');
@@ -71,6 +78,10 @@ export function Marketing() {
             document.body.removeChild(script);
         }
     }, []);
+
+    if (isLoading || user) {
+        return null; // Or a full-screen loader if you prefer
+    }
 
     return (
         <div className="min-h-screen bg-[#FAF9F6] text-[#3D405B] font-sans selection:bg-[#E07A5F] selection:text-white overflow-x-hidden">
