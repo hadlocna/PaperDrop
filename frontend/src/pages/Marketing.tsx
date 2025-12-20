@@ -248,8 +248,8 @@ export function Marketing() {
                 <div className="max-w-5xl mx-auto px-6 grid md:grid-cols-2 gap-12 items-center">
                     <div className="order-2 md:order-1 relative">
                         {/* Placeholder for Video/Stop Motion Montage */}
-                        <div className="bg-[#FAF9F6] p-4 rounded-lg shadow-xl -rotate-2 border-4 border-[#3D405B]">
-                            <div className="relative overflow-hidden rounded border-2 border-[#3D405B] border-dashed" style={{ padding: '75% 0 0 0' }}>
+                        <div className="bg-[#FAF9F6] p-4 rounded-lg shadow-xl -rotate-2 border-4 border-[#3D405B] max-w-[320px] mx-auto">
+                            <div className="relative overflow-hidden rounded border-2 border-[#3D405B] border-dashed" style={{ padding: '177.77% 0 0 0' }}>
                                 <iframe
                                     src="https://player.vimeo.com/video/1148263510?h=85ee9b918f&badge=0&autopause=0&player_id=0&app_id=58479"
                                     frameBorder="0"
