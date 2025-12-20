@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import rocketBoy from '../assets/rocket-boy.png';
@@ -75,6 +75,16 @@ const StopMotionFloat = ({ children, delay = 0 }: { children: React.ReactNode; d
 
 export function Marketing() {
     const { user } = useAuth();
+
+    useEffect(() => {
+        const script = document.createElement('script');
+        script.src = "https://player.vimeo.com/api/player.js";
+        script.async = true;
+        document.body.appendChild(script);
+        return () => {
+            document.body.removeChild(script);
+        }
+    }, []);
 
     return (
         <div className="min-h-screen bg-[#FAF9F6] text-[#3D405B] font-sans selection:bg-[#E07A5F] selection:text-white overflow-x-hidden">
@@ -239,13 +249,14 @@ export function Marketing() {
                     <div className="order-2 md:order-1 relative">
                         {/* Placeholder for Video/Stop Motion Montage */}
                         <div className="bg-[#FAF9F6] p-4 rounded-lg shadow-xl -rotate-2 border-4 border-[#3D405B]">
-                            <div className="aspect-video bg-[#3D405B]/10 rounded border-2 border-[#3D405B] border-dashed flex items-center justify-center relative overflow-hidden">
-                                {/* Abstract representation of the Daughter scene */}
-                                <div className="absolute bottom-0 w-full h-1/3 bg-[#3D405B]/10"></div>
-                                <div className="w-16 h-24 bg-[#3D405B] rounded-t-full mx-auto relative top-8"></div>
-                                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white px-4 py-2 rounded-full font-bold shadow-lg">
-                                    ▶ Watch the Story
-                                </div>
+                            <div className="relative overflow-hidden rounded border-2 border-[#3D405B] border-dashed" style={{ padding: '75% 0 0 0' }}>
+                                <iframe
+                                    src="https://player.vimeo.com/video/1148263510?h=85ee9b918f&badge=0&autopause=0&player_id=0&app_id=58479"
+                                    frameBorder="0"
+                                    allow="autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media; web-share"
+                                    style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
+                                    title="Paper_drop_48s_202512201138_pvyai"
+                                ></iframe>
                             </div>
                         </div>
                         {/* Paper scraps */}
