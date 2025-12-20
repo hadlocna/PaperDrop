@@ -52,7 +52,13 @@ server.on('upgrade', (request, socket, head) => {
 // Middleware
 app.use(helmet());
 app.use(cors({
-    origin: ['https://paperdrop-frontend.onrender.com', 'http://localhost:5173', 'http://localhost:3000'],
+    origin: [
+        'https://paperdrop.me',
+        'https://www.paperdrop.me',
+        'https://paperdrop-frontend.onrender.com',
+        'http://localhost:5173',
+        'http://localhost:3000'
+    ],
     credentials: true
 }));
 app.use(express.json());
