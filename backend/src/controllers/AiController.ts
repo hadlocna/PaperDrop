@@ -82,7 +82,7 @@ export class AiController {
                 prompt: imagePrompt,
                 n: 1,
                 size: "1024x1024",
-                quality: "medium", // medium quality is faster and sufficient for thermal printing
+                quality: "low", // low quality for faster generation and reduced cost
             });
 
             if (!imageResponse.data || !imageResponse.data[0]) {

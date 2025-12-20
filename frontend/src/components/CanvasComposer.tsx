@@ -52,6 +52,8 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
     const [showDrawingModal, setShowDrawingModal] = useState(false);
     const [aiPrompt, setAiPrompt] = useState('');
     const [isGenerating, setIsGenerating] = useState(false);
+    const [aiProgress, setAiProgress] = useState(0);
+    const [aiEtaSeconds, setAiEtaSeconds] = useState(0);
     const [isDrawing, setIsDrawing] = useState(false);
     const [drawingSize, setDrawingSize] = useState(6);
     const [drawingColor, setDrawingColor] = useState('#000000');
@@ -70,6 +72,7 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
     const handleAiGenerate = async () => {
         if (!aiPrompt.trim()) return;
         setIsGenerating(true);
+        setAiProgress(0);
         try {
             let image;
 
@@ -246,6 +249,31 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
         }
     }, [showDrawingModal]);
 
+    useEffect(() => {
+        if (!isGenerating) {
+            setAiEtaSeconds(0);
+            return;
+        }
+
+        const estimatedSeconds = 20;
+        const startTime = Date.now();
+        setAiEtaSeconds(estimatedSeconds);
+
+        const interval = window.setInterval(() => {
+            const elapsedSeconds = (Date.now() - startTime) / 1000;
+            const progress = Math.min(0.9, elapsedSeconds / estimatedSeconds);
+            const remaining = Math.max(1, Math.ceil(estimatedSeconds - elapsedSeconds));
+            setAiProgress(progress);
+            setAiEtaSeconds(remaining);
+        }, 250);
+
+        return () => {
+            window.clearInterval(interval);
+            setAiProgress(1);
+            setAiEtaSeconds(0);
+        };
+    }, [isGenerating]);
+
     const getPoint = (e: React.MouseEvent | React.TouchEvent) => {
         const canvas = drawingCanvasRef.current;
         if (!canvas) return { x: 0, y: 0 };
@@ -392,6 +420,19 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                                     </>
                                 )}
                             </button>
+                            {isGenerating && (
+                                <div className="mt-4 space-y-2">
+                                    <div className="w-full h-2 rounded-full bg-gray-100 overflow-hidden">
+                                        <div
+                                            className="h-full bg-gradient-to-r from-purple-500 to-indigo-600 transition-all duration-300"
+                                            style={{ width: `${Math.round(aiProgress * 100)}%` }}
+                                        />
+                                    </div>
+                                    <p className="text-xs text-gray-500 text-center">
+                                        Est. {aiEtaSeconds}s remaining
+                                    </p>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
