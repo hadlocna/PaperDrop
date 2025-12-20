@@ -49,7 +49,7 @@ export function InviteAccept() {
             if (result.status === 'accepted') {
                 setAccepted(true);
                 setInvite({ ...invite, status: 'accepted' });
-                setTimeout(() => navigate('/'), 800);
+                setTimeout(() => navigate('/dashboard'), 800);
             }
         } catch (err: any) {
             setError(err.response?.data?.error || 'Failed to accept invite');

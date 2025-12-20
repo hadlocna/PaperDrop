@@ -18,7 +18,7 @@ export const Register = () => {
     const [loading, setLoading] = useState(false);
 
     // The page we were trying to access before being redirected to login/register
-    const from = location.state?.from?.pathname + (location.state?.from?.search || '') || '/';
+    const from = location.state?.from?.pathname + (location.state?.from?.search || '') || '/dashboard';
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();

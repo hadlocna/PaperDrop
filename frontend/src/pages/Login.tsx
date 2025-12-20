@@ -16,7 +16,7 @@ export function Login() {
     const { login } = useAuth();
 
     // The page we were trying to access before being redirected to login
-    const from = location.state?.from?.pathname + (location.state?.from?.search || '') || '/';
+    const from = location.state?.from?.pathname + (location.state?.from?.search || '') || '/dashboard';
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();

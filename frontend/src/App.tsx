@@ -10,6 +10,8 @@ import { Claim } from './pages/Claim';
 import { Admin } from './pages/Admin';
 import { InviteAccept } from './pages/InviteAccept';
 
+import { Marketing } from './pages/Marketing';
+
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
     const { user, isLoading } = useAuth();
     const location = useLocation();
@@ -30,12 +32,13 @@ function App() {
         <AuthProvider>
             <Router>
                 <Routes>
+                    <Route path="/" element={<Marketing />} />
                     <Route path="/login" element={<Login />} />
                     <Route path="/register" element={<Register />} />
                     <Route path="/admin" element={<Admin />} />
                     <Route path="/invite/:token" element={<InviteAccept />} />
                     <Route
-                        path="/"
+                        path="/dashboard"
                         element={
                             <ProtectedRoute>
                                 <Dashboard />

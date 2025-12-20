@@ -19,7 +19,7 @@ export function Layout({ children }: LayoutProps) {
         <div className="h-[100dvh] bg-sand-50 text-charcoal-500 font-sans flex flex-col overflow-hidden">
             <nav className="bg-white shadow-sm sticky top-0 z-10">
                 <div className="w-full px-4 h-16 flex items-center justify-between relative">
-                    <Link to="/" className="flex items-center gap-2 absolute top-2 left-4 z-20">
+                    <Link to="/dashboard" className="flex items-center gap-2 absolute top-2 left-4 z-20">
                         <img src={logoHorizontal} alt="PaperDrop" className="h-14 w-auto object-contain drop-shadow-md" />
                     </Link>
                     {/* Spacer to push content */}

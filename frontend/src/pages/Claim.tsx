@@ -50,7 +50,7 @@ export function Claim() {
 
             // Redirect to dashboard after a short delay
             setTimeout(() => {
-                navigate('/');
+                navigate('/dashboard');
             }, 2000);
 
         } catch (e: any) {
@@ -80,7 +80,7 @@ export function Claim() {
                         <h1 className="text-xl font-bold text-gray-800 mb-2">No Device Code</h1>
                         <p className="text-gray-500 mb-6">No device code was provided. Please go back to your device setup.</p>
                         <button
-                            onClick={() => navigate('/')}
+                            onClick={() => navigate('/dashboard')}
                             className="bg-gray-500 text-white px-6 py-3 rounded-xl font-medium"
                         >
                             Go to Dashboard
@@ -133,7 +133,7 @@ export function Claim() {
                     </button>
 
                     <button
-                        onClick={() => navigate('/')}
+                        onClick={() => navigate('/dashboard')}
                         className="mt-3 text-gray-500 hover:text-gray-700 text-sm"
                     >
                         Cancel

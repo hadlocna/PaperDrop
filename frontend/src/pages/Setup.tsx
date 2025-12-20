@@ -31,7 +31,7 @@ export function Setup() {
                 friendlyName,
                 userId: user?.id
             });
-            navigate('/');
+            navigate('/dashboard');
         } catch (err: any) {
             setError(err.response?.data?.error || 'Failed to claim device');
         } finally {
