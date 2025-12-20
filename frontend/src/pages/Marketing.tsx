@@ -2,6 +2,9 @@ import React, { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import rocketBoy from '../assets/rocket-boy.png';
+import iconCreate from '../assets/icon-create.png';
+import iconSend from '../assets/icon-send.png';
+import iconPrint from '../assets/icon-print.png';
 
 // --- Assets & Icons ---
 
@@ -23,32 +26,15 @@ const HeartIcon = () => (
 );
 
 const CreateIcon = () => (
-    <svg className="w-16 h-16 text-[#E07A5F]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 19l7-7 3 3-7 7-3-3z" />
-        <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
-        <path d="M2 2l5 5" />
-        <circle cx="12" cy="12" r="1" fill="currentColor" />
-    </svg>
+    <img src={iconCreate} alt="Create" className="w-24 h-24 object-contain" />
 );
 
 const SendIcon = () => (
-    <svg className="w-16 h-16 text-[#3D405B]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M22 2L11 13" />
-        <path d="M22 2l-7 20-4-9-9-4 20-7z" />
-        <path d="M18 6l-3 3" className="opacity-50" />
-        <path d="M20 4l-2 2" className="opacity-30" />
-    </svg>
+    <img src={iconSend} alt="Send" className="w-24 h-24 object-contain" />
 );
 
 const PrintIcon = () => (
-    <svg className="w-16 h-16 text-[#E07A5F]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="10" width="18" height="10" rx="2" />
-        <path d="M7 10V4a2 2 0 012-2h6a2 2 0 012 2v6" />
-        <path d="M7 20v2h10v-2" />
-        <path d="M12 14v2" />
-        <path d="M12 6h.01" />
-        <path d="M10 14h4" className="opacity-50" />
-    </svg>
+    <img src={iconPrint} alt="Print" className="w-24 h-24 object-contain" />
 );
 
 // --- Components ---
