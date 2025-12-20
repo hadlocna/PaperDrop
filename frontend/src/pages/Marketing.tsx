@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import rocketBoy from '../assets/rocket-boy.png';
 
 // --- Assets & Icons ---
 
@@ -342,10 +343,10 @@ export function Marketing() {
 
                         {/* Note 2 */}
                         <div className="break-inside-avoid bg-white p-4 shadow-md -rotate-2 border-t-8 border-[#E07A5F] border-x border-b border-gray-100">
-                            <div className="aspect-square bg-gray-100 mb-2 rounded border border-dashed border-gray-300 flex items-center justify-center text-gray-300">
-                                [Sketch of a Cat]
+                            <div className="aspect-square bg-gray-100 mb-2 rounded border border-dashed border-gray-300 flex items-center justify-center overflow-hidden">
+                                <img src={rocketBoy} alt="Boy on a rocket" className="w-full h-full object-contain p-2" />
                             </div>
-                            <p className="font-hand text-sm text-center">Meow!</p>
+                            <p className="font-hand text-sm text-center">To infinity!</p>
                         </div>
 
                         {/* Note 3 */}
