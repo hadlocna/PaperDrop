@@ -21,9 +21,32 @@ const HeartIcon = () => (
     </svg>
 );
 
-const PaperPlaneIcon = () => (
-    <svg className="w-6 h-6 text-[#3D405B]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+const CreateIcon = () => (
+    <svg className="w-16 h-16 text-[#E07A5F]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 19l7-7 3 3-7 7-3-3z" />
+        <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
+        <path d="M2 2l5 5" />
+        <circle cx="12" cy="12" r="1" fill="currentColor" />
+    </svg>
+);
+
+const SendIcon = () => (
+    <svg className="w-16 h-16 text-[#3D405B]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M22 2L11 13" />
+        <path d="M22 2l-7 20-4-9-9-4 20-7z" />
+        <path d="M18 6l-3 3" className="opacity-50" />
+        <path d="M20 4l-2 2" className="opacity-30" />
+    </svg>
+);
+
+const PrintIcon = () => (
+    <svg className="w-16 h-16 text-[#E07A5F]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="10" width="18" height="10" rx="2" />
+        <path d="M7 10V4a2 2 0 012-2h6a2 2 0 012 2v6" />
+        <path d="M7 20v2h10v-2" />
+        <path d="M12 14v2" />
+        <path d="M12 6h.01" />
+        <path d="M10 14h4" className="opacity-50" />
     </svg>
 );
 
@@ -266,7 +289,7 @@ export function Marketing() {
                         <div className="relative group">
                             <div className="bg-white rounded-3xl p-8 border-4 border-[#3D405B] shadow-[8px_8px_0px_0px_#3D405B] transition-transform group-hover:-translate-y-2">
                                 <div className="h-40 bg-[#E07A5F]/10 rounded-2xl mb-6 flex items-center justify-center border-2 border-dashed border-[#E07A5F]">
-                                    <span className="text-6xl">🎨</span>
+                                    <CreateIcon />
                                 </div>
                                 <h3 className="text-xl font-bold text-[#3D405B] mb-2">1. Create</h3>
                                 <p className="text-[#3D405B]/70">Draw a doodle, snap a photo, or type a quick note in the PaperDrop app.</p>
@@ -280,7 +303,7 @@ export function Marketing() {
 
                             <div className="bg-white rounded-3xl p-8 border-4 border-[#3D405B] shadow-[8px_8px_0px_0px_#F2CC8F] transition-transform group-hover:-translate-y-2">
                                 <div className="h-40 bg-[#F2CC8F]/10 rounded-2xl mb-6 flex items-center justify-center border-2 border-dashed border-[#F2CC8F]">
-                                    <PaperPlaneIcon />
+                                    <SendIcon />
                                 </div>
                                 <h3 className="text-xl font-bold text-[#3D405B] mb-2">2. Send</h3>
                                 <p className="text-[#3D405B]/70">Hit send from anywhere. The office, the train, or the other room.</p>
@@ -294,7 +317,7 @@ export function Marketing() {
 
                             <div className="bg-white rounded-3xl p-8 border-4 border-[#3D405B] shadow-[8px_8px_0px_0px_#E07A5F] transition-transform group-hover:-translate-y-2">
                                 <div className="h-40 bg-[#E07A5F]/10 rounded-2xl mb-6 flex items-center justify-center border-2 border-dashed border-[#E07A5F]">
-                                    <span className="text-6xl animate-pulse">📠</span>
+                                    <PrintIcon />
                                 </div>
                                 <h3 className="text-xl font-bold text-[#3D405B] mb-2">3. Print</h3>
                                 <p className="text-[#3D405B]/70">The PaperDrop lights up and prints your message instantly. Zzzt!</p>
