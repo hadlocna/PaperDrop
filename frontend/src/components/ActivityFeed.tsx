@@ -13,29 +13,30 @@ interface Message {
         id: string;
         name: string;
     };
+    device?: {
+        id: string;
+        friendlyName: string;
+    };
 }
 
 interface ActivityFeedProps {
-    deviceId: string | null;
     refreshTrigger: number;
 }
 
-export function ActivityFeed({ deviceId, refreshTrigger }: ActivityFeedProps) {
+export function ActivityFeed({ refreshTrigger }: ActivityFeedProps) {
     const { user } = useAuth();
     const [messages, setMessages] = useState<Message[]>([]);
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
-        if (!deviceId || !user) return;
+        if (!user) return;
 
         async function fetchHistory() {
             setLoading(true);
             try {
                 const res = await api.get('/messages', {
                     params: {
-                        deviceId: deviceId,
-                        limit: 20,
-                        shared: 'true'
+                        limit: 50
                     }
                 });
                 setMessages(res.data.messages);
@@ -51,11 +52,9 @@ export function ActivityFeed({ deviceId, refreshTrigger }: ActivityFeedProps) {
         const interval = setInterval(fetchHistory, 5000);
         return () => clearInterval(interval);
 
-    }, [deviceId, user, refreshTrigger]);
+    }, [user, refreshTrigger]);
 
-    if (!deviceId) {
-        return <div className="p-4 text-center text-gray-400">Select a device to view activity</div>;
-    }
+    // No longer blocking on deviceId
 
     return (
         <div className="h-full flex flex-col bg-white border-l border-gray-100">
@@ -82,8 +81,8 @@ export function ActivityFeed({ deviceId, refreshTrigger }: ActivityFeedProps) {
                             <p className="text-xs text-gray-400">
                                 {new Date(msg.createdAt).toLocaleTimeString()}
                                 <span className="capitalize ml-1">• {msg.status}</span>
+                                {msg.device && <span className="ml-1">• to {msg.device.friendlyName}</span>}
                             </p>
-                            <p className="text-[11px] text-gray-400 text-right mt-1">Sent by {msg.sender?.name || 'Unknown sender'}</p>
                             {msg.errorMessage && (
                                 <p className="text-xs text-red-500 mt-1">{msg.errorMessage}</p>
                             )}

@@ -572,7 +572,12 @@ export function Dashboard() {
                     </div>
 
                     <div className="flex-1 overflow-hidden relative">
-                        {selectedDeviceId ? (
+                        {loading ? (
+                            <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-4">
+                                <RefreshCw className="animate-spin text-coral-500" size={32} />
+                                <p className="font-medium">Finding your printers...</p>
+                            </div>
+                        ) : selectedDeviceId ? (
                             <div className="w-full h-full flex flex-col">
                                 <CanvasComposer
                                     onSend={async (img) => handleSend(img)}
@@ -584,9 +589,12 @@ export function Dashboard() {
                                 />
                             </div>
                         ) : (
-                            <div className="flex items-center justify-center h-full text-gray-500">
-                                <button onClick={() => setShowPrinters(true)} className="bg-white px-6 py-3 rounded-full shadow-lg font-medium text-coral-600">
-                                    Select a printer to start
+                            <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8 text-center">
+                                <Printer size={48} className="text-gray-200 mb-4" />
+                                <h3 className="text-xl font-bold text-charcoal-800 mb-2">No Printers Found</h3>
+                                <p className="text-gray-400 mb-6 max-w-xs">Connect your first PaperDrop printer to start sending messages.</p>
+                                <button onClick={() => setShowBleModal(true)} className="bg-coral-500 text-white px-8 py-3 rounded-full shadow-lg font-bold hover:bg-coral-600 transition">
+                                    Add Printer
                                 </button>
                             </div>
                         )}
@@ -595,7 +603,7 @@ export function Dashboard() {
 
                 {/* 3. Activity Feed (Desktop) */}
                 <div className="hidden lg:block w-80 h-full border-l border-gray-200 bg-white">
-                    <ActivityFeed deviceId={selectedDeviceId} refreshTrigger={refreshTrigger} />
+                    <ActivityFeed refreshTrigger={refreshTrigger} />
                 </div>
 
                 {/* Mobile Activity Drawer (Overlay) */}
@@ -608,7 +616,7 @@ export function Dashboard() {
                                 <button onClick={() => setShowActivity(false)}><X size={24} /></button>
                             </div>
                             <div className="h-full overflow-hidden">
-                                <ActivityFeed deviceId={selectedDeviceId} refreshTrigger={refreshTrigger} />
+                                <ActivityFeed refreshTrigger={refreshTrigger} />
                             </div>
                         </div>
                     </div>
