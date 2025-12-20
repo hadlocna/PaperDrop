@@ -1,13 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { registerUser } from '../api/client';
-import { useAuth } from '../context/AuthContext';
 import logoHorizontal from '../assets/logo-horizontal.png';
 
 export const Register = () => {
     const navigate = useNavigate();
     const location = useLocation();
-    const { login } = useAuth();
 
     const [formData, setFormData] = useState({
         email: '',
@@ -17,8 +15,7 @@ export const Register = () => {
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
-    // The page we were trying to access before being redirected to login/register
-    const from = location.state?.from?.pathname + (location.state?.from?.search || '') || '/dashboard';
+    const fromState = location.state?.from || { pathname: '/dashboard' };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -27,8 +24,10 @@ export const Register = () => {
 
         try {
             const data = await registerUser(formData.email, formData.name, formData.password);
-            login(data);
-            navigate(from, { replace: true });
+            if (!data) {
+                throw new Error('Registration failed');
+            }
+            navigate('/login', { replace: true, state: { from: fromState } });
         } catch (err: any) {
             setError(err.response?.data?.error || 'Registration failed');
         } finally {
