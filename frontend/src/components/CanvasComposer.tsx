@@ -1,5 +1,6 @@
 
 import { useState, useRef, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import Draggable from 'react-draggable';
 import { toCanvas } from 'html-to-image';
 import {
@@ -39,6 +40,14 @@ interface CanvasComposerProps {
     sending: boolean;
 }
 
+interface PersonaRecord {
+    id: string;
+    name: string;
+    imageDataUrl: string;
+}
+
+const PERSONA_STORAGE_KEY = 'personas';
+
 export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerProps) {
     const [elements, setElements] = useState<CanvasElement[]>([]);
     const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -63,8 +72,34 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
     const [drawingSize, setDrawingSize] = useState(6);
     const [lastPoint, setLastPoint] = useState<{ x: number; y: number } | null>(null);
     const drawingColor = '#000000';
+    const [personas, setPersonas] = useState<PersonaRecord[]>([]);
 
     const selectedElement = elements.find(el => el.id === selectedId);
+
+    const loadPersonas = () => {
+        const stored = localStorage.getItem(PERSONA_STORAGE_KEY);
+        if (!stored) {
+            setPersonas([]);
+            return;
+        }
+        try {
+            const parsed = JSON.parse(stored) as PersonaRecord[];
+            setPersonas(Array.isArray(parsed) ? parsed : []);
+        } catch (error) {
+            console.warn('Failed to parse saved personas', error);
+            setPersonas([]);
+        }
+    };
+
+    useEffect(() => {
+        loadPersonas();
+    }, []);
+
+    useEffect(() => {
+        if (showAiModal) {
+            loadPersonas();
+        }
+    }, [showAiModal]);
 
     const confirmClear = () => {
         setElements([]);
@@ -87,7 +122,13 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                 await new Promise(r => setTimeout(r, 1500)); // Fake delay
                 image = `https://placehold.co/1024x1024/png?text=Mock+AI+Image`;
             } else {
-                const res = await api.post('/ai/generate', { prompt: aiPrompt });
+                const res = await api.post('/ai/generate', {
+                    prompt: aiPrompt,
+                    personas: personas.map((persona) => ({
+                        name: persona.name,
+                        image_base64: persona.imageDataUrl
+                    }))
+                });
                 image = res.data.image;
             }
 
@@ -115,6 +156,13 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
         } finally {
             setIsGenerating(false);
         }
+    };
+
+    const insertPersonaTag = (name: string) => {
+        setAiPrompt((prev) => {
+            const needsSpace = prev.length > 0 && !prev.endsWith(' ');
+            return `${prev}${needsSpace ? ' ' : ''}@${name} `;
+        });
     };
 
     const handleQrGenerate = async () => {
@@ -525,7 +573,7 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                         </div>
                         <div className="p-6">
                             <p className="text-sm text-gray-500 mb-4">
-                                Describe your message (e.g., "Bedtime note for Alma with a dinosaur").
+                                Describe your message (e.g., "Bedtime note for @Alma with a dinosaur").
                             </p>
                             <textarea
                                 value={aiPrompt}
@@ -533,6 +581,32 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                                 className="w-full h-24 p-3 border border-gray-200 rounded-xl mb-4 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-purple-500 outline-none resize-none transition"
                                 placeholder="A loving note..."
                             />
+                            <div className="mb-4">
+                                <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
+                                    <span>Insert a saved persona</span>
+                                    <Link to="/personas" className="text-purple-500 hover:text-purple-600 font-medium">
+                                        Manage personas
+                                    </Link>
+                                </div>
+                                {personas.length ? (
+                                    <div className="flex flex-wrap gap-2">
+                                        {personas.map((persona) => (
+                                            <button
+                                                key={persona.id}
+                                                type="button"
+                                                onClick={() => insertPersonaTag(persona.name)}
+                                                className="px-3 py-1 rounded-full bg-purple-50 text-purple-600 text-xs font-semibold hover:bg-purple-100 transition"
+                                            >
+                                                @{persona.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="text-xs text-gray-400">
+                                        No personas saved yet. Add one in the Personas page to reference with @name.
+                                    </p>
+                                )}
+                            </div>
                             <button
                                 onClick={handleAiGenerate}
                                 disabled={isGenerating || !aiPrompt.trim()}

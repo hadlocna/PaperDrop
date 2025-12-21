@@ -9,6 +9,7 @@ import { History } from './pages/History';
 import { Claim } from './pages/Claim';
 import { Admin } from './pages/Admin';
 import { InviteAccept } from './pages/InviteAccept';
+import { Personas } from './pages/Personas';
 
 import { Marketing } from './pages/Marketing';
 
@@ -74,6 +75,14 @@ function App() {
                         element={
                             <ProtectedRoute>
                                 <History />
+                            </ProtectedRoute>
+                        }
+                    />
+                    <Route
+                        path="/personas"
+                        element={
+                            <ProtectedRoute>
+                                <Personas />
                             </ProtectedRoute>
                         }
                     />
