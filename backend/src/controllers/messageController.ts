@@ -168,15 +168,14 @@ export const clearQueue = async (req: Request, res: Response) => {
             targetDeviceId = device.id;
         }
 
-        // Delete queued messages for this device
+        // Delete all messages for this device
         const result = await prisma.message.deleteMany({
             where: {
-                deviceId: String(targetDeviceId),
-                status: { not: 'printed' }
+                deviceId: String(targetDeviceId)
             }
         });
 
-        res.json({ message: `Cleared ${result.count} queued messages` });
+        res.json({ message: `Cleared ${result.count} messages` });
     } catch (error) {
         console.error('Clear queue error:', error);
         res.status(500).json({ error: 'Internal server error' });

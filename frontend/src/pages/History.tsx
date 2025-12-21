@@ -59,21 +59,21 @@ export function History() {
                     <h1 className="text-xl font-semibold text-charcoal-700">Message History</h1>
                     <button
                         onClick={async () => {
-                            if (!id || !confirm('Are you sure you want to clear the message queue?')) return;
+                            if (!id || !confirm('Are you sure you want to clear all messages for this printer? This will delete all pending and sent messages.')) return;
                             try {
                                 await clearMessageQueue(id);
-                                alert('Queue cleared');
+                                alert('Messages cleared');
                                 // Refresh history
                                 const res = await api.get('/messages', { params: { userId: user?.id, deviceId: id } });
                                 setMessages(res.data.messages);
                             } catch (err) {
-                                alert('Failed to clear queue');
+                                alert('Failed to clear messages');
                             }
                         }}
                         className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-coral-600 hover:bg-coral-50 rounded-xl transition"
                     >
                         <RefreshCw size={16} />
-                        Clear Queue
+                        Clear All Messages
                     </button>
                 </div>
 

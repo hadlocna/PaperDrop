@@ -79,7 +79,7 @@ function DeviceSettingsModal({ deviceId, onClose, onUpdate }: { deviceId: string
     };
 
     const handleClearQueue = async () => {
-        if (!confirm('Are you sure you want to clear the message queue? This will delete all pending messages.')) return;
+        if (!confirm('Are you sure you want to clear all messages for this printer? This will delete all pending and sent messages.')) return;
         try {
             await clearMessageQueue(deviceId);
             alert('Message queue cleared');
