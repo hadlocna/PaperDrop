@@ -159,14 +159,14 @@ export class AiController {
             const imagePrompt = `Black and white thermal printer line art. Simple, bold lines. No shading. No grayscale. White background. ${designSpecs.image_prompt}. ${designSpecs.generation_instructions} ${personaInstruction}`.trim();
 
             console.log('[AI] Generating image with gpt-image-1.5...');
-            const imageResponse = await openai.images.generate({
+            const imageResponse = (await openai.images.generate({
                 model: "gpt-image-1.5",
                 prompt: imagePrompt,
                 n: 1,
                 size: "1024x1024",
                 quality: "low", // low quality for faster generation and reduced cost
                 ...(resolved.referenceImages.length ? { images: resolved.referenceImages } : {})
-            } as OpenAI.Images.GenerateParams);
+            } as any)) as any;
 
             if (!imageResponse.data || !imageResponse.data[0]) {
                 throw new Error('No image data returned from OpenAI');
