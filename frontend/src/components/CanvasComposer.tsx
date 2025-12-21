@@ -58,11 +58,8 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
     const [aiEtaSeconds, setAiEtaSeconds] = useState(0);
     const [isDrawing, setIsDrawing] = useState(false);
     const [drawingSize, setDrawingSize] = useState(6);
-    const [drawingColor, setDrawingColor] = useState('#000000');
     const [lastPoint, setLastPoint] = useState<{ x: number; y: number } | null>(null);
-    const [qrContent, setQrContent] = useState('');
-    const [qrError, setQrError] = useState('');
-    const [isQrGenerating, setIsQrGenerating] = useState(false);
+    const drawingColor = '#000000';
 
     const selectedElement = elements.find(el => el.id === selectedId);
 
@@ -408,9 +405,11 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
         const rect = canvas.getBoundingClientRect();
         const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
         const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
         return {
-            x: clientX - rect.left,
-            y: clientY - rect.top
+            x: (clientX - rect.left) * scaleX,
+            y: (clientY - rect.top) * scaleY
         };
     };
 
@@ -582,24 +581,11 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                         <div className="p-6 space-y-4">
                             <div className="flex flex-wrap items-center gap-4">
                                 <div className="flex items-center gap-2">
-                                    <span className="text-sm font-semibold text-charcoal-700">Pen</span>
-                                    <div className="flex gap-2">
-                                        {['#000000', '#555555', '#9ca3af'].map(color => (
-                                            <button
-                                                key={color}
-                                                onClick={() => setDrawingColor(color)}
-                                                className={`w-8 h-8 rounded-full border ${drawingColor === color ? 'ring-2 ring-coral-500 border-coral-500' : 'border-gray-300'}`}
-                                                style={{ backgroundColor: color }}
-                                            />
-                                        ))}
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-2">
                                     <span className="text-sm font-semibold text-charcoal-700">Thickness</span>
                                     <input
                                         type="range"
                                         min={2}
-                                        max={16}
+                                        max={50}
                                         value={drawingSize}
                                         onChange={(e) => setDrawingSize(Number(e.target.value))}
                                         className="w-40"
