@@ -164,7 +164,12 @@ export class AiController {
             const personaInstruction = resolved.personaNames.length
                 ? `Use the provided reference images to depict ${resolved.personaNames.join(', ')} accurately.`
                 : '';
-            const imagePrompt = `Black and white thermal printer line art. Simple, bold lines. No shading. No grayscale. White background. ${designSpecs.image_prompt}. ${designSpecs.generation_instructions} ${personaInstruction}`.trim();
+            const imagePrompt = [
+                "Black and white thermal printer line art. Simple, bold lines. No shading. No grayscale. White background.",
+                designSpecs.image_prompt,
+                designSpecs.generation_instructions,
+                personaInstruction
+            ].filter(Boolean).join(' ').trim();
 
             console.log('[AI] Generating image with gpt-image-1.5...');
             console.log('[AI] Prompt:', imagePrompt);
@@ -202,12 +207,13 @@ export class AiController {
             console.error('[AI] Generation failed:', error);
 
             // Extract more details if available
-            const errorMessage = error.response?.data?.error?.message || error.message || 'AI generation failed';
-            const errorStatus = error.response?.status || 500;
+            const errorMessage = error.message || 'AI generation failed';
+            const errorStatus = error.status || error.response?.status || 500;
+            const errorDetails = error.error || error.response?.data || error.data || null;
 
             res.status(errorStatus).json({
                 error: errorMessage,
-                details: error.response?.data || error.data || null
+                details: errorDetails
             });
         }
     }
