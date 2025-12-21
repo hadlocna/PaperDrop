@@ -148,7 +148,15 @@ export class AiController {
                 response_format: { type: "json_object" }
             });
 
-            const designSpecs = JSON.parse(completion.choices[0].message.content || '{}');
+            let designSpecs;
+            try {
+                const content = completion.choices[0].message.content || '{}';
+                designSpecs = JSON.parse(content);
+            } catch (e) {
+                console.error('[AI] Failed to parse design specs:', completion.choices[0].message.content);
+                throw new Error('AI returned invalid design specifications');
+            }
+
             console.log('[AI] Design Specs:', designSpecs);
 
             // 2. Generate Image with GPT Image 1.5 (latest model, replaces DALL-E 3)
@@ -159,11 +167,16 @@ export class AiController {
             const imagePrompt = `Black and white thermal printer line art. Simple, bold lines. No shading. No grayscale. White background. ${designSpecs.image_prompt}. ${designSpecs.generation_instructions} ${personaInstruction}`.trim();
 
             console.log('[AI] Generating image with gpt-image-1.5...');
+            console.log('[AI] Prompt:', imagePrompt);
+            console.log('[AI] Reference Images:', resolved.referenceImages.length);
+
             const imageResponse = (await openai.images.generate({
                 model: "gpt-image-1.5",
                 prompt: imagePrompt,
                 n: 1,
                 size: "1024x1024",
+                quality: "low",
+                output_format: "png",
                 response_format: "b64_json",
                 ...(resolved.referenceImages.length ? { images: resolved.referenceImages } : {})
             } as any)) as any;
@@ -194,7 +207,7 @@ export class AiController {
 
             res.status(errorStatus).json({
                 error: errorMessage,
-                details: error.response?.data || null
+                details: error.response?.data || error.data || null
             });
         }
     }
