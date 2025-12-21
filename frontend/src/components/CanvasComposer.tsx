@@ -180,8 +180,14 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                 throw new Error('QR service unavailable');
             }
             const blob = await response.blob();
-            const logoUrl = '/favicon.png';
-            const dataUrl = await composeQrWithLogo(blob, logoUrl);
+
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+
             const newElement: CanvasElement = {
                 id: crypto.randomUUID(),
                 type: 'image',
@@ -202,85 +208,7 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
         }
     };
 
-    const composeQrWithLogo = async (qrBlob: Blob, logoUrl: string) => {
-        const qrImage = await loadImageFromBlob(qrBlob);
-        const logoImage = await loadImageFromUrl(logoUrl);
-        const size = Math.max(qrImage.naturalWidth, qrImage.naturalHeight);
-        const canvas = document.createElement('canvas');
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-            throw new Error('QR canvas unavailable');
-        }
 
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, size, size);
-        ctx.drawImage(qrImage, 0, 0, size, size);
-
-        const logoScale = 0.22;
-        const logoSize = size * logoScale;
-        const padding = logoSize * 0.18;
-        const backgroundSize = logoSize + padding * 2;
-        const backgroundX = (size - backgroundSize) / 2;
-        const backgroundY = (size - backgroundSize) / 2;
-        const radius = backgroundSize * 0.2;
-
-        ctx.fillStyle = '#ffffff';
-        drawRoundedRect(ctx, backgroundX, backgroundY, backgroundSize, backgroundSize, radius);
-        ctx.fill();
-
-        const logoX = (size - logoSize) / 2;
-        const logoY = (size - logoSize) / 2;
-        ctx.drawImage(logoImage, logoX, logoY, logoSize, logoSize);
-
-        return canvas.toDataURL('image/png');
-    };
-
-    const loadImageFromBlob = (blob: Blob) => {
-        const objectUrl = URL.createObjectURL(blob);
-        return new Promise<HTMLImageElement>((resolve, reject) => {
-            const img = new Image();
-            img.onload = () => {
-                URL.revokeObjectURL(objectUrl);
-                resolve(img);
-            };
-            img.onerror = () => {
-                URL.revokeObjectURL(objectUrl);
-                reject(new Error('QR image load failed'));
-            };
-            img.src = objectUrl;
-        });
-    };
-
-    const loadImageFromUrl = (url: string) => new Promise<HTMLImageElement>((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = () => reject(new Error('Logo load failed'));
-        img.src = url;
-    });
-
-    const drawRoundedRect = (
-        ctx: CanvasRenderingContext2D,
-        x: number,
-        y: number,
-        width: number,
-        height: number,
-        radius: number
-    ) => {
-        const r = Math.min(radius, width / 2, height / 2);
-        ctx.beginPath();
-        ctx.moveTo(x + r, y);
-        ctx.lineTo(x + width - r, y);
-        ctx.quadraticCurveTo(x + width, y, x + width, y + r);
-        ctx.lineTo(x + width, y + height - r);
-        ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
-        ctx.lineTo(x + r, y + height);
-        ctx.quadraticCurveTo(x, y + height, x, y + height - r);
-        ctx.lineTo(x, y + r);
-        ctx.quadraticCurveTo(x, y, x + r, y);
-        ctx.closePath();
-    };
 
     const addText = () => {
         const newElement: CanvasElement = {
