@@ -28,6 +28,12 @@ export function Layout({ children }: LayoutProps) {
                     <div className="flex items-center gap-4">
                         {user && (
                             <>
+                                <Link
+                                    to="/personas"
+                                    className="text-sm font-medium text-charcoal-500 hover:text-coral-500 transition-colors"
+                                >
+                                    Personas
+                                </Link>
                                 <span className="text-sm font-medium text-charcoal-500 hidden sm:block">
                                     {user.name}
                                 </span>
