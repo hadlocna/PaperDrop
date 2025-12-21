@@ -57,12 +57,12 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
     const [aiProgress, setAiProgress] = useState(0);
     const [aiEtaSeconds, setAiEtaSeconds] = useState(0);
     const [isDrawing, setIsDrawing] = useState(false);
-    const [drawingSize, setDrawingSize] = useState(6);
-    const [drawingColor, setDrawingColor] = useState('#000000');
-    const [lastPoint, setLastPoint] = useState<{ x: number; y: number } | null>(null);
     const [qrContent, setQrContent] = useState('');
     const [qrError, setQrError] = useState('');
     const [isQrGenerating, setIsQrGenerating] = useState(false);
+    const [drawingSize, setDrawingSize] = useState(6);
+    const [lastPoint, setLastPoint] = useState<{ x: number; y: number } | null>(null);
+    const drawingColor = '#000000';
 
     const selectedElement = elements.find(el => el.id === selectedId);
 
@@ -126,13 +126,14 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
         setIsQrGenerating(true);
         setQrError('');
         try {
-            const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&ecc=H&margin=2&data=${encodeURIComponent(value)}`;
+            const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(value)}`;
             const response = await fetch(qrUrl);
             if (!response.ok) {
                 throw new Error('QR service unavailable');
             }
             const blob = await response.blob();
-            const dataUrl = await blobToDataUrl(blob);
+            const logoUrl = '/favicon.png';
+            const dataUrl = await composeQrWithLogo(blob, logoUrl);
             const newElement: CanvasElement = {
                 id: crypto.randomUUID(),
                 type: 'image',
@@ -153,12 +154,85 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
         }
     };
 
-    const blobToDataUrl = (blob: Blob) => new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.onerror = () => reject(new Error('QR conversion failed'));
-        reader.readAsDataURL(blob);
+    const composeQrWithLogo = async (qrBlob: Blob, logoUrl: string) => {
+        const qrImage = await loadImageFromBlob(qrBlob);
+        const logoImage = await loadImageFromUrl(logoUrl);
+        const size = Math.max(qrImage.naturalWidth, qrImage.naturalHeight);
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            throw new Error('QR canvas unavailable');
+        }
+
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, size, size);
+        ctx.drawImage(qrImage, 0, 0, size, size);
+
+        const logoScale = 0.22;
+        const logoSize = size * logoScale;
+        const padding = logoSize * 0.18;
+        const backgroundSize = logoSize + padding * 2;
+        const backgroundX = (size - backgroundSize) / 2;
+        const backgroundY = (size - backgroundSize) / 2;
+        const radius = backgroundSize * 0.2;
+
+        ctx.fillStyle = '#ffffff';
+        drawRoundedRect(ctx, backgroundX, backgroundY, backgroundSize, backgroundSize, radius);
+        ctx.fill();
+
+        const logoX = (size - logoSize) / 2;
+        const logoY = (size - logoSize) / 2;
+        ctx.drawImage(logoImage, logoX, logoY, logoSize, logoSize);
+
+        return canvas.toDataURL('image/png');
+    };
+
+    const loadImageFromBlob = (blob: Blob) => {
+        const objectUrl = URL.createObjectURL(blob);
+        return new Promise<HTMLImageElement>((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => {
+                URL.revokeObjectURL(objectUrl);
+                resolve(img);
+            };
+            img.onerror = () => {
+                URL.revokeObjectURL(objectUrl);
+                reject(new Error('QR image load failed'));
+            };
+            img.src = objectUrl;
+        });
+    };
+
+    const loadImageFromUrl = (url: string) => new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('Logo load failed'));
+        img.src = url;
     });
+
+    const drawRoundedRect = (
+        ctx: CanvasRenderingContext2D,
+        x: number,
+        y: number,
+        width: number,
+        height: number,
+        radius: number
+    ) => {
+        const r = Math.min(radius, width / 2, height / 2);
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + width - r, y);
+        ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+        ctx.lineTo(x + width, y + height - r);
+        ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+        ctx.lineTo(x + r, y + height);
+        ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+        ctx.lineTo(x, y + r);
+        ctx.quadraticCurveTo(x, y, x + r, y);
+        ctx.closePath();
+    };
 
     const addText = () => {
         const newElement: CanvasElement = {
@@ -334,9 +408,11 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
         const rect = canvas.getBoundingClientRect();
         const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
         const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
         return {
-            x: clientX - rect.left,
-            y: clientY - rect.top
+            x: (clientX - rect.left) * scaleX,
+            y: (clientY - rect.top) * scaleY
         };
     };
 
@@ -508,24 +584,11 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                         <div className="p-6 space-y-4">
                             <div className="flex flex-wrap items-center gap-4">
                                 <div className="flex items-center gap-2">
-                                    <span className="text-sm font-semibold text-charcoal-700">Pen</span>
-                                    <div className="flex gap-2">
-                                        {['#000000', '#555555', '#9ca3af'].map(color => (
-                                            <button
-                                                key={color}
-                                                onClick={() => setDrawingColor(color)}
-                                                className={`w-8 h-8 rounded-full border ${drawingColor === color ? 'ring-2 ring-coral-500 border-coral-500' : 'border-gray-300'}`}
-                                                style={{ backgroundColor: color }}
-                                            />
-                                        ))}
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-2">
                                     <span className="text-sm font-semibold text-charcoal-700">Thickness</span>
                                     <input
                                         type="range"
                                         min={2}
-                                        max={16}
+                                        max={50}
                                         value={drawingSize}
                                         onChange={(e) => setDrawingSize(Number(e.target.value))}
                                         className="w-40"
