@@ -57,6 +57,9 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
     const [aiProgress, setAiProgress] = useState(0);
     const [aiEtaSeconds, setAiEtaSeconds] = useState(0);
     const [isDrawing, setIsDrawing] = useState(false);
+    const [qrContent, setQrContent] = useState('');
+    const [qrError, setQrError] = useState('');
+    const [isQrGenerating, setIsQrGenerating] = useState(false);
     const [drawingSize, setDrawingSize] = useState(6);
     const [lastPoint, setLastPoint] = useState<{ x: number; y: number } | null>(null);
     const drawingColor = '#000000';
