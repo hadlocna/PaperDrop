@@ -1,6 +1,73 @@
 import { Request, Response } from 'express';
 import OpenAI from 'openai';
 
+type PersonaReference = {
+    name: string;
+    image_base64?: string;
+    image?: string;
+};
+
+const PERSONA_MENTION_REGEX = /@([a-z0-9][a-z0-9._-]{0,30})/gi;
+
+const normalizeName = (name: string) => name.trim().toLowerCase();
+
+const stripDataUrlPrefix = (value: string) =>
+    value.replace(/^data:image\/[a-z0-9.+-]+;base64,/i, '');
+
+const resolvePersonaMentions = (prompt: string, personas: PersonaReference[]) => {
+    const personaByName = new Map<string, PersonaReference>();
+    personas.forEach((persona) => {
+        const normalized = normalizeName(persona.name);
+        if (!normalized || personaByName.has(normalized)) return;
+        personaByName.set(normalized, persona);
+    });
+
+    const uniqueMentions = new Set<string>();
+    PERSONA_MENTION_REGEX.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = PERSONA_MENTION_REGEX.exec(prompt)) !== null) {
+        uniqueMentions.add(match[1]);
+    }
+
+    const resolvedMentions = new Map<string, string>();
+    const resolvedPersonas: PersonaReference[] = [];
+
+    uniqueMentions.forEach((mention) => {
+        const normalizedMention = normalizeName(mention);
+        if (!normalizedMention) return;
+
+        const exact = personaByName.get(normalizedMention);
+        if (!exact) return;
+        resolvedMentions.set(mention, exact.name);
+        resolvedPersonas.push(exact);
+    });
+
+    PERSONA_MENTION_REGEX.lastIndex = 0;
+    const promptWithResolvedMentions = prompt.replace(PERSONA_MENTION_REGEX, (fullMatch, name) => {
+        const resolvedName = resolvedMentions.get(name);
+        return resolvedName ? resolvedName : fullMatch;
+    });
+
+    const uniquePersonas = new Map<string, PersonaReference>();
+    resolvedPersonas.forEach((persona) => {
+        const normalized = normalizeName(persona.name);
+        if (uniquePersonas.has(normalized)) return;
+        uniquePersonas.set(normalized, persona);
+    });
+
+    const personaNames = Array.from(uniquePersonas.values()).map((persona) => persona.name);
+    const referenceImages = Array.from(uniquePersonas.values())
+        .map((persona) => persona.image_base64 ?? persona.image)
+        .filter((image): image is string => Boolean(image))
+        .map((image) => ({ b64: stripDataUrlPrefix(image) }));
+
+    return {
+        prompt: promptWithResolvedMentions,
+        personaNames,
+        referenceImages
+    };
+};
+
 const THERMAL_SYSTEM_PROMPT = `You are a designer for a thermal receipt printer used for intimate family notes.
 
 Your job is to create PRINT-READY artwork and layouts that will be printed on a black-and-white thermal printer.
@@ -43,7 +110,10 @@ DO NOT include any explanatory text outside the JSON.`;
 export class AiController {
     static async generateDesign(req: Request, res: Response) {
         try {
-            const { prompt } = req.body;
+            const { prompt, personas } = req.body as {
+                prompt?: string;
+                personas?: PersonaReference[];
+            };
             if (!prompt) {
                 res.status(400).json({ error: 'Prompt is required' });
                 return;
@@ -57,14 +127,23 @@ export class AiController {
 
             const openai = new OpenAI();
 
-            console.log('[AI] Refining prompt:', prompt);
+            const resolved = resolvePersonaMentions(prompt, personas ?? []);
+            console.log('[AI] Refining prompt:', resolved.prompt);
 
             // 1. Refine Prompt with GPT-4o (or 3.5-turbo)
             const completion = await openai.chat.completions.create({
                 model: "gpt-4o",
                 messages: [
                     { role: "system", content: THERMAL_SYSTEM_PROMPT },
-                    { role: "user", content: `User wants to create the following message: "${prompt}"` }
+                    {
+                        role: "user",
+                        content: [
+                            `User wants to create the following message: "${resolved.prompt}"`,
+                            resolved.personaNames.length
+                                ? `The message includes people tagged as ${resolved.personaNames.join(', ')}. Use these names (without @) in the image description and keep the tone family-friendly.`
+                                : null
+                        ].filter(Boolean).join(' ')
+                    }
                 ],
                 response_format: { type: "json_object" }
             });
@@ -74,7 +153,10 @@ export class AiController {
 
             // 2. Generate Image with GPT Image 1.5 (latest model, replaces DALL-E 3)
             // We ask for a simple black and white line art style explicitly in the prompt
-            const imagePrompt = `Black and white thermal printer line art. Simple, bold lines. No shading. No grayscale. White background. ${designSpecs.image_prompt}. ${designSpecs.generation_instructions}`;
+            const personaInstruction = resolved.personaNames.length
+                ? `Use the provided reference images to depict ${resolved.personaNames.join(', ')} accurately.`
+                : '';
+            const imagePrompt = `Black and white thermal printer line art. Simple, bold lines. No shading. No grayscale. White background. ${designSpecs.image_prompt}. ${designSpecs.generation_instructions} ${personaInstruction}`.trim();
 
             console.log('[AI] Generating image with gpt-image-1.5...');
             const imageResponse = await openai.images.generate({
@@ -83,7 +165,8 @@ export class AiController {
                 n: 1,
                 size: "1024x1024",
                 quality: "low", // low quality for faster generation and reduced cost
-            });
+                ...(resolved.referenceImages.length ? { images: resolved.referenceImages } : {})
+            } as OpenAI.Images.GenerateParams);
 
             if (!imageResponse.data || !imageResponse.data[0]) {
                 throw new Error('No image data returned from OpenAI');
