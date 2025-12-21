@@ -59,7 +59,7 @@ const resolvePersonaMentions = (prompt: string, personas: PersonaReference[]) =>
     const referenceImages = Array.from(uniquePersonas.values())
         .map((persona) => persona.image_base64 ?? persona.image)
         .filter((image): image is string => Boolean(image))
-        .map((image) => ({ b64: stripDataUrlPrefix(image) }));
+        .map((image) => stripDataUrlPrefix(image));
 
     return {
         prompt: promptWithResolvedMentions,
@@ -181,7 +181,6 @@ export class AiController {
                 n: 1,
                 size: "1024x1024",
                 quality: "low",
-                output_format: "png",
                 response_format: "b64_json",
                 ...(resolved.referenceImages.length ? { images: resolved.referenceImages } : {})
             } as any)) as any;
