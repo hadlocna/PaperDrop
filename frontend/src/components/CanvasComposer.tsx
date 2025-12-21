@@ -15,7 +15,8 @@ import {
     Eye,
     Edit3,
     AlertTriangle,
-    Pencil
+    Pencil,
+    QrCode
 } from 'lucide-react';
 import { client as api } from '../api/client';
 
@@ -50,6 +51,7 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
     const [showAiModal, setShowAiModal] = useState(false);
     const [showClearConfirm, setShowClearConfirm] = useState(false);
     const [showDrawingModal, setShowDrawingModal] = useState(false);
+    const [showQrModal, setShowQrModal] = useState(false);
     const [aiPrompt, setAiPrompt] = useState('');
     const [isGenerating, setIsGenerating] = useState(false);
     const [aiProgress, setAiProgress] = useState(0);
@@ -58,6 +60,9 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
     const [drawingSize, setDrawingSize] = useState(6);
     const [drawingColor, setDrawingColor] = useState('#000000');
     const [lastPoint, setLastPoint] = useState<{ x: number; y: number } | null>(null);
+    const [qrContent, setQrContent] = useState('');
+    const [qrError, setQrError] = useState('');
+    const [isQrGenerating, setIsQrGenerating] = useState(false);
 
     const selectedElement = elements.find(el => el.id === selectedId);
 
@@ -111,6 +116,49 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
             setIsGenerating(false);
         }
     };
+
+    const handleQrGenerate = async () => {
+        const value = qrContent.trim();
+        if (!value) {
+            setQrError('Please enter a link or message to encode.');
+            return;
+        }
+        setIsQrGenerating(true);
+        setQrError('');
+        try {
+            const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&ecc=H&margin=2&data=${encodeURIComponent(value)}`;
+            const response = await fetch(qrUrl);
+            if (!response.ok) {
+                throw new Error('QR service unavailable');
+            }
+            const blob = await response.blob();
+            const dataUrl = await blobToDataUrl(blob);
+            const newElement: CanvasElement = {
+                id: crypto.randomUUID(),
+                type: 'image',
+                content: dataUrl,
+                x: 80,
+                y: 80,
+                width: 200,
+                rotation: 0
+            };
+            setElements([...elements, newElement]);
+            setShowQrModal(false);
+            setQrContent('');
+        } catch (error) {
+            console.error(error);
+            setQrError('Could not generate the QR code. Try again.');
+        } finally {
+            setIsQrGenerating(false);
+        }
+    };
+
+    const blobToDataUrl = (blob: Blob) => new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('QR conversion failed'));
+        reader.readAsDataURL(blob);
+    });
 
     const addText = () => {
         const newElement: CanvasElement = {
@@ -248,6 +296,12 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
             ctx.fillRect(0, 0, canvas.width, canvas.height);
         }
     }, [showDrawingModal]);
+
+    useEffect(() => {
+        if (showQrModal) {
+            setQrError('');
+        }
+    }, [showQrModal]);
 
     useEffect(() => {
         if (!isGenerating) {
@@ -521,6 +575,61 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                 </div>
             )}
 
+            {/* QR Modal */}
+            {showQrModal && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-4 bg-gradient-to-r from-emerald-500 to-teal-500 text-white flex justify-between items-center">
+                            <h3 className="font-bold flex items-center gap-2">
+                                <QrCode size={18} />
+                                QR Creator
+                            </h3>
+                            <button onClick={() => setShowQrModal(false)} className="text-white/80 hover:text-white">
+                                <XIcon size={20} />
+                            </button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <label className="text-sm font-semibold text-charcoal-700 block mb-2" htmlFor="qr-content">
+                                    QR content
+                                </label>
+                                <textarea
+                                    id="qr-content"
+                                    value={qrContent}
+                                    onChange={(e) => {
+                                        setQrContent(e.target.value);
+                                        if (qrError) setQrError('');
+                                    }}
+                                    className="w-full h-24 p-3 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none resize-none transition"
+                                    placeholder="Paste a song link, video URL, or a short message..."
+                                />
+                                <p className="mt-2 text-xs text-gray-500">
+                                    Keep it simple: links to songs, videos, tickets, or a quick family note.
+                                </p>
+                                {qrError && (
+                                    <p className="mt-2 text-xs text-red-500">{qrError}</p>
+                                )}
+                            </div>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setShowQrModal(false)}
+                                    className="flex-1 py-2 px-4 rounded-xl border border-gray-200 text-charcoal-700 font-medium hover:bg-gray-50 transition"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleQrGenerate}
+                                    disabled={isQrGenerating}
+                                    className="flex-1 py-2 px-4 rounded-xl bg-emerald-500 text-white font-bold hover:bg-emerald-600 transition shadow-sm active:scale-95 disabled:opacity-60"
+                                >
+                                    {isQrGenerating ? 'Building...' : 'Add QR'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Sticky Header Toolbar */}
             <div className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-gray-200 shadow-sm px-2 sm:px-4 py-3 flex justify-between items-center transition-all h-[64px] overflow-x-auto no-scrollbar">
                 <div className="flex gap-1 sm:gap-2 items-center flex-shrink-0">
@@ -583,6 +692,13 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                                     title="Draw"
                                 >
                                     <Pencil size={24} />
+                                </button>
+                                <button
+                                    onClick={() => setShowQrModal(true)}
+                                    className="p-2 hover:bg-gray-100 rounded-lg text-charcoal-700 active:bg-gray-200 transition"
+                                    title="QR Creator"
+                                >
+                                    <QrCode size={22} />
                                 </button>
                                 <label className="p-2 hover:bg-gray-100 rounded-lg text-charcoal-700 active:bg-gray-200 transition cursor-pointer" title="Add Image">
                                     <ImageIcon size={24} />
