@@ -164,14 +164,20 @@ export class AiController {
                 prompt: imagePrompt,
                 n: 1,
                 size: "1024x1024",
-                quality: "low", // low quality for faster generation and reduced cost
+                response_format: "b64_json",
                 ...(resolved.referenceImages.length ? { images: resolved.referenceImages } : {})
             } as any)) as any;
 
             if (!imageResponse.data || !imageResponse.data[0]) {
+                console.error('[AI] No image data in response:', JSON.stringify(imageResponse));
                 throw new Error('No image data returned from OpenAI');
             }
+
             const rawBase64 = imageResponse.data[0].b64_json;
+            if (!rawBase64) {
+                console.error('[AI] Missing b64_json in response data:', JSON.stringify(imageResponse.data[0]));
+                throw new Error('Image data was not returned in base64 format');
+            }
 
             res.json({
                 image: `data:image/png;base64,${rawBase64}`, // High-res, frontend will resize
@@ -179,9 +185,17 @@ export class AiController {
                 specs: designSpecs
             });
 
-        } catch (error) {
+        } catch (error: any) {
             console.error('[AI] Generation failed:', error);
-            res.status(500).json({ error: 'AI generation failed' });
+
+            // Extract more details if available
+            const errorMessage = error.response?.data?.error?.message || error.message || 'AI generation failed';
+            const errorStatus = error.response?.status || 500;
+
+            res.status(errorStatus).json({
+                error: errorMessage,
+                details: error.response?.data || null
+            });
         }
     }
 }
