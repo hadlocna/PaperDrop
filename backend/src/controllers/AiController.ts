@@ -59,7 +59,7 @@ const resolvePersonaMentions = (prompt: string, personas: PersonaReference[]) =>
     const referenceImages = Array.from(uniquePersonas.values())
         .map((persona) => persona.image_base64 ?? persona.image)
         .filter((image): image is string => Boolean(image))
-        .map((image) => stripDataUrlPrefix(image));
+        .map((image) => ({ b64: stripDataUrlPrefix(image) }));
 
     return {
         prompt: promptWithResolvedMentions,
