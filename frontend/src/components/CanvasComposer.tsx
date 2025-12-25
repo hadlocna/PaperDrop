@@ -58,6 +58,17 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
     const [isGenerating, setIsGenerating] = useState(false);
     const [aiProgress, setAiProgress] = useState(0);
     const [aiEtaSeconds, setAiEtaSeconds] = useState(0);
+    const [containerWidth, setContainerWidth] = useState(window.innerWidth);
+
+    useEffect(() => {
+        const handleResize = () => setContainerWidth(window.innerWidth);
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
+    // Width of thermal printer is 576px
+    const logicalWidth = 576;
+    const visualScale = Math.min(1, (containerWidth - 32) / logicalWidth);
     const [isDrawing, setIsDrawing] = useState(false);
     const [qrContent, setQrContent] = useState('');
     const [qrError, setQrError] = useState('');
@@ -799,7 +810,12 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                         )}
 
                         {/* Content */}
-                        <div className="mx-auto h-full relative" style={{ width: '576px' }}>
+                        <div className="mx-auto relative origin-top" style={{
+                            width: `${logicalWidth}px`,
+                            height: `${canvasHeight}px`,
+                            transform: `scale(${visualScale})`,
+                            marginBottom: `${(canvasHeight * visualScale) - canvasHeight}px` // Compensate for scale empty space
+                        }}>
                             {previewImage ? (
                                 <div className="w-full flex flex-col items-center py-8 animate-in fade-in duration-500">
                                     <img
@@ -880,6 +896,8 @@ function DraggableElement({
     const nodeRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const lastTap = useRef(0);
+    const touchDist = useRef<number | null>(null);
+    const startWidthPinch = useRef<number>(200);
 
     // Internal state for smooth dragging/rotating without constant parent re-renders until stop
     // For React-Draggable, we strictly control position via props to ensure sync, 
@@ -963,7 +981,7 @@ function DraggableElement({
                     onSelect();
                 }}
                 // On touch start, select immediately & detect double tap
-                onTouchStart={() => {
+                onTouchStart={(e) => {
                     onSelect();
                     // Double tap detection
                     const now = Date.now();
@@ -971,6 +989,33 @@ function DraggableElement({
                         setIsEditing(true);
                     }
                     lastTap.current = now;
+
+                    // Pinch start logic
+                    if (e.touches.length === 2) {
+                        const dist = Math.hypot(
+                            e.touches[0].clientX - e.touches[1].clientX,
+                            e.touches[0].clientY - e.touches[1].clientY
+                        );
+                        touchDist.current = dist;
+                        startWidthPinch.current = element.width || 200;
+                    }
+                }}
+                onTouchMove={(e) => {
+                    if (e.touches.length === 2 && touchDist.current !== null) {
+                        // Prevent page scroll when pinching
+                        if (e.cancelable) e.preventDefault();
+
+                        const dist = Math.hypot(
+                            e.touches[0].clientX - e.touches[1].clientX,
+                            e.touches[0].clientY - e.touches[1].clientY
+                        );
+                        const delta = dist - touchDist.current;
+                        // Sensitivity adjustment (multiplied by scale inverse if needed, but 1.5-2x feels natural)
+                        onUpdate({ width: Math.max(50, startWidthPinch.current + delta * 1.5) });
+                    }
+                }}
+                onTouchEnd={() => {
+                    touchDist.current = null;
                 }}
             >
                 {/* Visual Wrapper with Rotation */
