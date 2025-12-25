@@ -459,44 +459,44 @@ export function Admin() {
 
     return (
         <Layout>
-            <div className="max-w-6xl mx-auto mt-10 p-6">
-                <div className="flex justify-between items-center mb-8">
-                    <div className="flex items-center gap-4">
-                        <h1 className="text-3xl font-bold text-slate-800">Fleet Manager</h1>
-                        <div className="flex bg-slate-100 rounded-lg p-1">
+            <div className="max-w-6xl mx-auto mt-6 sm:mt-10 p-4 sm:p-6">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 mb-8">
+                    <div className="flex flex-col xs:flex-row items-start xs:items-center gap-4 w-full sm:w-auto">
+                        <h1 className="text-2xl sm:text-3xl font-bold text-slate-800 shrink-0">Fleet Manager</h1>
+                        <div className="flex bg-slate-100 rounded-lg p-1 w-full overflow-x-auto no-scrollbar shrink-0">
                             <button
                                 onClick={() => setActiveTab('devices')}
-                                className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'devices' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
+                                className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition-colors text-sm sm:text-base shrink-0 ${activeTab === 'devices' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
                             >
                                 Devices
                             </button>
                             <button
                                 onClick={() => setActiveTab('firmware')}
-                                className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${activeTab === 'firmware' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
+                                className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 text-sm sm:text-base shrink-0 ${activeTab === 'firmware' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
                             >
                                 <Package size={16} />
                                 Firmware
                             </button>
                             <button
                                 onClick={() => setActiveTab('users')}
-                                className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${activeTab === 'users' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
+                                className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 text-sm sm:text-base shrink-0 ${activeTab === 'users' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
                             >
                                 <TerminalIcon size={16} />
                                 Users
                             </button>
                         </div>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 w-full sm:w-auto overflow-x-auto no-scrollbar shrink-0">
                         <button
                             onClick={refreshDevices}
                             disabled={isRefreshing}
-                            className={`px-4 py-2 rounded-lg font-medium border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 transition ${isRefreshing ? 'opacity-60 cursor-not-allowed' : ''}`}
+                            className={`px-3 sm:px-4 py-2 rounded-lg font-medium border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 transition text-sm sm:text-base shrink-0 ${isRefreshing ? 'opacity-60 cursor-not-allowed' : ''}`}
                         >
-                            {isRefreshing ? 'Refreshing...' : 'Refresh devices'}
+                            {isRefreshing ? 'Refreshing...' : 'Refresh'}
                         </button>
                         <button
                             onClick={() => { localStorage.removeItem('admin_pass'); setIsAuthenticated(false); }}
-                            className="text-red-500 hover:text-red-700 font-medium"
+                            className="text-red-500 hover:text-red-700 font-medium text-sm sm:text-base shrink-0 whitespace-nowrap"
                         >
                             Logout
                         </button>

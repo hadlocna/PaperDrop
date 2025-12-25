@@ -630,7 +630,7 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
             )}
 
             {/* Sticky Header Toolbar */}
-            <div className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-gray-200 shadow-sm px-1.5 sm:px-4 py-2 sm:py-3 flex justify-between items-center transition-all h-[56px] sm:h-[64px] overflow-x-hidden">
+            <div className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-gray-200 shadow-sm px-1.5 sm:px-4 py-2 sm:py-3 flex justify-between items-center transition-all h-[56px] sm:h-[64px] overflow-x-auto no-scrollbar">
                 <div className="flex gap-0.5 sm:gap-2 items-center flex-shrink-0">
                     {/* Design Tools OR Context Tools */}
                     {!previewImage && (
