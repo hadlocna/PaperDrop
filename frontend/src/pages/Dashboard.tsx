@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { CanvasComposer } from '../components/CanvasComposer';
@@ -33,6 +33,12 @@ function DeviceSettingsModal({ deviceId, onClose, onUpdate }: { deviceId: string
     const [copied, setCopied] = useState(false);
     const [testingConnection, setTestingConnection] = useState(false);
     const [testResult, setTestResult] = useState<string | null>(null);
+
+    const currentUserRole = useMemo(() => {
+        return accessList.find(a => a.userId === user?.id)?.role;
+    }, [accessList, user?.id]);
+
+    const isOwner = currentUserRole === 'owner';
 
     useEffect(() => {
         async function loadData() {
@@ -198,17 +204,18 @@ function DeviceSettingsModal({ deviceId, onClose, onUpdate }: { deviceId: string
                                         type="text"
                                         value={newName}
                                         onChange={(e) => setNewName(e.target.value)}
-                                        className="flex-1 px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-coral-500 outline-none transition"
+                                        disabled={!isOwner}
+                                        className="flex-1 px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-coral-500 outline-none transition disabled:opacity-50 disabled:cursor-not-allowed"
                                     />
                                     <button
                                         type="submit"
-                                        disabled={saving || newName === device.friendlyName}
-                                        className={`px-6 py-2 rounded-xl font-medium transition all duration-300 disabled:opacity-50 ${newName === device.friendlyName
+                                        disabled={saving || newName === device.friendlyName || !isOwner}
+                                        className={`px-6 py-2 rounded-xl font-medium transition all duration-300 disabled:opacity-50 ${newName === device.friendlyName || !isOwner
                                             ? 'bg-emerald-50 text-emerald-600 border border-emerald-100 cursor-default'
                                             : 'bg-charcoal-800 text-white hover:bg-charcoal-700 active:scale-95'
                                             }`}
                                     >
-                                        {saving ? 'Saving...' : newName === device.friendlyName ? 'Saved' : 'Save Changes'}
+                                        {saving ? 'Saving...' : (newName === device.friendlyName || !isOwner) ? 'Saved' : 'Save Changes'}
                                     </button>
                                 </div>
                             </div>
@@ -293,26 +300,30 @@ function DeviceSettingsModal({ deviceId, onClose, onUpdate }: { deviceId: string
                             </div>
                         )}
 
-                        <p className="text-sm text-gray-500 mb-4">Invite others to print to this device.</p>
-                        <form onSubmit={handleInvite} className="space-y-3">
-                            <div className="flex gap-2">
-                                <input
-                                    type="email"
-                                    value={inviteEmail}
-                                    onChange={(e) => setInviteEmail(e.target.value)}
-                                    placeholder="friend@example.com"
-                                    className="flex-1 px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-coral-500 outline-none transition"
-                                />
-                                <button
-                                    type="submit"
-                                    disabled={inviteLoading}
-                                    className="px-4 py-2 bg-charcoal-800 text-white rounded-xl font-medium hover:bg-charcoal-700 transition disabled:opacity-50"
-                                >
-                                    {inviteLoading ? <RefreshCw className="animate-spin" size={20} /> : <Share2 size={20} />}
-                                </button>
-                            </div>
-                        </form>
-                        {inviteLink && (
+                        {isOwner && (
+                            <>
+                                <p className="text-sm text-gray-500 mb-4">Invite others to print to this device.</p>
+                                <form onSubmit={handleInvite} className="space-y-3">
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="email"
+                                            value={inviteEmail}
+                                            onChange={(e) => setInviteEmail(e.target.value)}
+                                            placeholder="friend@example.com"
+                                            className="flex-1 px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-coral-500 outline-none transition"
+                                        />
+                                        <button
+                                            type="submit"
+                                            disabled={inviteLoading}
+                                            className="px-4 py-2 bg-charcoal-800 text-white rounded-xl font-medium hover:bg-charcoal-700 transition disabled:opacity-50"
+                                        >
+                                            {inviteLoading ? <RefreshCw className="animate-spin" size={20} /> : <Share2 size={20} />}
+                                        </button>
+                                    </div>
+                                </form>
+                            </>
+                        )}
+                        {inviteLink && isOwner && (
                             <div className="mt-3 p-3 bg-gray-50 border border-gray-200 rounded-xl flex items-center gap-2 animate-in slide-in-from-top-2">
                                 <input
                                     type="text"
