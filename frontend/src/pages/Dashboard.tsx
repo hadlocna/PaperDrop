@@ -5,7 +5,7 @@ import { CanvasComposer } from '../components/CanvasComposer';
 import { ActivityFeed } from '../components/ActivityFeed';
 import { BleProvisioningModal } from '../components/BleProvisioningModal';
 import { useAuth } from '../context/AuthContext';
-import { X, Activity, Printer, Bluetooth, Settings, Trash2, RefreshCw, Download, Share2, Copy, Check, MessageSquare } from 'lucide-react';
+import { X, Activity, Printer, Bluetooth, Settings, Trash2, RefreshCw, Download, Share2, Copy, Check, MessageSquare, Rocket } from 'lucide-react';
 import { client as api, updateDevice, unclaimDevice, clearMessageQueue, createInviteLink, downloadDeviceLogs } from '../api/client';
 
 interface Device {
@@ -413,11 +413,50 @@ function DeviceSettingsModal({ deviceId, onClose, onUpdate }: { deviceId: string
     );
 }
 
+interface FeedbackReply {
+    id: string;
+    feedbackId: string;
+    isAdmin: boolean;
+    message: string;
+    createdAt: string;
+}
+
+interface UserFeedback {
+    id: string;
+    message: string;
+    type: string;
+    status: string;
+    createdAt: string;
+    replies: FeedbackReply[];
+}
+
 function FeedbackModal({ onClose, selectedDevice }: { onClose: () => void, selectedDevice?: Device }) {
+    const [view, setView] = useState<'new' | 'history' | 'detail'>('new');
     const [message, setMessage] = useState('');
+    const [reply, setReply] = useState('');
     const [type, setType] = useState('feedback');
     const [loading, setLoading] = useState(false);
     const [success, setSuccess] = useState(false);
+    const [history, setHistory] = useState<UserFeedback[]>([]);
+    const [selectedTicket, setSelectedTicket] = useState<UserFeedback | null>(null);
+
+    useEffect(() => {
+        if (view === 'history') {
+            loadHistory();
+        }
+    }, [view]);
+
+    const loadHistory = async () => {
+        setLoading(true);
+        try {
+            const res = await api.get('/feedback/my');
+            setHistory(res.data);
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -445,55 +484,161 @@ function FeedbackModal({ onClose, selectedDevice }: { onClose: () => void, selec
         }
     };
 
+    const handleSendReply = async () => {
+        if (!reply.trim() || !selectedTicket) return;
+        setLoading(true);
+        try {
+            await api.post(`/feedback/${selectedTicket.id}/reply`, { message: reply });
+            setReply('');
+            // Refresh detail view
+            const res = await api.get('/feedback/my');
+            setHistory(res.data);
+            setSelectedTicket(res.data.find((t: any) => t.id === selectedTicket.id));
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
-            <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
-                <div className="bg-[#E07A5F] p-4 flex justify-between items-center">
-                    <h2 className="text-white font-bold">Feedback & Support</h2>
-                    <button onClick={onClose} className="text-white/80 hover:text-white"><X size={20} /></button>
-                </div>
-                {success ? (
-                    <div className="p-8 text-center">
-                        <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <Check size={32} />
+            <div className="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200 flex flex-col max-h-[80vh]">
+                <div className="bg-[#3D405B] p-4 pt-6 flex justify-between items-center relative">
+                    <div className="flex flex-col">
+                        <h2 className="text-white font-bold tracking-tight">Support & Help</h2>
+                        <div className="flex gap-4 mt-3">
+                            <button onClick={() => setView('new')} className={`text-[10px] font-bold tracking-widest transition-all ${view === 'new' ? 'text-[#E07A5F]' : 'text-white/40 hover:text-white/60'}`}>NEW MESSAGE</button>
+                            <button onClick={() => setView('history')} className={`text-[10px] font-bold tracking-widest transition-all ${view === 'history' || view === 'detail' ? 'text-[#E07A5F]' : 'text-white/40 hover:text-white/60'}`}>MY TICKETS</button>
                         </div>
-                        <h3 className="font-bold text-gray-900 mb-2">Thank You!</h3>
-                        <p className="text-gray-500 text-sm">Your message has been received. We'll look into it right away.</p>
                     </div>
-                ) : (
-                    <form onSubmit={handleSubmit} className="p-6 space-y-4">
-                        <div>
-                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 font-mono">Type</label>
-                            <select
-                                value={type}
-                                onChange={(e) => setType(e.target.value)}
-                                className="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-[#E07A5F]/20 text-sm"
+                    <button onClick={onClose} className="text-white/40 hover:text-white transition-colors absolute top-4 right-4"><X size={20} /></button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto min-h-[300px] flex flex-col">
+                    {success ? (
+                        <div className="p-8 text-center animate-in fade-in zoom-in duration-300">
+                            <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
+                                <Check size={32} />
+                            </div>
+                            <h3 className="font-bold text-gray-900 mb-2">Message Received!</h3>
+                            <p className="text-gray-500 text-sm">We'll get back to you shortly in the "My Tickets" section.</p>
+                        </div>
+                    ) : view === 'new' ? (
+                        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 ml-1 font-mono">Type</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {['feedback', 'bug', 'question', 'feature'].map(t => (
+                                        <button
+                                            key={t}
+                                            type="button"
+                                            onClick={() => setType(t)}
+                                            className={`py-2 px-3 rounded-xl text-xs font-bold capitalize transition-all border ${type === t ? 'bg-[#E07A5F] text-white border-[#E07A5F] shadow-lg shadow-[#E07A5F]/10' : 'bg-white text-gray-500 border-gray-100 hover:border-gray-300'}`}
+                                        >
+                                            {t}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 ml-1 font-mono">Your Message</label>
+                                <textarea
+                                    required
+                                    value={message}
+                                    onChange={(e) => setMessage(e.target.value)}
+                                    placeholder="How can we help?"
+                                    className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl text-sm focus:ring-4 focus:ring-[#E07A5F]/5 focus:border-[#E07A5F] outline-none transition-all resize-none h-32"
+                                />
+                            </div>
+
+                            <button
+                                type="submit"
+                                disabled={loading || !message.trim()}
+                                className="w-full py-4 bg-[#3D405B] text-white rounded-2xl font-bold hover:bg-[#2F3248] transition-all active:scale-[0.98] shadow-lg shadow-gray-200 disabled:opacity-50"
                             >
-                                <option value="feedback">General Feedback</option>
-                                <option value="question">Ask a Question</option>
-                                <option value="bug">Report a Bug</option>
-                                <option value="feature">Feature Request</option>
-                            </select>
+                                {loading ? 'Sending...' : 'Send Message'}
+                            </button>
+                        </form>
+                    ) : view === 'history' ? (
+                        <div className="p-4 space-y-3">
+                            {loading && history.length === 0 ? <div className="p-8 text-center text-gray-400 text-sm">Loading history...</div> :
+                                history.length === 0 ? <div className="p-12 text-center">
+                                    <MessageSquare className="mx-auto text-gray-200 mb-2" size={40} />
+                                    <p className="text-gray-400 text-sm">No support tickets yet.</p>
+                                </div> :
+                                    history.map(ticket => (
+                                        <button
+                                            key={ticket.id}
+                                            onClick={() => {
+                                                setSelectedTicket(ticket);
+                                                setView('detail');
+                                            }}
+                                            className="w-full p-4 bg-white border border-gray-100 rounded-2xl hover:border-[#E07A5F]/30 hover:bg-[#E07A5F]/5 transition-all text-left group"
+                                        >
+                                            <div className="flex justify-between items-start mb-2">
+                                                <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider ${ticket.status === 'resolved' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                                                    {ticket.status}
+                                                </span>
+                                                <span className="text-[10px] text-gray-400 font-medium font-mono">{new Date(ticket.createdAt).toLocaleDateString()}</span>
+                                            </div>
+                                            <p className="text-sm text-gray-800 font-bold truncate pr-4">{ticket.message}</p>
+                                            {ticket.replies.some(r => r.isAdmin) && (
+                                                <div className="mt-2 text-[10px] text-[#E07A5F] font-bold flex items-center gap-1 uppercase tracking-wider">
+                                                    <div className="w-1.5 h-1.5 bg-[#E07A5F] rounded-full animate-pulse" />
+                                                    Response from Support
+                                                </div>
+                                            )}
+                                        </button>
+                                    ))}
                         </div>
-                        <div>
-                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 font-mono">Message</label>
-                            <textarea
-                                value={message}
-                                onChange={(e) => setMessage(e.target.value)}
-                                placeholder="How can we help?"
-                                className="w-full h-32 p-3 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-[#E07A5F]/20 text-sm resize-none"
-                                required
-                            />
+                    ) : (
+                        <div className="flex flex-col h-full bg-gray-50/30 overflow-hidden">
+                            {/* Detailed Chat-like View */}
+                            <div className="flex-1 p-4 space-y-4 overflow-y-auto">
+                                <button onClick={() => setView('history')} className="text-[10px] font-bold text-gray-400 uppercase mb-2 hover:text-gray-600 flex items-center gap-1 font-mono">← Back to tickets</button>
+
+                                {/* User Opening Message */}
+                                <div className="flex flex-col items-start max-w-[90%]">
+                                    <div className="bg-white border border-gray-100 rounded-2xl rounded-tl-none p-3 shadow-sm">
+                                        <p className="text-sm text-gray-700 whitespace-pre-wrap">{selectedTicket?.message}</p>
+                                        <div className="text-[9px] text-gray-400 mt-1 font-mono">{new Date(selectedTicket?.createdAt || '').toLocaleString()}</div>
+                                    </div>
+                                </div>
+
+                                {/* Replies */}
+                                {selectedTicket?.replies.map(r => (
+                                    <div key={r.id} className={`flex flex-col ${r.isAdmin ? 'items-end' : 'items-start'} max-w-[90%] ${r.isAdmin ? 'ml-auto' : ''}`}>
+                                        <div className={`${r.isAdmin ? 'bg-[#3D405B] text-white rounded-tr-none' : 'bg-white border border-gray-100 text-gray-800 rounded-tl-none'} rounded-2xl p-3 shadow-sm`}>
+                                            <p className="text-sm whitespace-pre-wrap">{r.message}</p>
+                                            <div className={`text-[9px] mt-1 opacity-60 font-mono`}>{new Date(r.createdAt).toLocaleString()}</div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="bg-white border-t border-gray-100 p-4 shadow-[0_-10px_20px_rgba(0,0,0,0.02)]">
+                                <div className="flex gap-2">
+                                    <input
+                                        value={reply}
+                                        onChange={(e) => setReply(e.target.value)}
+                                        placeholder="Send a reply..."
+                                        className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-[#E07A5F]/30 outline-none"
+                                        onKeyDown={(e) => e.key === 'Enter' && handleSendReply()}
+                                    />
+                                    <button
+                                        disabled={loading || !reply.trim()}
+                                        onClick={handleSendReply}
+                                        className="bg-[#3D405B] text-white p-2 rounded-xl active:scale-95 transition-all shadow-lg shadow-gray-200 disabled:opacity-50"
+                                    >
+                                        <Rocket size={18} />
+                                    </button>
+                                </div>
+                            </div>
                         </div>
-                        <button
-                            type="submit"
-                            disabled={loading || !message.trim()}
-                            className="w-full bg-[#3D405B] text-white py-3 rounded-xl font-bold shadow-lg shadow-gray-200 active:scale-95 transition-all disabled:opacity-50"
-                        >
-                            {loading ? 'Sending...' : 'Send Message'}
-                        </button>
-                    </form>
-                )}
+                    )}
+                </div>
             </div>
         </div>
     );

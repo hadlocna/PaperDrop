@@ -40,12 +40,21 @@ interface User {
     }
 }
 
+interface FeedbackReply {
+    id: string;
+    feedbackId: string;
+    isAdmin: boolean;
+    message: string;
+    createdAt: string;
+}
+
 interface Feedback {
     id: string;
     userId: string;
     userEmail: string;
     userName: string;
     type: string;
+    status: string;
     message: string;
     deviceId?: string;
     deviceName?: string;
@@ -53,6 +62,7 @@ interface Feedback {
     platform?: string;
     browser?: string;
     createdAt: string;
+    replies: FeedbackReply[];
 }
 
 function AssignModal({ device, users, onAssign, onClose }: { device: Device, users: User[], onAssign: (email: string, role: string) => void, onClose: () => void }) {
@@ -132,6 +142,132 @@ function AssignModal({ device, users, onAssign, onClose }: { device: Device, use
     );
 }
 
+function FeedbackDetailModal({ feedback, onUpdate, onClose, password }: { feedback: Feedback, onUpdate: () => void, onClose: () => void, password: string }) {
+    const [reply, setReply] = useState('');
+    const [sending, setSending] = useState(false);
+
+    const handleSendReply = async () => {
+        if (!reply.trim()) return;
+        setSending(true);
+        try {
+            await fetch(`${API_BASE}/api/feedback/${feedback.id}/reply`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-admin-password': password
+                },
+                body: JSON.stringify({ message: reply })
+            });
+            setReply('');
+            onUpdate();
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setSending(false);
+        }
+    };
+
+    const toggleStatus = async () => {
+        try {
+            const nextStatus = feedback.status === 'resolved' ? 'pending' : 'resolved';
+            await fetch(`${API_BASE}/api/feedback/${feedback.id}/status`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-admin-password': password
+                },
+                body: JSON.stringify({ status: nextStatus })
+            });
+            onUpdate();
+        } catch (e) { }
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+            <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                {/* Header */}
+                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                    <div className="flex items-center gap-3">
+                        <div className={`w-3 h-3 rounded-full ${feedback.status === 'resolved' ? 'bg-green-500' : 'bg-amber-500'}`} />
+                        <div>
+                            <h3 className="text-xl font-bold text-slate-800">{feedback.userName}</h3>
+                            <p className="text-sm text-slate-500 font-medium">{feedback.userEmail}</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={toggleStatus}
+                            className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${feedback.status === 'resolved' ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-green-600 text-white shadow-lg shadow-green-600/20'}`}
+                        >
+                            {feedback.status === 'resolved' ? 'Mark Pending' : 'Mark Resolved'}
+                        </button>
+                        <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400">
+                            <X size={20} />
+                        </button>
+                    </div>
+                </div>
+
+                {/* Conversation Body */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/30">
+                    {/* Original Message */}
+                    <div className="flex flex-col items-start max-w-[85%]">
+                        <div className="bg-white border border-slate-100 rounded-2xl rounded-tl-none p-4 shadow-sm">
+                            <div className="flex items-center gap-2 mb-2">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${feedback.type === 'bug' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>
+                                    {feedback.type}
+                                </span>
+                                <span className="text-[10px] text-slate-400 font-medium">{new Date(feedback.createdAt).toLocaleString()}</span>
+                            </div>
+                            <p className="text-slate-700 text-sm whitespace-pre-wrap">{feedback.message}</p>
+                        </div>
+                        {feedback.deviceName && (
+                            <div className="mt-1 flex items-center gap-1 text-[10px] text-slate-400 pl-2">
+                                <Printer size={10} /> {feedback.deviceName}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Replies */}
+                    {feedback.replies?.map(r => (
+                        <div key={r.id} className={`flex flex-col ${r.isAdmin ? 'items-end' : 'items-start'} max-w-[85%] ${r.isAdmin ? 'ml-auto' : ''}`}>
+                            <div className={`${r.isAdmin ? 'bg-slate-800 text-white rounded-tr-none' : 'bg-white border border-slate-100 text-slate-800 rounded-tl-none'} rounded-2xl p-4 shadow-sm`}>
+                                <div className="flex items-center gap-2 mb-1">
+                                    <span className={`text-[10px] font-bold uppercase tracking-wider ${r.isAdmin ? 'text-slate-400' : 'text-slate-500'}`}>
+                                        {r.isAdmin ? 'Support Agent' : feedback.userName}
+                                    </span>
+                                    <span className={`text-[10px] opacity-60`}>{new Date(r.createdAt).toLocaleString()}</span>
+                                </div>
+                                <p className="text-sm whitespace-pre-wrap">{r.message}</p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Footer / Reply Area */}
+                <div className="p-6 bg-white border-t border-slate-100">
+                    <div className="flex gap-4">
+                        <textarea
+                            autoFocus
+                            placeholder="Type your response to the user..."
+                            value={reply}
+                            onChange={(e) => setReply(e.target.value)}
+                            className="flex-1 p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:ring-4 focus:ring-slate-800/5 focus:border-slate-800 outline-none transition-all resize-none h-24"
+                        />
+                        <button
+                            disabled={!reply.trim() || sending}
+                            onClick={handleSendReply}
+                            className="bg-slate-800 text-white px-6 rounded-2xl font-bold hover:bg-slate-700 active:scale-95 transition-all disabled:opacity-50 h-24 flex items-center justify-center gap-2"
+                        >
+                            <Rocket size={18} />
+                            Send
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export function Admin() {
     const [password, setPassword] = useState('');
     const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -147,6 +283,7 @@ export function Admin() {
     const [attentionOnly, setAttentionOnly] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [assigningTo, setAssigningTo] = useState<string | null>(null);
+    const [selectedFeedbackId, setSelectedFeedbackId] = useState<string | null>(null);
 
     const termRef = useRef<HTMLDivElement>(null);
     const wsRef = useRef<WebSocket | null>(null);
@@ -701,58 +838,96 @@ export function Admin() {
                     </div>
                 )}
                 {activeTab === 'feedback' && (
-                    <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-                        <table className="w-full text-left">
-                            <thead className="bg-slate-50 border-b border-slate-100">
-                                <tr>
-                                    <th className="p-4 pl-6 text-xs font-bold text-slate-400 uppercase tracking-widest">User / Device</th>
-                                    <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-widest">Type</th>
-                                    <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-widest">Message / Context</th>
-                                    <th className="p-4 pr-6 text-xs font-bold text-slate-400 uppercase tracking-widest text-right">Date</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {feedbacks.map(f => (
-                                    <tr key={f.id} className="hover:bg-slate-50/50 transition-colors">
-                                        <td className="p-4 pl-6">
-                                            <div className="font-bold text-slate-800">{f.userName}</div>
-                                            <div className="text-xs text-slate-400">{f.userEmail}</div>
-                                            {f.deviceName && (
-                                                <div className="mt-1 flex items-center gap-1 text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded w-fit">
-                                                    <Printer size={10} />
-                                                    {f.deviceName}
-                                                </div>
-                                            )}
-                                        </td>
-                                        <td className="p-4">
-                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${f.type === 'bug' ? 'bg-red-50 text-red-700 border-red-100' :
-                                                f.type === 'feature' ? 'bg-blue-50 text-blue-700 border-blue-100' :
-                                                    f.type === 'question' ? 'bg-amber-50 text-amber-700 border-amber-100' :
-                                                        'bg-green-50 text-green-700 border-green-100'
-                                                }`}>
-                                                {f.type}
-                                            </span>
-                                        </td>
-                                        <td className="p-4 max-w-md">
-                                            <div className="text-sm text-slate-600 whitespace-pre-wrap mb-2">{f.message}</div>
-                                            {(f.browser || f.platform) && (
-                                                <div className="text-[10px] text-slate-400 font-mono bg-slate-50 p-1.5 rounded border border-slate-100">
-                                                    {f.platform} • {f.browser}
-                                                    <div className="truncate opacity-50 text-[9px] mt-0.5" title={f.userAgent}>{f.userAgent}</div>
-                                                </div>
-                                            )}
-                                        </td>
-                                        <td className="p-4 pr-6 text-right">
-                                            <div className="text-sm font-medium text-slate-700">{new Date(f.createdAt).toLocaleDateString()}</div>
-                                            <div className="text-xs text-slate-400">{new Date(f.createdAt).toLocaleTimeString()}</div>
-                                        </td>
+                    <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm flex flex-col h-[70vh]">
+                        <div className="overflow-y-auto w-full">
+                            <table className="w-full text-left">
+                                <thead className="bg-slate-50 border-b border-slate-100">
+                                    <tr>
+                                        <th className="p-4 pl-6 text-xs font-bold text-slate-400 uppercase tracking-widest w-16 text-center">Status</th>
+                                        <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-widest">User / Device</th>
+                                        <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-widest">Type</th>
+                                        <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-widest">Message / Context</th>
+                                        <th className="p-4 pr-6 text-xs font-bold text-slate-400 uppercase tracking-widest text-right">Actions</th>
                                     </tr>
-                                ))}
-                                {feedbacks.length === 0 && (
-                                    <tr><td colSpan={4} className="p-8 text-center text-gray-400">No feedback messages yet</td></tr>
-                                )}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {feedbacks.map(f => (
+                                        <tr key={f.id} className="hover:bg-slate-50/50 transition-colors">
+                                            <td className="p-4 pl-6 text-center">
+                                                <div className={`w-3 h-3 rounded-full mx-auto ${f.status === 'resolved' ? 'bg-green-500 shadow-sm shadow-green-500/40' : 'bg-amber-500 shadow-sm shadow-amber-500/40'}`} title={f.status} />
+                                            </td>
+                                            <td className="p-4">
+                                                <div className="font-bold text-slate-800">{f.userName}</div>
+                                                <div className="text-xs text-slate-400">{f.userEmail}</div>
+                                                {f.deviceName && (
+                                                    <div className="mt-1 flex items-center gap-1 text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded w-fit">
+                                                        <Printer size={10} />
+                                                        {f.deviceName}
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="p-4">
+                                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${f.type === 'bug' ? 'bg-red-50 text-red-700 border-red-100' :
+                                                    f.type === 'feature' ? 'bg-blue-50 text-blue-700 border-blue-100' :
+                                                        f.type === 'question' ? 'bg-amber-50 text-amber-700 border-amber-100' :
+                                                            'bg-green-50 text-green-700 border-green-100'
+                                                    }`}>
+                                                    {f.type}
+                                                </span>
+                                            </td>
+                                            <td className="p-4 max-w-md">
+                                                <div className="text-sm text-slate-600 whitespace-pre-wrap mb-2 line-clamp-2">{f.message}</div>
+                                                {(f.browser || f.platform) && (
+                                                    <div className="text-[10px] text-slate-400 font-mono flex gap-2">
+                                                        <span>{f.platform}</span>
+                                                        <span>•</span>
+                                                        <span>{f.browser}</span>
+                                                    </div>
+                                                )}
+                                                {f.replies?.length > 0 && (
+                                                    <div className="mt-2 text-[10px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                                                        <MessageSquare size={10} /> {f.replies.length} {f.replies.length === 1 ? 'Reply' : 'Replies'}
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="p-4 pr-6 text-right">
+                                                <div className="flex justify-end items-center gap-2">
+                                                    <div className="text-right mr-3 hidden sm:block">
+                                                        <div className="text-xs font-medium text-slate-700">{new Date(f.createdAt).toLocaleDateString()}</div>
+                                                        <div className="text-[10px] text-slate-400">{new Date(f.createdAt).toLocaleTimeString()}</div>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => setSelectedFeedbackId(f.id)}
+                                                        className="p-2 bg-slate-800 text-white rounded-xl hover:bg-slate-700 transition"
+                                                        title="Open Conversation"
+                                                    >
+                                                        <MessageSquare size={16} />
+                                                    </button>
+                                                    <button
+                                                        onClick={async () => {
+                                                            if (confirm('Delete this feedback?')) {
+                                                                await fetch(`${API_BASE}/api/feedback/${f.id}`, {
+                                                                    method: 'DELETE',
+                                                                    headers: { 'x-admin-password': password }
+                                                                });
+                                                                loadFeedback(password);
+                                                            }
+                                                        }}
+                                                        className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition"
+                                                        title="Delete"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {feedbacks.length === 0 && (
+                                        <tr><td colSpan={5} className="p-8 text-center text-gray-400">No feedback messages yet</td></tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 )}
 
@@ -892,6 +1067,15 @@ export function Admin() {
                     users={users}
                     onAssign={(email, role) => assignDevice(assigningTo, email, role)}
                     onClose={() => setAssigningTo(null)}
+                />
+            )}
+
+            {selectedFeedbackId && feedbacks.find(f => f.id === selectedFeedbackId) && (
+                <FeedbackDetailModal
+                    feedback={feedbacks.find(f => f.id === selectedFeedbackId)!}
+                    password={password}
+                    onUpdate={() => loadFeedback(password)}
+                    onClose={() => setSelectedFeedbackId(null)}
                 />
             )}
         </Layout >

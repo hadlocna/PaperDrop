@@ -167,13 +167,29 @@ model Feedback {
   deviceId   String?  @map("device_id")
   deviceName String?  @map("device_name")
   type       String?  @default("feedback")
+  status     String   @default("pending") // pending, resolved
   message    String
   userAgent  String?  @map("user_agent")
   platform   String?
   browser    String?
   createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at")
 
-  user User @relation(fields: [userId], references: [id])
+  user    User            @relation(fields: [userId], references: [id])
+  replies FeedbackReply[]
 
   @@map("feedbacks")
+}
+
+model FeedbackReply {
+  id         String   @id @default(uuid())
+  feedbackId String   @map("feedback_id")
+  senderId   String?  @map("sender_id") // Null if system or admin (non-user)
+  isAdmin    Boolean  @default(false) @map("is_admin")
+  message    String
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  feedback Feedback @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+
+  @@map("feedback_replies")
 }
