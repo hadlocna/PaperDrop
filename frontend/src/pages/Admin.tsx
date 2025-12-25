@@ -3,7 +3,7 @@ import { Layout } from '../components/Layout';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
-import { Terminal as TerminalIcon, Power, Wifi, WifiOff, Package, Upload, Rocket, Trash2 } from 'lucide-react';
+import { Terminal as TerminalIcon, Power, Wifi, WifiOff, Package, Upload, Rocket, Trash2, X } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const WS_BASE = API_BASE.replace('http', 'ws');
@@ -38,6 +38,83 @@ interface User {
         devices: number;
         deviceAccess: number;
     }
+}
+
+function AssignModal({ device, users, onAssign, onClose }: { device: Device, users: User[], onAssign: (email: string, role: string) => void, onClose: () => void }) {
+    const [email, setEmail] = useState('');
+
+    return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 animate-in fade-in duration-200">
+            <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                    <div>
+                        <h3 className="text-xl font-bold text-slate-800 tracking-tight">Assign Printer</h3>
+                        <p className="text-sm text-slate-500 font-medium">{device.name} ({device.code})</p>
+                    </div>
+                    <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400">
+                        <X size={20} />
+                    </button>
+                </div>
+
+                <div className="p-8 space-y-6">
+                    <div>
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 block">User Email</label>
+                        <input
+                            autoFocus
+                            type="email"
+                            placeholder="user@example.com"
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-base focus:ring-4 focus:ring-slate-800/5 focus:border-slate-800 outline-none transition-all"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                        />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <button
+                            disabled={!email}
+                            onClick={() => onAssign(email, 'owner')}
+                            className="bg-slate-800 text-white font-bold py-4 rounded-2xl hover:bg-slate-700 active:scale-95 transition-all shadow-lg shadow-slate-800/20 disabled:opacity-50"
+                        >
+                            Make Owner
+                        </button>
+                        <button
+                            disabled={!email}
+                            onClick={() => onAssign(email, 'sender')}
+                            className="bg-white border-2 border-slate-200 text-slate-700 font-bold py-4 rounded-2xl hover:bg-slate-50 active:scale-95 transition-all disabled:opacity-50"
+                        >
+                            Add Sender
+                        </button>
+                    </div>
+
+                    {users.length > 0 && (
+                        <div>
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Recent Users</p>
+                            <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto pr-2 scrollbar-thin">
+                                {users.slice(0, 4).map(u => (
+                                    <button
+                                        key={u.id}
+                                        onClick={() => {
+                                            setEmail(u.email);
+                                        }}
+                                        className={`text-left p-3 rounded-xl border transition-all ${email === u.email ? 'bg-slate-100 border-slate-300 ring-2 ring-slate-800/10' : 'bg-white border-slate-100 hover:border-slate-300'}`}
+                                    >
+                                        <div className="font-bold text-sm text-slate-700">{u.name}</div>
+                                        <div className="text-xs text-slate-400 truncate">{u.email}</div>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                <div className="p-4 bg-slate-50 flex justify-center">
+                    <button onClick={onClose} className="text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors">
+                        Cancel and Go Back
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
 }
 
 export function Admin() {
@@ -664,83 +741,12 @@ export function Admin() {
                                                         <TerminalIcon size={16} />
                                                         Terminal
                                                     </button>
-                                                    <div className="relative group">
-                                                        <button
-                                                            onClick={() => setAssigningTo(assigningTo === device.id ? null : device.id)}
-                                                            className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2"
-                                                        >
-                                                            Assign
-                                                        </button>
-                                                        {assigningTo === device.id && (
-                                                            <div className="absolute right-0 mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-2xl z-20 p-5 animate-in fade-in zoom-in-95 duration-200">
-                                                                <h4 className="text-sm font-bold mb-3 text-slate-800">Assign Printer to User</h4>
-                                                                <div className="space-y-4">
-                                                                    <div>
-                                                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">User Email</label>
-                                                                        <input
-                                                                            type="email"
-                                                                            id="assign-email"
-                                                                            placeholder="user@example.com"
-                                                                            className="w-full p-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-slate-800 outline-none"
-                                                                            onKeyDown={(e) => {
-                                                                                if (e.key === 'Enter') {
-                                                                                    const input = e.currentTarget as HTMLInputElement;
-                                                                                    assignDevice(device.id, input.value, 'owner');
-                                                                                }
-                                                                            }}
-                                                                        />
-                                                                    </div>
-
-                                                                    <div className="grid grid-cols-2 gap-2">
-                                                                        <button
-                                                                            onClick={() => {
-                                                                                const email = (document.getElementById('assign-email') as HTMLInputElement).value;
-                                                                                if (email) assignDevice(device.id, email, 'owner');
-                                                                            }}
-                                                                            className="bg-slate-800 text-white text-xs font-bold py-2.5 rounded-lg hover:bg-slate-700 transition shadow-sm"
-                                                                        >
-                                                                            Make Owner
-                                                                        </button>
-                                                                        <button
-                                                                            onClick={() => {
-                                                                                const email = (document.getElementById('assign-email') as HTMLInputElement).value;
-                                                                                if (email) assignDevice(device.id, email, 'sender');
-                                                                            }}
-                                                                            className="bg-white border border-slate-200 text-slate-700 text-xs font-bold py-2.5 rounded-lg hover:bg-slate-50 transition shadow-sm"
-                                                                        >
-                                                                            Add as Sender
-                                                                        </button>
-                                                                    </div>
-
-                                                                    <hr className="border-slate-100" />
-
-                                                                    <div>
-                                                                        <p className="text-[10px] text-slate-400 mb-2">Quick Pick From Recent Users:</p>
-                                                                        <div className="max-h-32 overflow-y-auto space-y-1">
-                                                                            {users.slice(0, 5).map(u => (
-                                                                                <button
-                                                                                    key={u.id}
-                                                                                    onClick={() => assignDevice(device.id, u.email, 'sender')}
-                                                                                    className="w-full text-left text-xs p-2 rounded-lg hover:bg-slate-50 text-slate-600 truncate transition border border-transparent hover:border-slate-100"
-                                                                                    title={u.email}
-                                                                                >
-                                                                                    {u.name} ({u.email})
-                                                                                </button>
-                                                                            ))}
-                                                                        </div>
-                                                                    </div>
-
-                                                                    <button
-                                                                        onClick={() => setAssigningTo(null)}
-                                                                        className="w-full text-xs text-slate-400 hover:text-slate-600 pt-1"
-                                                                    >
-                                                                        Cancel
-                                                                        ```
-                                                                    </button>
-                                                                </div>
-                                                            </div>
-                                                        )}
-                                                    </div>
+                                                    <button
+                                                        onClick={() => setAssigningTo(device.id)}
+                                                        className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2"
+                                                    >
+                                                        Assign
+                                                    </button>
                                                     <button
                                                         onClick={() => unprovisionDevice(device.id)}
                                                         className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
@@ -786,6 +792,16 @@ export function Admin() {
                     </div>
                 )
             }
+
+            {/* Assign Modal */}
+            {assigningTo && devices.find(d => d.id === assigningTo) && (
+                <AssignModal
+                    device={devices.find(d => d.id === assigningTo)!}
+                    users={users}
+                    onAssign={(email, role) => assignDevice(assigningTo, email, role)}
+                    onClose={() => setAssigningTo(null)}
+                />
+            )}
         </Layout >
     );
 }
