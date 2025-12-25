@@ -6,10 +6,10 @@ const router = Router();
 const prisma = new PrismaClient();
 
 // Post feedback
-router.post('/', authenticateToken, async (req: any, res) => {
+router.post('/send', authenticateToken, async (req: any, res) => {
     try {
         const { message, type } = req.body;
-        const { userId, email, name } = req.user;
+        const { userId, email } = req.user;
 
         if (!message) {
             return res.status(400).json({ error: 'Message is required' });

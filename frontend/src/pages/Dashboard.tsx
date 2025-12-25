@@ -423,7 +423,7 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
         e.preventDefault();
         setLoading(true);
         try {
-            await api.post('/feedback', { message, type });
+            await api.post('/feedback/send', { message, type });
             setSuccess(true);
             setTimeout(onClose, 2000);
         } catch (err) {
