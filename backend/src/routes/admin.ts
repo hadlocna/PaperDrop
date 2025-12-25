@@ -185,6 +185,85 @@ router.post('/firmware/upload', upload.single('file'), async (req, res) => {
     }
 });
 
+// List all users
+router.get('/users', async (req, res) => {
+    try {
+        const users = await prisma.user.findMany({
+            orderBy: { createdAt: 'desc' },
+            select: {
+                id: true,
+                email: true,
+                name: true,
+                createdAt: true,
+                _count: {
+                    select: { devices: true, deviceAccess: true }
+                }
+            }
+        });
+        res.json(users);
+    } catch (e) {
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// Assign device to user
+router.post('/devices/:id/assign', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { email, role } = req.body;
+
+        if (!email) {
+            return res.status(400).json({ error: 'Email is required' });
+        }
+
+        const user = await prisma.user.findUnique({
+            where: { email }
+        });
+
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const device = await prisma.device.findUnique({
+            where: { id }
+        });
+
+        if (!device) {
+            return res.status(404).json({ error: 'Device not found' });
+        }
+
+        // Use transaction to update both Device and DeviceAccess
+        await prisma.$transaction(async (tx) => {
+            if (role === 'owner') {
+                // If making them owner, update the device ownerId
+                await tx.device.update({
+                    where: { id },
+                    data: { ownerId: user.id }
+                });
+
+                // Also ensure they have DeviceAccess as owner
+                await tx.deviceAccess.upsert({
+                    where: { deviceId_userId: { deviceId: id, userId: user.id } },
+                    update: { role: 'owner' },
+                    create: { deviceId: id, userId: user.id, role: 'owner' }
+                });
+            } else {
+                // Just regular sender access
+                await tx.deviceAccess.upsert({
+                    where: { deviceId_userId: { deviceId: id, userId: user.id } },
+                    update: { role: role || 'sender' },
+                    create: { deviceId: id, userId: user.id, role: role || 'sender' }
+                });
+            }
+        });
+
+        res.json({ success: true, message: `Device assigned to ${email}` });
+    } catch (e) {
+        console.error('Error assigning device:', e);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 // Delete a device (Unprovision)
 router.delete('/devices/:id', async (req, res) => {
     try {

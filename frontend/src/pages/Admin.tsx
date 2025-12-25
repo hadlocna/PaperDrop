@@ -29,18 +29,31 @@ interface FirmwareRelease {
     createdAt: string;
 }
 
+interface User {
+    id: string;
+    email: string;
+    name: string;
+    createdAt: string;
+    _count: {
+        devices: number;
+        deviceAccess: number;
+    }
+}
+
 export function Admin() {
     const [password, setPassword] = useState('');
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [devices, setDevices] = useState<Device[]>([]);
     const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
     const [error, setError] = useState('');
-    const [activeTab, setActiveTab] = useState<'devices' | 'firmware'>('devices');
+    const [activeTab, setActiveTab] = useState<'devices' | 'firmware' | 'users'>('devices');
     const [firmwareReleases, setFirmwareReleases] = useState<FirmwareRelease[]>([]);
+    const [users, setUsers] = useState<User[]>([]);
     const [deployStatus, setDeployStatus] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [attentionOnly, setAttentionOnly] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [assigningTo, setAssigningTo] = useState<string | null>(null);
 
     const termRef = useRef<HTMLDivElement>(null);
     const wsRef = useRef<WebSocket | null>(null);
@@ -84,8 +97,22 @@ export function Admin() {
             setIsAuthenticated(true);
             setPassword(pass);
             localStorage.setItem('admin_pass', pass);
-            // Also load firmware releases
+            // Also load firmware and users
             loadFirmware(pass);
+            loadUsers(pass);
+        }
+    };
+
+    const loadUsers = async (pass: string) => {
+        try {
+            const res = await fetch(`${API_BASE}/api/admin/users`, {
+                headers: { 'x-admin-password': pass }
+            });
+            if (res.ok) {
+                setUsers(await res.json());
+            }
+        } catch (e) {
+            console.error('Failed to load users:', e);
         }
     };
 
@@ -139,6 +166,32 @@ export function Admin() {
             }
         } catch (e) {
             setDeployStatus('Error unprovisioning device');
+        }
+    };
+
+    const assignDevice = async (deviceId: string, email: string, role: string) => {
+        try {
+            setDeployStatus(`Assigning device to ${email}...`);
+            const res = await fetch(`${API_BASE}/api/admin/devices/${deviceId}/assign`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-admin-password': password
+                },
+                body: JSON.stringify({ email, role })
+            });
+            if (res.ok) {
+                setDeployStatus('Device assigned successfully');
+                refreshDevices();
+                loadUsers(password);
+                setAssigningTo(null);
+                setTimeout(() => setDeployStatus(''), 3000);
+            } else {
+                const data = await res.json();
+                setDeployStatus(data.error || 'Assignment failed');
+            }
+        } catch (e) {
+            setDeployStatus('Assignment failed');
         }
     };
 
@@ -347,6 +400,13 @@ export function Admin() {
                                 <Package size={16} />
                                 Firmware
                             </button>
+                            <button
+                                onClick={() => setActiveTab('users')}
+                                className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${activeTab === 'users' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
+                            >
+                                <TerminalIcon size={16} />
+                                Users
+                            </button>
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
@@ -495,6 +555,38 @@ export function Admin() {
                     </div>
                 )}
 
+                {activeTab === 'users' && (
+                    <div className="space-y-6">
+                        <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+                            <table className="w-full">
+                                <thead className="bg-slate-50 border-b">
+                                    <tr>
+                                        <th className="p-4 text-left text-sm font-semibold text-slate-500">Name</th>
+                                        <th className="p-4 text-left text-sm font-semibold text-slate-500">Email</th>
+                                        <th className="p-4 text-left text-sm font-semibold text-slate-500">Devices Owned</th>
+                                        <th className="p-4 text-left text-sm font-semibold text-slate-500">Shared Access</th>
+                                        <th className="p-4 text-left text-sm font-semibold text-slate-500">Created</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {users.map(user => (
+                                        <tr key={user.id} className="border-b hover:bg-slate-50">
+                                            <td className="p-4 font-bold">{user.name}</td>
+                                            <td className="p-4 text-sm text-gray-500">{user.email}</td>
+                                            <td className="p-4 text-sm">{user._count.devices}</td>
+                                            <td className="p-4 text-sm">{user._count.deviceAccess}</td>
+                                            <td className="p-4 text-sm text-gray-500">{new Date(user.createdAt).toLocaleDateString()}</td>
+                                        </tr>
+                                    ))}
+                                    {users.length === 0 && (
+                                        <tr><td colSpan={5} className="p-8 text-center text-gray-400">No users found</td></tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
+
                 {activeTab === 'devices' && (
                     <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
                         <table className="w-full">
@@ -572,6 +664,83 @@ export function Admin() {
                                                         <TerminalIcon size={16} />
                                                         Terminal
                                                     </button>
+                                                    <div className="relative group">
+                                                        <button
+                                                            onClick={() => setAssigningTo(assigningTo === device.id ? null : device.id)}
+                                                            className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2"
+                                                        >
+                                                            Assign
+                                                        </button>
+                                                        {assigningTo === device.id && (
+                                                            <div className="absolute right-0 mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-2xl z-20 p-5 animate-in fade-in zoom-in-95 duration-200">
+                                                                <h4 className="text-sm font-bold mb-3 text-slate-800">Assign Printer to User</h4>
+                                                                <div className="space-y-4">
+                                                                    <div>
+                                                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">User Email</label>
+                                                                        <input
+                                                                            type="email"
+                                                                            id="assign-email"
+                                                                            placeholder="user@example.com"
+                                                                            className="w-full p-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-slate-800 outline-none"
+                                                                            onKeyDown={(e) => {
+                                                                                if (e.key === 'Enter') {
+                                                                                    const input = e.currentTarget as HTMLInputElement;
+                                                                                    assignDevice(device.id, input.value, 'owner');
+                                                                                }
+                                                                            }}
+                                                                        />
+                                                                    </div>
+
+                                                                    <div className="grid grid-cols-2 gap-2">
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                const email = (document.getElementById('assign-email') as HTMLInputElement).value;
+                                                                                if (email) assignDevice(device.id, email, 'owner');
+                                                                            }}
+                                                                            className="bg-slate-800 text-white text-xs font-bold py-2.5 rounded-lg hover:bg-slate-700 transition shadow-sm"
+                                                                        >
+                                                                            Make Owner
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                const email = (document.getElementById('assign-email') as HTMLInputElement).value;
+                                                                                if (email) assignDevice(device.id, email, 'sender');
+                                                                            }}
+                                                                            className="bg-white border border-slate-200 text-slate-700 text-xs font-bold py-2.5 rounded-lg hover:bg-slate-50 transition shadow-sm"
+                                                                        >
+                                                                            Add as Sender
+                                                                        </button>
+                                                                    </div>
+
+                                                                    <hr className="border-slate-100" />
+
+                                                                    <div>
+                                                                        <p className="text-[10px] text-slate-400 mb-2">Quick Pick From Recent Users:</p>
+                                                                        <div className="max-h-32 overflow-y-auto space-y-1">
+                                                                            {users.slice(0, 5).map(u => (
+                                                                                <button
+                                                                                    key={u.id}
+                                                                                    onClick={() => assignDevice(device.id, u.email, 'sender')}
+                                                                                    className="w-full text-left text-xs p-2 rounded-lg hover:bg-slate-50 text-slate-600 truncate transition border border-transparent hover:border-slate-100"
+                                                                                    title={u.email}
+                                                                                >
+                                                                                    {u.name} ({u.email})
+                                                                                </button>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <button
+                                                                        onClick={() => setAssigningTo(null)}
+                                                                        className="w-full text-xs text-slate-400 hover:text-slate-600 pt-1"
+                                                                    >
+                                                                        Cancel
+                                                                        ```
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                     <button
                                                         onClick={() => unprovisionDevice(device.id)}
                                                         className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"

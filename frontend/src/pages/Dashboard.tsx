@@ -107,7 +107,6 @@ function DeviceSettingsModal({ deviceId, onClose, onUpdate }: { deviceId: string
             const data = await createInviteLink(deviceId, inviteEmail || undefined);
             const link = `${window.location.origin}/invite/${data.token}`;
             setInviteLink(link);
-            setInviteLink(link);
         } catch (err: any) {
             alert(err.response?.data?.error || 'Failed to create invite');
         } finally {
@@ -204,9 +203,12 @@ function DeviceSettingsModal({ deviceId, onClose, onUpdate }: { deviceId: string
                                     <button
                                         type="submit"
                                         disabled={saving || newName === device.friendlyName}
-                                        className="px-6 py-2 bg-charcoal-800 text-white rounded-xl font-medium hover:bg-charcoal-700 transition disabled:opacity-50"
+                                        className={`px-6 py-2 rounded-xl font-medium transition all duration-300 disabled:opacity-50 ${newName === device.friendlyName
+                                            ? 'bg-emerald-50 text-emerald-600 border border-emerald-100 cursor-default'
+                                            : 'bg-charcoal-800 text-white hover:bg-charcoal-700 active:scale-95'
+                                            }`}
                                     >
-                                        {saving ? 'Saving...' : 'Save'}
+                                        {saving ? 'Saving...' : newName === device.friendlyName ? 'Saved' : 'Save Changes'}
                                     </button>
                                 </div>
                             </div>
@@ -385,6 +387,15 @@ function DeviceSettingsModal({ deviceId, onClose, onUpdate }: { deviceId: string
                             </button>
                         </div>
                     </section>
+                </div>
+
+                <div className="sticky bottom-0 bg-white/80 backdrop-blur-md px-6 py-4 border-t border-gray-100 rounded-b-3xl">
+                    <button
+                        onClick={onClose}
+                        className="w-full py-4 bg-charcoal-800 text-white rounded-2xl font-bold hover:bg-charcoal-700 transition-all active:scale-[0.98] shadow-lg shadow-charcoal-800/20"
+                    >
+                        Close Settings
+                    </button>
                 </div>
             </div>
         </div>
