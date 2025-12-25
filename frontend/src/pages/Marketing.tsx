@@ -124,10 +124,10 @@ export function Marketing() {
                         </Link>
                     ) : (
                         <>
-                            <Link to="/login" className="hidden sm:block px-5 py-2 rounded-full font-bold text-[#3D405B] hover:bg-[#3D405B]/5 transition border-2 border-transparent">
+                            <Link to="/login" className="px-3 sm:px-5 py-2 rounded-full font-bold text-[#3D405B] hover:bg-[#3D405B]/5 transition border-2 border-transparent text-sm sm:text-base">
                                 Log in
                             </Link>
-                            <Link to="/register" className="px-6 py-2 rounded-full bg-[#E07A5F] text-[#FAF9F6] font-bold shadow-[4px_4px_0px_0px_#3D405B] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_0px_#3D405B] transition-all border-2 border-[#3D405B]">
+                            <Link to="/register" className="px-4 sm:px-6 py-2 rounded-full bg-[#E07A5F] text-[#FAF9F6] font-bold shadow-[4px_4px_0px_0px_#3D405B] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_0px_#3D405B] transition-all border-2 border-[#3D405B] text-sm sm:text-base">
                                 Get Started
                             </Link>
                         </>
@@ -151,13 +151,20 @@ export function Marketing() {
                             Don't just send a text. Drop a note. <br className="hidden md:block" />
                             The thermal printer for love notes, drawings, and daily smiles.
                         </p>
-                        <div className="flex flex-col sm:flex-row gap-4">
-                            <Link to={user ? "/dashboard" : "/register"} className="px-8 py-4 rounded-xl bg-[#3D405B] text-[#FAF9F6] text-lg font-bold shadow-[6px_6px_0px_0px_#E07A5F] hover:translate-y-[2px] hover:shadow-[4px_4px_0px_0px_#E07A5F] transition-all border-2 border-[#3D405B] text-center">
+                        <div className="flex flex-col sm:flex-row gap-4 items-center">
+                            <Link to={user ? "/dashboard" : "/register"} className="w-full sm:w-auto px-8 py-4 rounded-xl bg-[#3D405B] text-[#FAF9F6] text-lg font-bold shadow-[6px_6px_0px_0px_#E07A5F] hover:translate-y-[2px] hover:shadow-[4px_4px_0px_0px_#E07A5F] transition-all border-2 border-[#3D405B] text-center">
                                 {user ? "Go to Dashboard" : "Get Your PaperDrop"}
                             </Link>
-                            <p className="text-sm font-hand text-[#3D405B]/60 self-center rotate-2">
-                                * No ink needed. Ever!
-                            </p>
+                            {!user && (
+                                <Link to="/login" className="text-sm font-bold text-[#3D405B]/60 hover:text-[#3D405B] transition-colors underline decoration-dotted underline-offset-4">
+                                    Already have a PaperDrop? Log in
+                                </Link>
+                            )}
+                            {user && (
+                                <p className="text-sm font-hand text-[#3D405B]/60 rotate-2">
+                                    * No ink needed. Ever!
+                                </p>
+                            )}
                         </div>
                     </div>
 
@@ -389,11 +396,18 @@ export function Marketing() {
                     <p className="text-xl mb-10 text-[#FAF9F6]/80">
                         Get the PaperDrop Starter Kit. Includes printer, 3 rolls of thermal paper, and the app.
                     </p>
-                    <div className="flex flex-col sm:flex-row justify-center gap-4 items-center">
-                        <Link to={user ? "/dashboard" : "/register"} className="px-8 py-4 rounded-full bg-[#E07A5F] text-white text-lg font-bold shadow-[0px_0px_20px_rgba(224,122,95,0.4)] hover:scale-105 transition-transform border-2 border-white/20">
-                            {user ? "Go to Dashboard" : "Buy Now - $89"}
-                        </Link>
-                        <span className="text-sm opacity-60">Ships free in the US</span>
+                    <div className="flex flex-col justify-center gap-6 items-center">
+                        <div className="flex flex-col sm:flex-row gap-4 items-center">
+                            <Link to={user ? "/dashboard" : "/register"} className="px-8 py-4 rounded-full bg-[#E07A5F] text-white text-lg font-bold shadow-[0px_0px_20px_rgba(224,122,95,0.4)] hover:scale-105 transition-transform border-2 border-white/20">
+                                {user ? "Go to Dashboard" : "Buy Now - $89"}
+                            </Link>
+                            <span className="text-sm opacity-60">Ships free in the US</span>
+                        </div>
+                        {!user && (
+                            <Link to="/login" className="text-[#FAF9F6]/60 hover:text-[#FAF9F6] font-bold text-sm transition-colors border-b border-transparent hover:border-[#FAF9F6]/40 pb-1">
+                                Existing user? Sign in here
+                            </Link>
+                        )}
                     </div>
                 </div>
             </section>
