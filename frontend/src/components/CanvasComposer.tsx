@@ -631,8 +631,8 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
             )}
 
             {/* Sticky Header Toolbar */}
-            <div className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-gray-200 shadow-sm px-2 sm:px-4 py-3 flex justify-between items-center transition-all h-[64px] overflow-x-auto no-scrollbar">
-                <div className="flex gap-1 sm:gap-2 items-center flex-shrink-0">
+            <div className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-gray-200 shadow-sm px-1.5 sm:px-4 py-2 sm:py-3 flex justify-between items-center transition-all h-[56px] sm:h-[64px] overflow-x-hidden">
+                <div className="flex gap-0.5 sm:gap-2 items-center flex-shrink-0">
                     {/* Design Tools OR Context Tools */}
                     {!previewImage && (
                         selectedElement && selectedElement.type === 'text' ? (
@@ -681,27 +681,27 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                                     className="p-2 bg-gradient-to-br from-purple-100 to-indigo-100 text-indigo-600 hover:from-purple-200 hover:to-indigo-200 rounded-lg transition border border-indigo-200 shadow-sm"
                                     title="Magic Designer"
                                 >
-                                    <Sparkles size={24} />
+                                    <Sparkles size={20} className="sm:w-6 sm:h-6" />
                                 </button>
                                 <button onClick={addText} className="p-2 hover:bg-gray-100 rounded-lg text-charcoal-700 active:bg-gray-200 transition" title="Add Text">
-                                    <TypeIcon size={24} />
+                                    <TypeIcon size={20} className="sm:w-6 sm:h-6" />
                                 </button>
                                 <button
                                     onClick={() => setShowDrawingModal(true)}
                                     className="p-2 hover:bg-gray-100 rounded-lg text-charcoal-700 active:bg-gray-200 transition"
                                     title="Draw"
                                 >
-                                    <Pencil size={24} />
+                                    <Pencil size={20} className="sm:w-6 sm:h-6" />
                                 </button>
                                 <button
                                     onClick={() => setShowQrModal(true)}
                                     className="p-2 hover:bg-gray-100 rounded-lg text-charcoal-700 active:bg-gray-200 transition"
                                     title="QR Creator"
                                 >
-                                    <QrCode size={22} />
+                                    <QrCode size={18} className="sm:w-5 sm:h-5" />
                                 </button>
                                 <label className="p-2 hover:bg-gray-100 rounded-lg text-charcoal-700 active:bg-gray-200 transition cursor-pointer" title="Add Image">
-                                    <ImageIcon size={24} />
+                                    <ImageIcon size={20} className="sm:w-6 sm:h-6" />
                                     <input type="file" accept="image/*" className="hidden" onChange={addImage} />
                                 </label>
 
@@ -717,7 +717,7 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                                         }`}
                                     title="Clear Canvas"
                                 >
-                                    <Trash2 size={20} />
+                                    <Trash2 size={18} className="sm:w-5 sm:h-5" />
                                 </button>
                             </>
                         )
@@ -725,17 +725,17 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                 </div>
 
                 {/* Print / Preview Actions */}
-                <div className="flex gap-1 sm:gap-2 flex-shrink-0 ml-4">
+                <div className="flex gap-1 sm:gap-2 flex-shrink-0 ml-1.5 sm:ml-4">
                     <button
                         onClick={async () => {
                             const img = await generateImage();
                             if (img) onSchedule(img);
                         }}
                         disabled={sending || (!elements.length && !previewImage)}
-                        className="p-2 rounded-lg text-charcoal-500 hover:bg-gray-100 border border-transparent hover:border-gray-200 transition disabled:opacity-50"
+                        className="p-1.5 sm:p-2 rounded-lg text-charcoal-500 hover:bg-gray-100 border border-transparent hover:border-gray-200 transition disabled:opacity-50"
                         title="Schedule Print"
                     >
-                        <Clock size={20} />
+                        <Clock size={18} className="sm:w-5 sm:h-5" />
                     </button>
 
                     <button
@@ -747,17 +747,17 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                                 setPreviewImage(img);
                             }
                         }}
-                        className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-bold border transition flex items-center gap-2 ${previewImage ? 'bg-black text-white border-black' : 'bg-white text-charcoal-700 border-gray-300 hover:bg-gray-50'}`}
+                        className={`px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-bold border transition flex items-center gap-1.5 ${previewImage ? 'bg-black text-white border-black' : 'bg-white text-charcoal-700 border-gray-300 hover:bg-gray-50'}`}
                     >
                         {previewImage ? (
                             <>
-                                <Edit3 size={16} />
-                                <span className="hidden sm:inline">Edit</span>
+                                <Edit3 size={15} className="sm:w-4 sm:h-4" />
+                                <span className="hidden xs:inline">Edit</span>
                             </>
                         ) : (
                             <>
-                                <Eye size={16} />
-                                <span className="hidden sm:inline">Preview</span>
+                                <Eye size={15} className="sm:w-4 sm:h-4" />
+                                <span className="hidden xs:inline">Preview</span>
                             </>
                         )}
                     </button>
@@ -765,10 +765,10 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                     <button
                         onClick={handleSendClick}
                         disabled={sending || (!elements.length && !previewImage)}
-                        className={`px-4 sm:px-6 py-2 rounded-lg text-sm font-bold text-white transition shadow-md flex items-center gap-2 ${sending ? 'bg-coral-400 cursor-wait' : 'bg-coral-500 hover:bg-coral-600 active:scale-95'
+                        className={`px-3 sm:px-6 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-bold text-white transition shadow-md flex items-center gap-1.5 ${sending ? 'bg-coral-400 cursor-wait' : 'bg-coral-500 hover:bg-coral-600 active:scale-95'
                             }`}
                     >
-                        {sending ? 'Sending...' : 'PRINT'}
+                        {sending ? '...' : 'PRINT'}
                     </button>
                 </div>
             </div>
