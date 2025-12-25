@@ -25,6 +25,7 @@ model User {
   automations      Automation[] // Automations created by user
   sentInvites      DeviceInvite[] @relation("InviteInviter")
   acceptedInvites  DeviceInvite[] @relation("InviteAcceptedBy")
+  feedbacks        Feedback[]
 
   @@map("users")
 }
@@ -156,4 +157,18 @@ model Automation {
   device Device @relation(fields: [deviceId], references: [id])
 
   @@map("automations")
+}
+
+model Feedback {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  userEmail String   @map("user_email")
+  userName  String   @map("user_name")
+  type      String?  @default("feedback")
+  message   String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("feedbacks")
 }

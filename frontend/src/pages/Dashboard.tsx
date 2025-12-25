@@ -5,7 +5,7 @@ import { CanvasComposer } from '../components/CanvasComposer';
 import { ActivityFeed } from '../components/ActivityFeed';
 import { BleProvisioningModal } from '../components/BleProvisioningModal';
 import { useAuth } from '../context/AuthContext';
-import { X, Activity, Printer, Bluetooth, Settings, Trash2, RefreshCw, Download, Share2, Copy, Check } from 'lucide-react';
+import { X, Activity, Printer, Bluetooth, Settings, Trash2, RefreshCw, Download, Share2, Copy, Check, MessageSquare } from 'lucide-react';
 import { client as api, updateDevice, unclaimDevice, clearMessageQueue, createInviteLink, downloadDeviceLogs } from '../api/client';
 
 interface Device {
@@ -413,6 +413,80 @@ function DeviceSettingsModal({ deviceId, onClose, onUpdate }: { deviceId: string
     );
 }
 
+function FeedbackModal({ onClose }: { onClose: () => void }) {
+    const [message, setMessage] = useState('');
+    const [type, setType] = useState('feedback');
+    const [loading, setLoading] = useState(false);
+    const [success, setSuccess] = useState(false);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
+        try {
+            await api.post('/feedback', { message, type });
+            setSuccess(true);
+            setTimeout(onClose, 2000);
+        } catch (err) {
+            alert('Failed to submit feedback');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
+            <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                <div className="bg-[#E07A5F] p-4 flex justify-between items-center">
+                    <h2 className="text-white font-bold">Feedback & Support</h2>
+                    <button onClick={onClose} className="text-white/80 hover:text-white"><X size={20} /></button>
+                </div>
+                {success ? (
+                    <div className="p-8 text-center">
+                        <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <Check size={32} />
+                        </div>
+                        <h3 className="font-bold text-gray-900 mb-2">Thank You!</h3>
+                        <p className="text-gray-500 text-sm">Your message has been received. We'll look into it right away.</p>
+                    </div>
+                ) : (
+                    <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                        <div>
+                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 font-mono">Type</label>
+                            <select
+                                value={type}
+                                onChange={(e) => setType(e.target.value)}
+                                className="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-[#E07A5F]/20 text-sm"
+                            >
+                                <option value="feedback">General Feedback</option>
+                                <option value="question">Ask a Question</option>
+                                <option value="bug">Report a Bug</option>
+                                <option value="feature">Feature Request</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 font-mono">Message</label>
+                            <textarea
+                                value={message}
+                                onChange={(e) => setMessage(e.target.value)}
+                                placeholder="How can we help?"
+                                className="w-full h-32 p-3 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-[#E07A5F]/20 text-sm resize-none"
+                                required
+                            />
+                        </div>
+                        <button
+                            type="submit"
+                            disabled={loading || !message.trim()}
+                            className="w-full bg-[#3D405B] text-white py-3 rounded-xl font-bold shadow-lg shadow-gray-200 active:scale-95 transition-all disabled:opacity-50"
+                        >
+                            {loading ? 'Sending...' : 'Send Message'}
+                        </button>
+                    </form>
+                )}
+            </div>
+        </div>
+    );
+}
+
 interface Device {
     id: string;
     friendlyName: string;
@@ -444,6 +518,9 @@ export function Dashboard() {
     // Device Settings Modal
     const [showSettingsModal, setShowSettingsModal] = useState(false);
     const [settingsDeviceId, setSettingsDeviceId] = useState<string | null>(null);
+
+    // Feedback
+    const [showFeedbackModal, setShowFeedbackModal] = useState(false);
 
 
     useEffect(() => {
@@ -555,6 +632,16 @@ export function Dashboard() {
                 >
                     <Bluetooth size={16} />
                     Add Printer
+                </button>
+
+                <div className="border-t border-gray-100 my-2" />
+
+                <button
+                    onClick={() => setShowFeedbackModal(true)}
+                    className="flex items-center gap-2 p-3 text-sm text-slate-500 hover:bg-slate-50 rounded-xl transition font-medium w-full"
+                >
+                    <MessageSquare size={16} />
+                    Feedback & Support
                 </button>
             </div>
         </div>
@@ -706,6 +793,7 @@ export function Dashboard() {
                     navigate(`/claim?code=${deviceId}`);
                 }}
             />
+            {showFeedbackModal && <FeedbackModal onClose={() => setShowFeedbackModal(false)} />}
         </Layout>
     );
 }

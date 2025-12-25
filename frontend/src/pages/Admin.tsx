@@ -3,7 +3,7 @@ import { Layout } from '../components/Layout';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
-import { Terminal as TerminalIcon, Power, Wifi, WifiOff, Package, Upload, Rocket, Trash2, X } from 'lucide-react';
+import { Terminal as TerminalIcon, Power, Wifi, WifiOff, Package, Upload, Rocket, Trash2, X, MessageSquare } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const WS_BASE = API_BASE.replace('http', 'ws');
@@ -38,6 +38,16 @@ interface User {
         devices: number;
         deviceAccess: number;
     }
+}
+
+interface Feedback {
+    id: string;
+    userId: string;
+    userEmail: string;
+    userName: string;
+    type: string;
+    message: string;
+    createdAt: string;
 }
 
 function AssignModal({ device, users, onAssign, onClose }: { device: Device, users: User[], onAssign: (email: string, role: string) => void, onClose: () => void }) {
@@ -123,9 +133,10 @@ export function Admin() {
     const [devices, setDevices] = useState<Device[]>([]);
     const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
     const [error, setError] = useState('');
-    const [activeTab, setActiveTab] = useState<'devices' | 'firmware' | 'users'>('devices');
+    const [activeTab, setActiveTab] = useState<'devices' | 'firmware' | 'users' | 'feedback'>('devices');
     const [firmwareReleases, setFirmwareReleases] = useState<FirmwareRelease[]>([]);
     const [users, setUsers] = useState<User[]>([]);
+    const [feedbacks, setFeedbacks] = useState<Feedback[]>([]);
     const [deployStatus, setDeployStatus] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [attentionOnly, setAttentionOnly] = useState(false);
@@ -177,6 +188,7 @@ export function Admin() {
             // Also load firmware and users
             loadFirmware(pass);
             loadUsers(pass);
+            loadFeedback(pass);
         }
     };
 
@@ -190,6 +202,19 @@ export function Admin() {
             }
         } catch (e) {
             console.error('Failed to load users:', e);
+        }
+    };
+
+    const loadFeedback = async (pass: string) => {
+        try {
+            const res = await fetch(`${API_BASE}/api/feedback/all`, {
+                headers: { 'x-admin-password': pass }
+            });
+            if (res.ok) {
+                setFeedbacks(await res.json());
+            }
+        } catch (e) {
+            console.error('Failed to load feedback:', e);
         }
     };
 
@@ -484,6 +509,13 @@ export function Admin() {
                                 <TerminalIcon size={16} />
                                 Users
                             </button>
+                            <button
+                                onClick={() => setActiveTab('feedback')}
+                                className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 text-sm sm:text-base shrink-0 ${activeTab === 'feedback' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
+                            >
+                                <MessageSquare size={16} />
+                                Feedback
+                            </button>
                         </div>
                     </div>
                     <div className="flex items-center gap-3 w-full sm:w-auto overflow-x-auto no-scrollbar shrink-0">
@@ -661,6 +693,49 @@ export function Admin() {
                                 </tbody>
                             </table>
                         </div>
+                    </div>
+                )}
+                {activeTab === 'feedback' && (
+                    <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+                        <table className="w-full text-left">
+                            <thead className="bg-slate-50 border-b border-slate-100">
+                                <tr>
+                                    <th className="p-4 pl-6 text-xs font-bold text-slate-400 uppercase tracking-widest">User</th>
+                                    <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-widest">Type</th>
+                                    <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-widest">Message</th>
+                                    <th className="p-4 pr-6 text-xs font-bold text-slate-400 uppercase tracking-widest text-right">Date</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {feedbacks.map(f => (
+                                    <tr key={f.id} className="hover:bg-slate-50/50 transition-colors">
+                                        <td className="p-4 pl-6">
+                                            <div className="font-bold text-slate-800">{f.userName}</div>
+                                            <div className="text-xs text-slate-400">{f.userEmail}</div>
+                                        </td>
+                                        <td className="p-4">
+                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${f.type === 'bug' ? 'bg-red-50 text-red-700 border-red-100' :
+                                                f.type === 'feature' ? 'bg-blue-50 text-blue-700 border-blue-100' :
+                                                    f.type === 'question' ? 'bg-amber-50 text-amber-700 border-amber-100' :
+                                                        'bg-green-50 text-green-700 border-green-100'
+                                                }`}>
+                                                {f.type}
+                                            </span>
+                                        </td>
+                                        <td className="p-4 max-w-md">
+                                            <div className="text-sm text-slate-600 whitespace-pre-wrap">{f.message}</div>
+                                        </td>
+                                        <td className="p-4 pr-6 text-right">
+                                            <div className="text-sm font-medium text-slate-700">{new Date(f.createdAt).toLocaleDateString()}</div>
+                                            <div className="text-xs text-slate-400">{new Date(f.createdAt).toLocaleTimeString()}</div>
+                                        </td>
+                                    </tr>
+                                ))}
+                                {feedbacks.length === 0 && (
+                                    <tr><td colSpan={4} className="p-8 text-center text-gray-400">No feedback messages yet</td></tr>
+                                )}
+                            </tbody>
+                        </table>
                     </div>
                 )}
 

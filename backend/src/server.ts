@@ -10,6 +10,7 @@ import messageRoutes from './routes/messages';
 import aiRoutes from './routes/aiRoutes';
 import adminRoutes from './routes/admin';
 import inviteRoutes from './routes/invites';
+import feedbackRoutes from './routes/feedback';
 import { WebSocket } from 'ws';
 import { IncomingMessage } from 'http';
 import url from 'url';
@@ -71,6 +72,7 @@ app.use('/api/messages', messageRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/invites', inviteRoutes);
+app.use('/api/feedback', feedbackRoutes);
 
 // Serve uploaded firmware files
 import path from 'path';
