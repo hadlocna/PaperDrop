@@ -514,9 +514,9 @@ export function Admin() {
                         </div>
 
                         {/* Firmware Releases List */}
-                        <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-                            <table className="w-full">
-                                <thead className="bg-slate-50 border-b">
+                        <div className="bg-white rounded-2xl shadow-lg border border-slate-100 overflow-x-auto">
+                            <table className="w-full min-w-[700px]">
+                                <thead className="bg-slate-50/50 border-b border-slate-100">
                                     <tr>
                                         <th className="p-4 text-left text-sm font-semibold text-slate-500">Version</th>
                                         <th className="p-4 text-left text-sm font-semibold text-slate-500">URL</th>
@@ -557,9 +557,9 @@ export function Admin() {
 
                 {activeTab === 'users' && (
                     <div className="space-y-6">
-                        <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-                            <table className="w-full">
-                                <thead className="bg-slate-50 border-b">
+                        <div className="bg-white rounded-2xl shadow-lg border border-slate-100 overflow-x-auto">
+                            <table className="w-full min-w-[800px]">
+                                <thead className="bg-slate-50/50 border-b border-slate-100">
                                     <tr>
                                         <th className="p-4 text-left text-sm font-semibold text-slate-500">Name</th>
                                         <th className="p-4 text-left text-sm font-semibold text-slate-500">Email</th>
@@ -588,18 +588,18 @@ export function Admin() {
                 )}
 
                 {activeTab === 'devices' && (
-                    <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-                        <table className="w-full">
-                            <thead className="bg-slate-50 border-b">
+                    <div className="bg-white rounded-2xl shadow-lg border border-slate-100 overflow-x-auto">
+                        <table className="w-full min-w-[1100px] border-collapse">
+                            <thead className="bg-slate-50/50 border-b border-slate-100">
                                 <tr>
-                                    <th className="p-4 text-left text-sm font-semibold text-slate-500">Status</th>
-                                    <th className="p-4 text-left text-sm font-semibold text-slate-500">Device</th>
-                                    <th className="p-4 text-left text-sm font-semibold text-slate-500">Signal</th>
-                                    <th className="p-4 text-left text-sm font-semibold text-slate-500">Firmware</th>
-                                    <th className="p-4 text-left text-sm font-semibold text-slate-500">Owner</th>
-                                    <th className="p-4 text-left text-sm font-semibold text-slate-500">Last Seen</th>
-                                    <th className="p-4 text-left text-sm font-semibold text-slate-500">Issues</th>
-                                    <th className="p-4 text-left text-sm font-semibold text-slate-500">Actions</th>
+                                    <th className="p-4 text-left text-xs font-bold text-slate-400 uppercase tracking-wider w-32">Status</th>
+                                    <th className="p-4 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Device</th>
+                                    <th className="p-4 text-left text-xs font-bold text-slate-400 uppercase tracking-wider w-32">Signal</th>
+                                    <th className="p-4 text-left text-xs font-bold text-slate-400 uppercase tracking-wider w-24">Firmware</th>
+                                    <th className="p-4 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Owner</th>
+                                    <th className="p-4 text-left text-xs font-bold text-slate-400 uppercase tracking-wider w-40">Last Seen</th>
+                                    <th className="p-4 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Issues</th>
+                                    <th className="p-4 text-right text-xs font-bold text-slate-400 uppercase tracking-wider w-48 pr-6">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -655,8 +655,8 @@ export function Admin() {
                                                     ))}
                                                 </div>
                                             </td>
-                                            <td className="p-4">
-                                                <div className="flex items-center gap-2">
+                                            <td className="p-4 pr-6">
+                                                <div className="flex items-center justify-end gap-2">
                                                     <button
                                                         onClick={() => setSelectedDevice(device)}
                                                         className="bg-slate-800 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2"
