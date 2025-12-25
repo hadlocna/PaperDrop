@@ -118,35 +118,35 @@ sudo dd if=~/paperdrop-image.img of=/dev/sdX bs=4M status=progress
 **On Windows:**
 - Use [Raspberry Pi Imager](https://www.raspberrypi.com/software/) or [Win32 Disk Imager](https://sourceforge.net/projects/win32diskimager/)
 
-### Option 2: Fresh Install
+### Option 2: Fresh Install (Standard)
 
-1. Flash Raspberry Pi OS Lite (64-bit) to an SD card
-2. Enable SSH and configure WiFi in Raspberry Pi Imager
-3. Boot the Pi and SSH in
-4. Clone this repository and run the installer:
-```bash
-git clone https://github.com/hadlocna/PaperDrop.git
-cd PaperDrop
-sudo ./install_paperdrop.sh
-```
+Use this method if you have a stock Raspberry Pi and want to install the PaperDrop software from scratch.
+
+1. **Flash OS**: Flash **Raspberry Pi OS Lite (64-bit)** using [Raspberry Pi Imager](https://www.raspberrypi.com/software/).
+2. **Enable SSH**: In the Imager settings (the cog icon), enable SSH and set a username/password.
+3. **Boot & SSH**: Insert the card, power it on, connect to Ethernet or WiFi, and SSH into the device from your laptop:
+   ```bash
+   ssh <username>@<device-ip>
+   ```
+4. **Run Installer**: Run the following commands to install everything automatically:
+   ```bash
+   sudo apt update && sudo apt install -y git
+   git clone https://github.com/hadlocna/PaperDrop.git
+   cd PaperDrop
+   sudo ./install.sh
+   ```
+
+The script will install all dependencies, set up the services, and generate a unique Device ID for you.
 
 ### Important: Reset Device Identity
-
-After cloning an SD card, **you must reset the device identity** so it gets a new unique ID:
+If you Cloned an SD card (Option 1), you **must** reset the device identity so it doesn't conflict with the original device:
 
 ```bash
 # SSH into the new device
 ssh pi@<new-device-ip>
 
-# Remove the old device identity
-sudo rm -f /etc/paperdrop/device.json
-sudo rm -f /etc/paperdrop/device-id
-sudo rm -f /etc/paperdrop/wifi.json
-sudo rm -f /etc/paperdrop/wifi-provisioned
-
-# Restart services to generate new identity
-sudo systemctl restart paperdrop-ble
-sudo systemctl restart paperdrop-ws-agent
+# Run the reset script (this clears and regenerates ID and credentials)
+sudo /opt/paperdrop/paperdrop-reset-wifi.sh
 ```
 
 The device will now generate a new unique ID and be ready for provisioning.
