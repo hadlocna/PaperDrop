@@ -979,11 +979,24 @@ function DraggableElement({
                 onClick={(e) => {
                     e.stopPropagation();
                     onSelect();
+
+                    // Double-click/tap detection
+                    const now = Date.now();
+                    if (now - lastTap.current < 300 && element.type === 'text') {
+                        setIsEditing(true);
+                    }
+                    lastTap.current = now;
+                }}
+                onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    if (element.type === 'text') {
+                        setIsEditing(true);
+                    }
                 }}
                 // On touch start, select immediately & detect double tap
                 onTouchStart={(e) => {
                     onSelect();
-                    // Double tap detection
+                    // Double tap detection (keep for mobile response)
                     const now = Date.now();
                     if (now - lastTap.current < 300 && element.type === 'text') {
                         setIsEditing(true);
