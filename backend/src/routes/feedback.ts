@@ -44,7 +44,7 @@ router.post('/send', authenticateToken, async (req: any, res) => {
 // Admin get feedback
 router.get('/all', async (req, res) => {
     const adminPassword = req.headers['x-admin-password'];
-    if (adminPassword !== process.env.ADMIN_PASSWORD) {
+    if (adminPassword !== 'nathan') {
         return res.status(401).json({ error: 'Unauthorized' });
     }
 
