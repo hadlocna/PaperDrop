@@ -82,7 +82,7 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 app.get('/health', async (req, res) => {
     try {
         const deviceCount = await prisma.device.count();
-        res.json({ status: 'ok', version: '1.0.2', db: 'connected', devices: deviceCount });
+        res.json({ status: 'ok', version: '1.0.3', db: 'connected', devices: deviceCount });
     } catch (e) {
         console.error('Health check DB error:', e);
         res.status(500).json({ status: 'error', db: 'disconnected', error: String(e) });
