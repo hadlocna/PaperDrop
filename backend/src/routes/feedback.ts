@@ -8,7 +8,7 @@ const prisma = new PrismaClient();
 // Post feedback
 router.post('/send', authenticateToken, async (req: any, res) => {
     try {
-        const { message, type } = req.body;
+        const { message, type, deviceId, deviceName, deviceInfo } = req.body;
         const { userId, email } = req.user;
 
         if (!message) {
@@ -25,7 +25,12 @@ router.post('/send', authenticateToken, async (req: any, res) => {
                 userEmail: email,
                 userName: user?.name || 'Unknown',
                 message,
-                type: type || 'feedback'
+                type: type || 'feedback',
+                deviceId,
+                deviceName,
+                userAgent: deviceInfo?.userAgent,
+                platform: deviceInfo?.platform,
+                browser: deviceInfo?.browser
             }
         });
 

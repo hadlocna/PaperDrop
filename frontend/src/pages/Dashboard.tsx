@@ -413,7 +413,7 @@ function DeviceSettingsModal({ deviceId, onClose, onUpdate }: { deviceId: string
     );
 }
 
-function FeedbackModal({ onClose }: { onClose: () => void }) {
+function FeedbackModal({ onClose, selectedDevice }: { onClose: () => void, selectedDevice?: Device }) {
     const [message, setMessage] = useState('');
     const [type, setType] = useState('feedback');
     const [loading, setLoading] = useState(false);
@@ -423,7 +423,19 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
         e.preventDefault();
         setLoading(true);
         try {
-            await api.post('/feedback/send', { message, type });
+            const deviceInfo = {
+                userAgent: navigator.userAgent,
+                platform: navigator.platform,
+                browser: (navigator as any).vendor || 'unknown'
+            };
+
+            await api.post('/feedback/send', {
+                message,
+                type,
+                deviceId: selectedDevice?.id,
+                deviceName: selectedDevice?.friendlyName,
+                deviceInfo
+            });
             setSuccess(true);
             setTimeout(onClose, 2000);
         } catch (err) {
@@ -793,7 +805,12 @@ export function Dashboard() {
                     navigate(`/claim?code=${deviceId}`);
                 }}
             />
-            {showFeedbackModal && <FeedbackModal onClose={() => setShowFeedbackModal(false)} />}
+            {showFeedbackModal && (
+                <FeedbackModal
+                    onClose={() => setShowFeedbackModal(false)}
+                    selectedDevice={devices.find(d => d.id === selectedDeviceId)}
+                />
+            )}
         </Layout>
     );
 }

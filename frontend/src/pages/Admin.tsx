@@ -3,7 +3,7 @@ import { Layout } from '../components/Layout';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
-import { Terminal as TerminalIcon, Power, Wifi, WifiOff, Package, Upload, Rocket, Trash2, X, MessageSquare } from 'lucide-react';
+import { Terminal as TerminalIcon, Power, Wifi, WifiOff, Package, Upload, Rocket, Trash2, X, MessageSquare, Printer } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const WS_BASE = API_BASE.replace('http', 'ws');
@@ -47,6 +47,11 @@ interface Feedback {
     userName: string;
     type: string;
     message: string;
+    deviceId?: string;
+    deviceName?: string;
+    userAgent?: string;
+    platform?: string;
+    browser?: string;
     createdAt: string;
 }
 
@@ -700,9 +705,9 @@ export function Admin() {
                         <table className="w-full text-left">
                             <thead className="bg-slate-50 border-b border-slate-100">
                                 <tr>
-                                    <th className="p-4 pl-6 text-xs font-bold text-slate-400 uppercase tracking-widest">User</th>
+                                    <th className="p-4 pl-6 text-xs font-bold text-slate-400 uppercase tracking-widest">User / Device</th>
                                     <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-widest">Type</th>
-                                    <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-widest">Message</th>
+                                    <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-widest">Message / Context</th>
                                     <th className="p-4 pr-6 text-xs font-bold text-slate-400 uppercase tracking-widest text-right">Date</th>
                                 </tr>
                             </thead>
@@ -712,6 +717,12 @@ export function Admin() {
                                         <td className="p-4 pl-6">
                                             <div className="font-bold text-slate-800">{f.userName}</div>
                                             <div className="text-xs text-slate-400">{f.userEmail}</div>
+                                            {f.deviceName && (
+                                                <div className="mt-1 flex items-center gap-1 text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded w-fit">
+                                                    <Printer size={10} />
+                                                    {f.deviceName}
+                                                </div>
+                                            )}
                                         </td>
                                         <td className="p-4">
                                             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${f.type === 'bug' ? 'bg-red-50 text-red-700 border-red-100' :
@@ -723,7 +734,13 @@ export function Admin() {
                                             </span>
                                         </td>
                                         <td className="p-4 max-w-md">
-                                            <div className="text-sm text-slate-600 whitespace-pre-wrap">{f.message}</div>
+                                            <div className="text-sm text-slate-600 whitespace-pre-wrap mb-2">{f.message}</div>
+                                            {(f.browser || f.platform) && (
+                                                <div className="text-[10px] text-slate-400 font-mono bg-slate-50 p-1.5 rounded border border-slate-100">
+                                                    {f.platform} • {f.browser}
+                                                    <div className="truncate opacity-50 text-[9px] mt-0.5" title={f.userAgent}>{f.userAgent}</div>
+                                                </div>
+                                            )}
                                         </td>
                                         <td className="p-4 pr-6 text-right">
                                             <div className="text-sm font-medium text-slate-700">{new Date(f.createdAt).toLocaleDateString()}</div>

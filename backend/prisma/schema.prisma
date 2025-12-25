@@ -160,13 +160,18 @@ model Automation {
 }
 
 model Feedback {
-  id        String   @id @default(uuid())
-  userId    String   @map("user_id")
-  userEmail String   @map("user_email")
-  userName  String   @map("user_name")
-  type      String?  @default("feedback")
-  message   String
-  createdAt DateTime @default(now()) @map("created_at")
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  userEmail  String   @map("user_email")
+  userName   String   @map("user_name")
+  deviceId   String?  @map("device_id")
+  deviceName String?  @map("device_name")
+  type       String?  @default("feedback")
+  message    String
+  userAgent  String?  @map("user_agent")
+  platform   String?
+  browser    String?
+  createdAt  DateTime @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id])
 
