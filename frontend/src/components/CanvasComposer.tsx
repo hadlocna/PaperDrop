@@ -98,9 +98,8 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                 image = res.data.image;
             }
 
-            // 1. Reset Canvas
-            setElements([]);
-            setCanvasHeight(550); // Image + margins
+            // 1. Position image below top margin or existing items if needed
+            // For now, we'll just add it to the stack so the user can move it
 
             // 2. Add Image
             const imgEl: CanvasElement = {
@@ -108,12 +107,12 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                 type: 'image',
                 content: image,
                 x: 28, // Centered roughly (576-520)/2 = 28
-                y: 50, // Top margin
+                y: elements.length > 0 ? 100 : 50, // Slight offset if not first
                 width: 520, // Max width with padding
                 rotation: 0
             };
 
-            setElements([imgEl]);
+            setElements(prev => [...prev, imgEl]);
             setShowAiModal(false);
             setAiPrompt('');
         } catch (error) {
