@@ -58,17 +58,9 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
     const [isGenerating, setIsGenerating] = useState(false);
     const [aiProgress, setAiProgress] = useState(0);
     const [aiEtaSeconds, setAiEtaSeconds] = useState(0);
-    const [containerWidth, setContainerWidth] = useState(window.innerWidth);
 
-    useEffect(() => {
-        const handleResize = () => setContainerWidth(window.innerWidth);
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
-    }, []);
-
-    // Width of thermal printer is 576px
+    // Width of thermal printer is 576px (80mm at 203 DPI)
     const logicalWidth = 576;
-    const visualScale = Math.min(1, (containerWidth - 32) / logicalWidth);
     const [isDrawing, setIsDrawing] = useState(false);
     const [qrContent, setQrContent] = useState('');
     const [qrError, setQrError] = useState('');
@@ -234,13 +226,32 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
         await new Promise(resolve => setTimeout(resolve, 100)); // Short delay for render cycle
 
         try {
-            // 2. Capture - Faithful Screenshot logic via html-to-image
-            // Uses SVG foreignObject for near-native text rendering (fixes html2canvas artifacts)
             if (!canvasRef.current) return '';
 
-            const tempCanvas = await toCanvas(canvasRef.current, {
+            const canvasElement = canvasRef.current;
+
+            // 2. Find the outer container with Tailwind scale classes and temporarily remove them
+            // The canvas itself is 576px with no transform, but the viewport wrapper has responsive scaling
+            const paperContainer = canvasElement.closest('[style*="width"]')?.parentElement;
+            const outerScaleContainer = paperContainer?.parentElement;
+            const originalOuterClass = outerScaleContainer?.className || '';
+
+            if (outerScaleContainer) {
+                // Temporarily remove Tailwind scale classes for accurate capture
+                outerScaleContainer.className = outerScaleContainer.className.replace(
+                    /scale-\[[\d.]+\]|xs:scale-\[[\d.]+\]|sm:scale-\[[\d.]+\]|md:scale-\[[\d.]+\]/g,
+                    ''
+                );
+            }
+
+            // Wait for browser to apply style changes
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            // 3. Capture at 1:1 pixel ratio (576px width matches printer exactly)
+            // The canvasRef is exactly 576px wide - what you capture is what prints
+            const tempCanvas = await toCanvas(canvasElement, {
                 backgroundColor: '#ffffff',
-                pixelRatio: 2, // Capture high-res for clean downsampling
+                pixelRatio: 1, // 1:1 capture - 576px on screen = 576px in output
                 filter: (node) => {
                     // Exclude elements with 'no-print' class
                     if (node instanceof HTMLElement && node.classList.contains('no-print')) {
@@ -250,24 +261,39 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                 }
             });
 
-            // 3. Downscale to exact Printer Width (576px)
+            // 4. Restore original styles
+            if (outerScaleContainer) {
+                outerScaleContainer.className = originalOuterClass;
+            }
+
+            // 5. The captured canvas should already be 576px wide
+            // If not, scale it down to exactly 576px
             const finalWidth = 576;
-            const scaleFactor = finalWidth / tempCanvas.width;
-            const finalHeight = tempCanvas.height * scaleFactor;
+            let outputCanvas: HTMLCanvasElement;
+            let ctx: CanvasRenderingContext2D | null;
 
-            const outputCanvas = document.createElement('canvas');
-            outputCanvas.width = finalWidth;
-            outputCanvas.height = finalHeight;
-            const ctx = outputCanvas.getContext('2d');
-            if (!ctx) return '';
+            if (tempCanvas.width !== finalWidth) {
+                const scaleFactor = finalWidth / tempCanvas.width;
+                const finalHeight = Math.round(tempCanvas.height * scaleFactor);
 
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
-            ctx.drawImage(tempCanvas, 0, 0, finalWidth, finalHeight);
+                outputCanvas = document.createElement('canvas');
+                outputCanvas.width = finalWidth;
+                outputCanvas.height = finalHeight;
+                ctx = outputCanvas.getContext('2d');
+                if (!ctx) return '';
 
-            // 4. Simple Threshold (Strict Black & White)
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(tempCanvas, 0, 0, finalWidth, finalHeight);
+            } else {
+                outputCanvas = tempCanvas;
+                ctx = outputCanvas.getContext('2d');
+                if (!ctx) return '';
+            }
+
+            // 6. Simple Threshold (Strict Black & White)
             // This replaces dithering with a clean "stamp" look
-            const imageData = ctx.getImageData(0, 0, finalWidth, finalHeight);
+            const imageData = ctx.getImageData(0, 0, outputCanvas.width, outputCanvas.height);
             const data = imageData.data;
             for (let i = 0; i < data.length; i += 4) {
                 const r = data[i];
@@ -287,9 +313,6 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
         } catch (err) {
             console.error("Capture failed:", err);
             return '';
-        } finally {
-            // Optional: Restore selection if you want, but usually clearing it is fine for UX
-            // setSelectedId(previousSelection); 
         }
     };
 
@@ -788,77 +811,70 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                 {/* Visual shadow for roll depth */}
                 <div className="fixed top-[64px] left-0 right-0 h-6 bg-gradient-to-b from-black/5 to-transparent pointer-events-none z-30" />
 
-                {/* Paper Roll Simulation */}
+                {/* Paper Roll Simulation - 576px matches printer width exactly (WYSIWYG) */}
                 <div className="flex flex-col items-center gap-4 w-full origin-top transform scale-[0.55] xs:scale-[0.65] sm:scale-[0.85] md:scale-100 transition-transform duration-300">
                     <div
                         className="relative bg-white shadow-xl border border-gray-200 transition-all duration-300"
                         style={{
-                            width: '640px', // 80mm Full Width Visual
+                            width: `${logicalWidth}px`, // 576px = 80mm printer width at 203 DPI
                             minHeight: `${canvasHeight}px`
                         }}
                         onClick={(e) => e.stopPropagation()}
                     >
-                        {/* Margins */}
+                        {/* Top edge indicator - shows start of printable area */}
                         {!previewImage && (
-                            <>
-                                <div className="absolute top-0 bottom-0 left-0 w-[32px] bg-neutral-50 border-r border-dashed border-gray-300 opacity-50 pointer-events-none" />
-                                <div className="absolute top-0 bottom-0 right-0 w-[32px] bg-neutral-50 border-l border-dashed border-gray-300 opacity-50 pointer-events-none" />
-                                <div className="absolute top-0 left-0 right-0 h-4 bg-neutral-50 border-b border-dashed border-gray-300 opacity-50 pointer-events-none flex justify-center items-center">
-                                    <span className="text-[9px] text-gray-400 font-mono tracking-widest uppercase">Start of Roll</span>
-                                </div>
-                            </>
+                            <div className="absolute top-0 left-0 right-0 h-4 bg-gradient-to-b from-gray-100 to-transparent opacity-60 pointer-events-none flex justify-center items-center no-print">
+                                <span className="text-[9px] text-gray-400 font-mono tracking-widest uppercase">Print Area</span>
+                            </div>
                         )}
 
-                        {/* Content */}
-                        <div className="mx-auto relative origin-top" style={{
-                            width: `${logicalWidth}px`,
-                            height: `${canvasHeight}px`,
-                            transform: `scale(${visualScale})`,
-                            marginBottom: `${(canvasHeight * visualScale) - canvasHeight}px` // Compensate for scale empty space
-                        }}>
-                            {previewImage ? (
-                                <div className="w-full flex flex-col items-center py-8 animate-in fade-in duration-500">
-                                    <img
-                                        src={previewImage}
-                                        alt="Preview"
-                                        className="w-full object-contain border border-gray-200 shadow-sm"
-                                        style={{ imageRendering: 'pixelated' }}
+                        {/* Content - This is the actual printable canvas area */}
+                        {/* The canvasRef element has NO transforms - it's 576px wide exactly like the print output */}
+                        {previewImage ? (
+                            <div className="mx-auto py-8 animate-in fade-in duration-500" style={{ width: `${logicalWidth}px` }}>
+                                <img
+                                    src={previewImage}
+                                    alt="Preview"
+                                    className="w-full object-contain border border-gray-200 shadow-sm"
+                                    style={{ imageRendering: 'pixelated' }}
+                                />
+                            </div>
+                        ) : (
+                            <div
+                                ref={canvasRef}
+                                className="bg-white relative cursor-text mx-auto"
+                                style={{
+                                    width: `${logicalWidth}px`,
+                                    minHeight: `${canvasHeight}px`
+                                }}
+                                onClick={(e) => {
+                                    if (e.target === e.currentTarget && !previewImage) {
+                                        setSelectedId(null);
+                                    }
+                                }}
+                            >
+                                {elements.map((el) => (
+                                    <DraggableElement
+                                        key={el.id}
+                                        element={el}
+                                        isSelected={el.id === selectedId}
+                                        onSelect={() => setSelectedId(el.id)}
+                                        onRemove={() => removeElement(el.id)}
+                                        onUpdate={(vals) => updateElement(el.id, vals)}
                                     />
-                                </div>
-                            ) : (
-                                <div
-                                    ref={canvasRef}
-                                    className="bg-white relative h-full cursor-text"
-                                    style={{ minHeight: `${canvasHeight}px` }}
-                                    onClick={(e) => {
-                                        if (e.target === e.currentTarget && !previewImage) {
-                                            setSelectedId(null);
-                                        }
-                                    }}
-                                >
-                                    {elements.map((el) => (
-                                        <DraggableElement
-                                            key={el.id}
-                                            element={el}
-                                            isSelected={el.id === selectedId}
-                                            onSelect={() => setSelectedId(el.id)}
-                                            onRemove={() => removeElement(el.id)}
-                                            onUpdate={(vals) => updateElement(el.id, vals)}
-                                        />
-                                    ))}
+                                ))}
 
-                                    {elements.length === 0 && (
-                                        <div className="absolute top-32 inset-x-0 text-center text-gray-300 pointer-events-none select-none">
-                                            <p className="font-handwriting text-3xl mb-2 text-gray-200">Start Writing...</p>
-                                            <p className="text-sm font-mono opacity-50">Tap tools above to add content</p>
-                                            <div className="mt-8 border-2 border-dashed border-gray-100 w-32 h-32 mx-auto rounded-full flex items-center justify-center">
-                                                <span className="text-4xl">✨</span>
-                                            </div>
+                                {elements.length === 0 && (
+                                    <div className="absolute top-32 inset-x-0 text-center text-gray-300 pointer-events-none select-none no-print">
+                                        <p className="font-handwriting text-3xl mb-2 text-gray-200">Start Writing...</p>
+                                        <p className="text-sm font-mono opacity-50">Tap tools above to add content</p>
+                                        <div className="mt-8 border-2 border-dashed border-gray-100 w-32 h-32 mx-auto rounded-full flex items-center justify-center">
+                                            <span className="text-4xl">✨</span>
                                         </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

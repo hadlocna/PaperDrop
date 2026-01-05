@@ -213,6 +213,15 @@ async def handle_print_job(websocket, message_data):
             img_bytes = base64.b64decode(image_data)
             img = Image.open(io.BytesIO(img_bytes))
             
+            # Resize to printer width (576px for 80mm at 203 DPI)
+            # This ensures WYSIWYG consistency with the frontend canvas
+            PRINTER_WIDTH = 576
+            if img.width != PRINTER_WIDTH:
+                aspect_ratio = img.height / img.width
+                new_height = int(PRINTER_WIDTH * aspect_ratio)
+                img = img.resize((PRINTER_WIDTH, new_height), Image.Resampling.LANCZOS)
+                logger.info(f"Resized image to {PRINTER_WIDTH}x{new_height}")
+            
             # Apply watermark
             watermark_text = f"Sent by {sender_name}"
             img = add_watermark(img, watermark_text)
