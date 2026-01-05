@@ -861,6 +861,8 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                                         onSelect={() => setSelectedId(el.id)}
                                         onRemove={() => removeElement(el.id)}
                                         onUpdate={(vals) => updateElement(el.id, vals)}
+                                        canvasWidth={logicalWidth}
+                                        canvasHeight={canvasHeight}
                                     />
                                 ))}
 
@@ -900,13 +902,17 @@ function DraggableElement({
     onRemove,
     onUpdate,
     isSelected,
-    onSelect
+    onSelect,
+    canvasWidth,
+    canvasHeight
 }: {
     element: CanvasElement,
     onRemove: () => void,
     onUpdate: (vals: Partial<CanvasElement>) => void,
     isSelected: boolean,
-    onSelect: () => void
+    onSelect: () => void,
+    canvasWidth: number,
+    canvasHeight: number
 }) {
     const [isEditing, setIsEditing] = useState(false);
     const nodeRef = useRef<HTMLDivElement>(null);
@@ -982,11 +988,16 @@ function DraggableElement({
     return (
         <Draggable
             nodeRef={nodeRef}
-            bounds="parent"
+            bounds={{
+                left: 0,
+                top: 0,
+                right: Math.max(0, canvasWidth - (element.width || 100)),
+                bottom: Math.max(0, canvasHeight - 50)
+            }}
             position={{ x: element.x, y: element.y }}
             onStop={(_, data) => onUpdate({ x: data.x, y: data.y })}
-            onStart={() => onSelect()} // Just to ensure selection maybe?
-            handle=".drag-handle" // Only drag via content, not handles
+            onStart={() => onSelect()}
+            handle=".drag-handle"
             cancel=".no-drag"
         >
             <div
