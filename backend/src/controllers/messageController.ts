@@ -43,6 +43,19 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
             normalizedContent = { body: content };
         }
 
+        // Validate and normalize scheduledAt
+        let scheduledDate: Date | null = null;
+        if (scheduledAt) {
+            const sd = new Date(scheduledAt);
+            if (isNaN(sd.getTime())) {
+                return res.status(400).json({ error: 'Invalid scheduledAt timestamp' });
+            }
+            // If scheduled time is in the past or now, treat as immediate
+            if (sd > new Date()) {
+                scheduledDate = sd;
+            }
+        }
+
         // Create message
         const message = await prisma.message.create({
             data: {
@@ -50,8 +63,8 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
                 deviceId,
                 content: JSON.stringify(normalizedContent), // Storing as JSON string for SQLite compatibility
                 contentType: contentType || 'text',
-                status: scheduledAt ? 'scheduled' : 'queued',
-                scheduledAt: scheduledAt ? new Date(scheduledAt) : null
+                status: scheduledDate ? 'scheduled' : 'queued',
+                scheduledAt: scheduledDate
             }
         });
 

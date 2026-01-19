@@ -15,6 +15,8 @@ export function Compose() {
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
     const [sending, setSending] = useState(false);
     const [error, setError] = useState('');
+    const [scheduleMode, setScheduleMode] = useState<'now' | 'later'>('now');
+    const [scheduledAt, setScheduledAt] = useState<string | null>(null);
 
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -44,12 +46,19 @@ export function Compose() {
                 apiContent = selectedImage;
             }
 
-            await api.post('/messages', {
+            const payload: any = {
                 deviceId: id,
                 senderId: user?.id,
                 contentType: mode,
                 content: apiContent
-            });
+            };
+
+            if (scheduleMode === 'later' && scheduledAt) {
+                // send ISO timestamp to server
+                payload.scheduledAt = new Date(scheduledAt).toISOString();
+            }
+
+            await api.post('/messages', payload);
             navigate('/dashboard');
         } catch (err: any) {
             setError(err.response?.data?.error || 'Failed to send');
@@ -142,13 +151,47 @@ export function Compose() {
                         >
                             Cancel
                         </button>
-                        <button
-                            onClick={handleSend}
-                            disabled={sending || (mode === 'text' ? !message.trim() : !selectedImage)}
-                            className="px-8 py-2.5 bg-coral-500 text-white font-medium rounded-xl hover:bg-coral-600 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
-                        >
-                            {sending ? 'Sending...' : 'Send Now'}
-                        </button>
+                        <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2">
+                                <label className={`text-sm font-medium ${scheduleMode === 'now' ? 'text-coral-500' : 'text-gray-500'}`}>
+                                    <input
+                                        type="radio"
+                                        name="schedule"
+                                        checked={scheduleMode === 'now'}
+                                        onChange={() => setScheduleMode('now')}
+                                        className="mr-2"
+                                    />
+                                    Send Now
+                                </label>
+                                <label className={`text-sm font-medium ${scheduleMode === 'later' ? 'text-coral-500' : 'text-gray-500'}`}>
+                                    <input
+                                        type="radio"
+                                        name="schedule"
+                                        checked={scheduleMode === 'later'}
+                                        onChange={() => setScheduleMode('later')}
+                                        className="mr-2"
+                                    />
+                                    Send Later
+                                </label>
+                            </div>
+
+                            {scheduleMode === 'later' && (
+                                <input
+                                    type="datetime-local"
+                                    value={scheduledAt || ''}
+                                    onChange={(e) => setScheduledAt(e.target.value)}
+                                    className="px-3 py-2 border rounded-xl text-sm"
+                                />
+                            )}
+
+                            <button
+                                onClick={handleSend}
+                                disabled={sending || (mode === 'text' ? !message.trim() : !selectedImage) || (scheduleMode === 'later' && !scheduledAt)}
+                                className="px-8 py-2.5 bg-coral-500 text-white font-medium rounded-xl hover:bg-coral-600 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
+                            >
+                                {sending ? 'Sending...' : scheduleMode === 'later' ? 'Schedule' : 'Send Now'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
