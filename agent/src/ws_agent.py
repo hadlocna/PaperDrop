@@ -13,6 +13,7 @@ from device_interface import get_printer_connection
 from PIL import Image
 import io
 import socket
+from PIL import UnidentifiedImageError
 
 # Logging setup
 LOG_FILE = '/var/log/paperdrop/agent.log'
@@ -205,13 +206,26 @@ async def handle_print_job(websocket, message_data):
             # Handle image (assume base64)
             image_data = content
             if isinstance(content, dict):
-                 image_data = content.get('image') or content.get('content') or ""
+                image_data = content.get('image') or content.get('content') or ""
+
+            if not image_data or not isinstance(image_data, str):
+                raise Exception("No image data provided for print job")
             
             if ',' in image_data:
                 image_data = image_data.split(',')[1]
             
-            img_bytes = base64.b64decode(image_data)
-            img = Image.open(io.BytesIO(img_bytes))
+            try:
+                img_bytes = base64.b64decode(image_data, validate=True)
+            except (ValueError, TypeError) as e:
+                raise Exception(f"Invalid image data: {e}")
+
+            try:
+                img = Image.open(io.BytesIO(img_bytes))
+            except UnidentifiedImageError as e:
+                raise Exception(f"Invalid image format: {e}")
+
+            # Keep image input stable for the ESC/POS image routine.
+            img = img.convert('RGB')
             
             # Resize to printer width (576px for 80mm at 203 DPI)
             # This ensures WYSIWYG consistency with the frontend canvas
@@ -221,6 +235,15 @@ async def handle_print_job(websocket, message_data):
                 new_height = int(PRINTER_WIDTH * aspect_ratio)
                 img = img.resize((PRINTER_WIDTH, new_height), Image.Resampling.LANCZOS)
                 logger.info(f"Resized image to {PRINTER_WIDTH}x{new_height}")
+
+            # Prevent very tall images from overloading the printer image command path.
+            MAX_HEIGHT = 2400
+            if img.height > MAX_HEIGHT:
+                img = img.resize((PRINTER_WIDTH, MAX_HEIGHT), Image.Resampling.LANCZOS)
+                logger.warning(f"Image too tall. Resized to {PRINTER_WIDTH}x{MAX_HEIGHT}")
+
+            # Convert to 1-bit early; avoids several image-encoding crash paths.
+            img = img.convert('1')
             
             # Apply watermark
             watermark_text = f"Sent by {sender_name}"
@@ -228,7 +251,7 @@ async def handle_print_job(websocket, message_data):
             
             logger.info(f"Printing image: {img.size}")
             # ESC/POS image printing
-            p.image(img)
+            p.image(img, impl='bitImageRaster')
             p.cut()
 
         # Update status to printed
