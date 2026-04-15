@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { AUTH_EXPIRED_EVENT, AUTH_FAILURE_MESSAGES } from '../auth/events';
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 const API_URL = `${BASE_URL.replace(/\/$/, '')}/api`;
@@ -20,6 +21,23 @@ client.interceptors.request.use(
         return config;
     },
     (error) => {
+        return Promise.reject(error);
+    }
+);
+
+client.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        const status = error.response?.status;
+        const message = error.response?.data?.error;
+        const isAuthFailure = (status === 401 || status === 403) && AUTH_FAILURE_MESSAGES.has(message);
+
+        if (isAuthFailure && typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT, {
+                detail: { status, message }
+            }));
+        }
+
         return Promise.reject(error);
     }
 );

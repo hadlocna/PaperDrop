@@ -1,7 +1,9 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import bcrypt from 'bcrypt';
-import jwt from 'jsonwebtoken';
+import jwt, { SignOptions } from 'jsonwebtoken';
+
+const JWT_EXPIRES_IN = (process.env.JWT_EXPIRES_IN || '365d') as SignOptions['expiresIn'];
 
 export const registerUser = async (req: Request, res: Response) => {
     try {
@@ -39,7 +41,7 @@ export const registerUser = async (req: Request, res: Response) => {
         const token = jwt.sign(
             { userId: user.id, email: user.email },
             process.env.JWT_SECRET || 'paperdrop-secret',
-            { expiresIn: '30d' }
+            { expiresIn: JWT_EXPIRES_IN }
         );
 
         // Return user without sensitive data

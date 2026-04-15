@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { AUTH_EXPIRED_EVENT } from '../auth/events';
 
 
 interface User {
@@ -22,6 +23,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [token, setToken] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(true);
 
+    const clearSession = () => {
+        localStorage.removeItem('user');
+        localStorage.removeItem('token');
+        setUser(null);
+        setToken(null);
+    };
+
     useEffect(() => {
         // Load user and token from local storage
         const storedUser = localStorage.getItem('user');
@@ -33,11 +41,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 setToken(storedToken);
             } catch (e) {
                 console.error('Failed to parse stored user:', e);
-                localStorage.removeItem('user');
-                localStorage.removeItem('token');
+                clearSession();
             }
         }
         setIsLoading(false);
+    }, []);
+
+    useEffect(() => {
+        const handleAuthExpired = () => {
+            clearSession();
+        };
+
+        const handleStorage = (event: StorageEvent) => {
+            if (event.key === 'token' && event.newValue === null) {
+                clearSession();
+            }
+        };
+
+        window.addEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
+        window.addEventListener('storage', handleStorage);
+
+        return () => {
+            window.removeEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
+            window.removeEventListener('storage', handleStorage);
+        };
     }, []);
 
     const login = (data: { user: User; token: string }) => {
@@ -48,10 +75,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     const logout = () => {
-        localStorage.removeItem('user');
-        localStorage.removeItem('token');
-        setUser(null);
-        setToken(null);
+        clearSession();
     };
 
     return (
