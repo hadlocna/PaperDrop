@@ -81,8 +81,10 @@ export const claimDevice = async (req: AuthRequest, res: Response) => {
 export const getDevices = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user?.userId;
+        const requestId = req.headers['x-request-id'] || req.headers['render-request-id'];
 
         if (!userId) {
+            console.warn('[GET /api/devices] unauthorized request', { requestId });
             return res.status(401).json({ error: 'Unauthorized' });
         }
 
@@ -100,6 +102,14 @@ export const getDevices = async (req: AuthRequest, res: Response) => {
             }
         });
 
+        console.info('[GET /api/devices] loaded devices', {
+            requestId,
+            userId,
+            count: devices.length,
+            deviceIds: devices.map((device) => device.id),
+            deviceCodes: devices.map((device) => device.deviceCode)
+        });
+
         // Calculate real-time status based on lastSeenAt or lastHeartbeat
         const now = new Date().getTime();
         const devicesWithStatus = devices.map(d => {
@@ -113,7 +123,11 @@ export const getDevices = async (req: AuthRequest, res: Response) => {
 
         res.json(devicesWithStatus);
     } catch (error) {
-        console.error('Get devices error:', error);
+        console.error('Get devices error:', {
+            requestId: req.headers['x-request-id'] || req.headers['render-request-id'],
+            userId: req.user?.userId,
+            error
+        });
         res.status(500).json({ error: 'Internal server error' });
     }
 };

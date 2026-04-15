@@ -657,6 +657,7 @@ export function Dashboard() {
     const [devices, setDevices] = useState<Device[]>([]);
     const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState('');
     const [sending, setSending] = useState(false);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
 
@@ -679,22 +680,35 @@ export function Dashboard() {
     // Feedback
     const [showFeedbackModal, setShowFeedbackModal] = useState(false);
 
+    const fetchDevices = async () => {
+        if (!user) return;
+
+        setLoading(true);
+        setLoadError('');
+
+        try {
+            const res = await api.get('/devices');
+            setDevices(res.data);
+            setSelectedDeviceId((current) => {
+                if (current && res.data.some((device: Device) => device.id === current)) {
+                    return current;
+                }
+                return res.data[0]?.id ?? null;
+            });
+        } catch (error: any) {
+            console.error(error);
+            if (error?.response?.status === 401 || error?.response?.status === 403) {
+                setLoadError('Your session expired. Log in again to load your printers.');
+            } else {
+                setLoadError('Could not load printers. Check that the PaperDrop backend is running and the API URL points to it.');
+            }
+        } finally {
+            setLoading(false);
+        }
+    };
 
     useEffect(() => {
         if (!user) return;
-        async function fetchDevices() {
-            try {
-                const res = await api.get('/devices');
-                setDevices(res.data);
-                if (res.data.length > 0 && !selectedDeviceId) {
-                    setSelectedDeviceId(res.data[0].id);
-                }
-            } catch (error) {
-                console.error(error);
-            } finally {
-                setLoading(false);
-            }
-        }
         fetchDevices();
     }, [user]);
 
@@ -753,6 +767,11 @@ export function Dashboard() {
 
             <div className="space-y-2 flex-1 overflow-y-auto">
                 {loading && <div>Loading...</div>}
+                {!loading && loadError && (
+                    <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                        {loadError}
+                    </div>
+                )}
                 {devices.map(device => (
                     <div
                         key={device.id}
@@ -842,6 +861,18 @@ export function Dashboard() {
                             <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-4">
                                 <RefreshCw className="animate-spin text-coral-500" size={32} />
                                 <p className="font-medium">Finding your printers...</p>
+                            </div>
+                        ) : loadError ? (
+                            <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8 text-center">
+                                <Printer size={48} className="text-red-200 mb-4" />
+                                <h3 className="text-xl font-bold text-charcoal-800 mb-2">Could Not Load Printers</h3>
+                                <p className="text-gray-400 mb-6 max-w-sm">{loadError}</p>
+                                <button
+                                    onClick={fetchDevices}
+                                    className="bg-coral-500 text-white px-8 py-3 rounded-full shadow-lg font-bold hover:bg-coral-600 transition"
+                                >
+                                    Try Again
+                                </button>
                             </div>
                         ) : selectedDeviceId ? (
                             <div className="w-full h-full flex flex-col">
