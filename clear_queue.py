@@ -2,7 +2,7 @@ import requests
 import json
 
 # Configuration
-API_URL = "https://paperdrop-backend-99k2ag.64.225.69.211.sslip.io"
+API_URL = "https://api.paperdrop.me"
 DEVICE_CODE = "PD-780420ea"
 
 def clear_queue():

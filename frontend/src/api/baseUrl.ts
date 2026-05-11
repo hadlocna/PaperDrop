@@ -1,4 +1,4 @@
-const COOLIFY_BACKEND_URL = 'https://paperdrop-backend-99k2ag.64.225.69.211.sslip.io';
+const PRODUCTION_BACKEND_URL = 'https://api.paperdrop.me';
 const LEGACY_RENDER_BACKEND_URL = 'https://paperdrop-backend.onrender.com';
 
 const productionFrontendHosts = new Set([
@@ -13,7 +13,7 @@ const isProductionFrontend = productionFrontendHosts.has(currentHost);
 const isStaleRenderUrl = configuredBaseUrl === LEGACY_RENDER_BACKEND_URL;
 
 export const API_BASE_URL = isProductionFrontend && (!configuredBaseUrl || isStaleRenderUrl)
-    ? COOLIFY_BACKEND_URL
+    ? PRODUCTION_BACKEND_URL
     : configuredBaseUrl || 'http://localhost:3000';
 
 export const API_URL = `${API_BASE_URL}/api`;
