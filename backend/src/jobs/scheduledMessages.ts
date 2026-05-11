@@ -20,14 +20,19 @@ class ScheduledMessageProcessor {
 
     async process() {
         try {
-            // Find messages due for delivery that are scheduled
+            // Find queued messages and scheduled messages due for delivery.
             const dueMessages = await prisma.message.findMany({
                 where: {
-                    status: 'scheduled',
-                    scheduledAt: {
-                        lte: new Date(),
-                        not: null
-                    },
+                    OR: [
+                        { status: 'queued' },
+                        {
+                            status: 'scheduled',
+                            scheduledAt: {
+                                lte: new Date(),
+                                not: null
+                            },
+                        }
+                    ]
                 },
                 include: {
                     sender: { select: { name: true } }
