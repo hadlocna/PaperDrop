@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma';
 import { broadcastToDevice, requestLogsFromDevice } from '../websocket/deviceHandler';
 import crypto from 'crypto';
 import { AuthRequest } from '../middleware/authMiddleware';
+import { fetchRelayDeviceStatuses, relayIsOnline, relayLastActive, relayMessageToDevice } from '../lib/deviceRelay';
 
 export const claimDevice = async (req: AuthRequest, res: Response) => {
     try {
@@ -110,14 +111,21 @@ export const getDevices = async (req: AuthRequest, res: Response) => {
             deviceCodes: devices.map((device) => device.deviceCode)
         });
 
-        // Calculate real-time status based on lastSeenAt or lastHeartbeat
+        const relayStatuses = await fetchRelayDeviceStatuses();
+
+        // Calculate real-time status based on local or relay heartbeats
         const now = new Date().getTime();
         const devicesWithStatus = devices.map(d => {
-            const lastActive = d.lastHeartbeat || d.lastSeenAt;
+            const relayDevice = relayStatuses.get(d.deviceCode);
+            const lastActive = relayLastActive(relayDevice) || d.lastHeartbeat || d.lastSeenAt;
             const isOnline = lastActive && (now - new Date(lastActive).getTime() < 60000);
             return {
                 ...d,
-                status: isOnline ? 'online' : 'offline'
+                status: isOnline || relayIsOnline(relayDevice) ? 'online' : 'offline',
+                lastSeenAt: relayDevice?.lastSeen ? new Date(relayDevice.lastSeen) : d.lastSeenAt,
+                lastHeartbeat: relayDevice?.lastHeartbeat ? new Date(relayDevice.lastHeartbeat) : d.lastHeartbeat,
+                wifiSignal: relayDevice?.wifiSignal ?? d.wifiSignal,
+                firmwareVersion: relayDevice?.firmwareVersion ?? d.firmwareVersion
             };
         });
 
@@ -163,12 +171,19 @@ export const getDevice = async (req: AuthRequest, res: Response) => {
             return res.status(403).json({ error: 'Access denied' });
         }
 
+        const relayStatuses = await fetchRelayDeviceStatuses();
+        const relayDevice = relayStatuses.get(device.deviceCode);
+
         // Calculate real-time status
-        const lastActive = device.lastHeartbeat || device.lastSeenAt;
+        const lastActive = relayLastActive(relayDevice) || device.lastHeartbeat || device.lastSeenAt;
         const isOnline = lastActive && (new Date().getTime() - new Date(lastActive).getTime() < 60000);
         const deviceWithStatus = {
             ...device,
-            status: isOnline ? 'online' : 'offline'
+            status: isOnline || relayIsOnline(relayDevice) ? 'online' : 'offline',
+            lastSeenAt: relayDevice?.lastSeen ? new Date(relayDevice.lastSeen) : device.lastSeenAt,
+            lastHeartbeat: relayDevice?.lastHeartbeat ? new Date(relayDevice.lastHeartbeat) : device.lastHeartbeat,
+            wifiSignal: relayDevice?.wifiSignal ?? device.wifiSignal,
+            firmwareVersion: relayDevice?.firmwareVersion ?? device.firmwareVersion
         };
 
         res.json(deviceWithStatus);
@@ -215,10 +230,11 @@ export const testPrint = async (req: AuthRequest, res: Response) => {
         if (!access) return res.status(403).json({ error: 'Access denied' });
 
         const requestId = crypto.randomUUID();
-        const success = broadcastToDevice(id, {
+        const payload = {
             type: 'test_print',
             request_id: requestId
-        });
+        };
+        const success = broadcastToDevice(id, payload) || await relayMessageToDevice(id, payload);
 
         if (success) {
             res.json({ success: true, message: 'Test print sent' });

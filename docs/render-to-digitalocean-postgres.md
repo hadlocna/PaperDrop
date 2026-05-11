@@ -116,3 +116,13 @@ The Render source was copied into `paperdrop_backend.public` and verified with t
 ## Operational note
 
 If the backend will stay on Render after the database cutover, make sure the Render service can reach the DigitalOcean database. That usually means explicitly allowing the backend's egress source in DigitalOcean trusted sources or attaching the app directly if you later move the backend to DigitalOcean App Platform.
+
+## Temporary device relay
+
+Existing printers may still have `wss://paperdrop-backend.onrender.com/api/device/connect` baked into their local agent config. Until those agents are updated, keep the Render backend alive as a WebSocket relay and set this on the Coolify backend:
+
+```text
+DEVICE_RELAY_URL=https://paperdrop-backend.onrender.com
+```
+
+With this enabled, Coolify merges live device status from Render and forwards print/test payloads to devices connected there.

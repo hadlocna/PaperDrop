@@ -3,6 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import { prisma } from '../lib/prisma';
 import { broadcastToDevice } from '../websocket/deviceHandler';
+import { fetchRelayDeviceStatuses, relayIsOnline, relayLastActive, relayMessageToDevice } from '../lib/deviceRelay';
 
 // Configure multer for firmware uploads
 const storage = multer.diskStorage({
@@ -30,6 +31,7 @@ router.use(checkAdminAuth);
 // List all devices
 router.get('/devices', async (req, res) => {
     try {
+        const relayStatuses = await fetchRelayDeviceStatuses();
         const devices = await prisma.device.findMany({
             orderBy: { lastSeenAt: 'desc' },
             include: {
@@ -40,19 +42,23 @@ router.get('/devices', async (req, res) => {
         });
 
         res.json(devices.map(d => {
-            // Calculate if device is actually online (seen in last 60 seconds)
-            const isOnline = d.lastSeenAt && (new Date().getTime() - new Date(d.lastSeenAt).getTime() < 60000);
+            const relayDevice = relayStatuses.get(d.deviceCode);
+            const relayActive = relayLastActive(relayDevice);
+            const lastSeen = relayDevice?.lastSeen ? new Date(relayDevice.lastSeen) : d.lastSeenAt;
+            const lastHeartbeat = relayDevice?.lastHeartbeat ? new Date(relayDevice.lastHeartbeat) : d.lastHeartbeat;
+            const lastActive = relayActive || d.lastHeartbeat || d.lastSeenAt;
+            const isOnline = lastActive && (new Date().getTime() - new Date(lastActive).getTime() < 60000);
 
             return {
                 id: d.id,
                 code: d.deviceCode,
-                status: isOnline ? 'online' : 'offline',
+                status: isOnline || relayIsOnline(relayDevice) ? 'online' : 'offline',
                 name: d.friendlyName,
                 mac: d.macAddress,
-                lastSeen: d.lastSeenAt,
-                wifiSignal: d.wifiSignal,
-                firmwareVersion: d.firmwareVersion,
-                lastHeartbeat: d.lastHeartbeat,
+                lastSeen,
+                wifiSignal: relayDevice?.wifiSignal ?? d.wifiSignal,
+                firmwareVersion: relayDevice?.firmwareVersion ?? d.firmwareVersion,
+                lastHeartbeat,
                 owner: d.owner ? d.owner.email : null
             };
         }));
@@ -134,21 +140,38 @@ router.post('/firmware/deploy', async (req, res) => {
         }
 
         // Send update command to each device
-        const results = targetDevices.map(id => {
-            const sent = broadcastToDevice(id, {
+        const results = await Promise.all(targetDevices.map(async (id) => {
+            const payload = {
                 type: 'update',
                 version: release.version,
                 url: release.url,
                 critical: release.isCritical
-            });
+            };
+            const sent = broadcastToDevice(id, payload) || await relayMessageToDevice(id, payload);
             return { deviceId: id, sent };
-        });
+        }));
 
         res.json({
             message: `Deploy command sent to ${results.filter(r => r.sent).length} devices`,
             results
         });
     } catch (e) {
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+router.post('/relay-message', async (req, res) => {
+    try {
+        const { deviceId, payload } = req.body;
+
+        if (!deviceId || !payload) {
+            return res.status(400).json({ error: 'deviceId and payload are required' });
+        }
+
+        const sent = broadcastToDevice(deviceId, payload);
+        res.status(sent ? 200 : 503).json({ sent });
+    } catch (e) {
+        console.error('Error relaying message:', e);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });

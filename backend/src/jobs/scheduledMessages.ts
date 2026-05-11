@@ -1,5 +1,6 @@
 import { prisma } from '../lib/prisma';
 import { broadcastToDevice } from '../websocket/deviceHandler';
+import { relayMessageToDevice } from '../lib/deviceRelay';
 
 class ScheduledMessageProcessor {
     private intervalId: NodeJS.Timeout | null = null;
@@ -46,7 +47,8 @@ class ScheduledMessageProcessor {
                     }
                 };
 
-                const success = broadcastToDevice(message.deviceId, payload);
+                const success = broadcastToDevice(message.deviceId, payload) ||
+                    await relayMessageToDevice(message.deviceId, payload);
 
                 if (success) {
                     await prisma.message.update({

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { broadcastToDevice } from '../websocket/deviceHandler';
 import { AuthRequest } from '../middleware/authMiddleware';
+import { relayMessageToDevice } from '../lib/deviceRelay';
 
 export const sendMessage = async (req: AuthRequest, res: Response) => {
     try {
@@ -63,7 +64,7 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
                 select: { name: true }
             });
 
-            const broadcastResult = broadcastToDevice(deviceId, {
+            const payload = {
                 type: 'new_message',
                 message: {
                     id: message.id,
@@ -72,7 +73,10 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
                     createdAt: message.createdAt,
                     senderName: sender?.name || 'Unknown'
                 }
-            });
+            };
+
+            const broadcastResult = broadcastToDevice(deviceId, payload) ||
+                await relayMessageToDevice(deviceId, payload);
 
             if (broadcastResult) {
                 await prisma.message.update({
