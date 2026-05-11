@@ -3,7 +3,7 @@ import json
 import sys
 
 # Configuration
-API_URL = "https://paperdrop-backend.onrender.com" # Or http://localhost:3000
+API_URL = "https://paperdrop-backend-99k2ag.64.225.69.211.sslip.io" # Or http://localhost:3000
 DEVICE_ID = "PD-780420ea" # Your device code
 USER_ID = "" # Need a valid user ID from your database
 

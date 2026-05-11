@@ -163,7 +163,12 @@ router.post('/firmware/upload', upload.single('file'), async (req, res) => {
         }
 
         // Build URL for the file
-        const baseUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
+        const baseUrl =
+            process.env.PUBLIC_API_URL ||
+            process.env.BACKEND_URL ||
+            process.env.COOLIFY_URL ||
+            process.env.RENDER_EXTERNAL_URL ||
+            `http://localhost:${process.env.PORT || 3000}`;
         const url = `${baseUrl}/uploads/${req.file.filename}`;
 
         const release = await prisma.firmwareRelease.create({
@@ -285,4 +290,3 @@ router.delete('/devices/:id', async (req, res) => {
 });
 
 export default router;
-

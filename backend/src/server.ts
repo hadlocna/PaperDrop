@@ -50,16 +50,31 @@ server.on('upgrade', (request, socket, head) => {
     }
 });
 
+const defaultCorsOrigins = [
+    'https://paperdrop.me',
+    'https://www.paperdrop.me',
+    'https://paperdrop-frontend.onrender.com',
+    'https://paperdrop-frontend-eidfq0.64.225.69.211.sslip.io',
+    'http://localhost:5173',
+    'http://localhost:3000'
+];
+
+const configuredCorsOrigins = [
+    process.env.FRONTEND_URL,
+    ...(process.env.CORS_ORIGINS || '').split(',')
+]
+    .map((origin) => origin?.trim())
+    .filter((origin): origin is string => Boolean(origin));
+
+const allowedCorsOrigins = Array.from(new Set([
+    ...defaultCorsOrigins,
+    ...configuredCorsOrigins
+]));
+
 // Middleware
 app.use(helmet());
 app.use(cors({
-    origin: [
-        'https://paperdrop.me',
-        'https://www.paperdrop.me',
-        'https://paperdrop-frontend.onrender.com',
-        'http://localhost:5173',
-        'http://localhost:3000'
-    ],
+    origin: allowedCorsOrigins,
     credentials: true
 }));
 app.use(express.json({ limit: '50mb' }));

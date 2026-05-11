@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Layout } from '../components/Layout';
+import { API_BASE_URL, WS_BASE_URL } from '../api/baseUrl';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
 import { Terminal as TerminalIcon, Power, Wifi, WifiOff, Package, Upload, Rocket, Trash2, X, MessageSquare, Printer } from 'lucide-react';
-
-const API_BASE = import.meta.env.VITE_API_URL || '';
-const WS_BASE = API_BASE.replace('http', 'ws');
 
 interface Device {
     id: string;
@@ -150,7 +148,7 @@ function FeedbackDetailModal({ feedback, onUpdate, onClose, password }: { feedba
         if (!reply.trim()) return;
         setSending(true);
         try {
-            await fetch(`${API_BASE}/api/feedback/${feedback.id}/reply`, {
+            await fetch(`${API_BASE_URL}/api/feedback/${feedback.id}/reply`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -170,7 +168,7 @@ function FeedbackDetailModal({ feedback, onUpdate, onClose, password }: { feedba
     const toggleStatus = async () => {
         try {
             const nextStatus = feedback.status === 'resolved' ? 'pending' : 'resolved';
-            await fetch(`${API_BASE}/api/feedback/${feedback.id}/status`, {
+            await fetch(`${API_BASE_URL}/api/feedback/${feedback.id}/status`, {
                 method: 'PATCH',
                 headers: {
                     'Content-Type': 'application/json',
@@ -299,7 +297,7 @@ export function Admin() {
 
     const loadDevices = async (pass: string, { quietError }: { quietError?: boolean } = {}) => {
         try {
-            const res = await fetch(`${API_BASE}/api/admin/devices`, {
+            const res = await fetch(`${API_BASE_URL}/api/admin/devices`, {
                 headers: { 'x-admin-password': pass }
             });
             if (res.ok) {
@@ -336,7 +334,7 @@ export function Admin() {
 
     const loadUsers = async (pass: string) => {
         try {
-            const res = await fetch(`${API_BASE}/api/admin/users`, {
+            const res = await fetch(`${API_BASE_URL}/api/admin/users`, {
                 headers: { 'x-admin-password': pass }
             });
             if (res.ok) {
@@ -349,7 +347,7 @@ export function Admin() {
 
     const loadFeedback = async (pass: string) => {
         try {
-            const res = await fetch(`${API_BASE}/api/feedback/all`, {
+            const res = await fetch(`${API_BASE_URL}/api/feedback/all`, {
                 headers: { 'x-admin-password': pass }
             });
             if (res.ok) {
@@ -362,7 +360,7 @@ export function Admin() {
 
     const loadFirmware = async (pass: string) => {
         try {
-            const res = await fetch(`${API_BASE}/api/admin/firmware`, {
+            const res = await fetch(`${API_BASE_URL}/api/admin/firmware`, {
                 headers: { 'x-admin-password': pass }
             });
             if (res.ok) {
@@ -378,7 +376,7 @@ export function Admin() {
     const deployFirmware = async (deviceId: string, version: string) => {
         try {
             setDeployStatus(`Deploying ${version} to ${deviceId}...`);
-            const res = await fetch(`${API_BASE}/api/admin/firmware/deploy`, {
+            const res = await fetch(`${API_BASE_URL}/api/admin/firmware/deploy`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -397,7 +395,7 @@ export function Admin() {
     const unprovisionDevice = async (deviceId: string) => {
         if (!confirm('Are you sure you want to unprovision this device? It will be permanently deleted from the database.')) return;
         try {
-            const res = await fetch(`${API_BASE}/api/admin/devices/${deviceId}`, {
+            const res = await fetch(`${API_BASE_URL}/api/admin/devices/${deviceId}`, {
                 method: 'DELETE',
                 headers: { 'x-admin-password': password }
             });
@@ -416,7 +414,7 @@ export function Admin() {
     const assignDevice = async (deviceId: string, email: string, role: string) => {
         try {
             setDeployStatus(`Assigning device to ${email}...`);
-            const res = await fetch(`${API_BASE}/api/admin/devices/${deviceId}/assign`, {
+            const res = await fetch(`${API_BASE_URL}/api/admin/devices/${deviceId}/assign`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -528,7 +526,7 @@ export function Admin() {
         xtermRef.current = term;
 
         // Connect WebSocket
-        const ws = new WebSocket(`${WS_BASE}/api/admin/connect?password=${password}`);
+        const ws = new WebSocket(`${WS_BASE_URL}/api/admin/connect?password=${password}`);
         wsRef.current = ws;
 
         ws.onopen = () => {
@@ -720,7 +718,7 @@ export function Admin() {
                                 const form = e.target as HTMLFormElement;
                                 const formData = new FormData(form);
                                 try {
-                                    const res = await fetch(`${API_BASE}/api/admin/firmware/upload`, {
+                                    const res = await fetch(`${API_BASE_URL}/api/admin/firmware/upload`, {
                                         method: 'POST',
                                         headers: { 'x-admin-password': password },
                                         body: formData
@@ -906,7 +904,7 @@ export function Admin() {
                                                     <button
                                                         onClick={async () => {
                                                             if (confirm('Delete this feedback?')) {
-                                                                await fetch(`${API_BASE}/api/feedback/${f.id}`, {
+                                                                await fetch(`${API_BASE_URL}/api/feedback/${f.id}`, {
                                                                     method: 'DELETE',
                                                                     headers: { 'x-admin-password': password }
                                                                 });

@@ -1,8 +1,6 @@
 import axios from 'axios';
 import { AUTH_EXPIRED_EVENT, AUTH_FAILURE_MESSAGES } from '../auth/events';
-
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-const API_URL = `${BASE_URL.replace(/\/$/, '')}/api`;
+import { API_URL } from './baseUrl';
 
 export const client = axios.create({
     baseURL: API_URL,

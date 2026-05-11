@@ -17,8 +17,7 @@ class Config:
         
         self.CLOUD_WS_URL = os.environ.get(
             "PAPERDROP_WS_URL", 
-            "ws://192.168.86.21:3000/api/device/connect" 
-            # Defaulting to Mac LAN IP for local hardware verification
+            "wss://paperdrop-backend-99k2ag.64.225.69.211.sslip.io/api/device/connect"
         )
         self.FIRMWARE_VERSION = "1.0.0"
         

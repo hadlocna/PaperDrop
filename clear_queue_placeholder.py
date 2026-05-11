@@ -2,7 +2,7 @@ import requests
 import json
 
 # Configuration
-API_URL = "https://paperdrop-backend.onrender.com"
+API_URL = "https://paperdrop-backend-99k2ag.64.225.69.211.sslip.io"
 DEVICE_ID = "PD-780420ea" # Use the device code for now, but backend expects UUID? 
 # Wait, the clearQueue implementation expects deviceId in body.
 # And it uses prisma.message.deleteMany({ where: { deviceId: String(deviceId) } })

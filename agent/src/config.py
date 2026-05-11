@@ -17,7 +17,7 @@ class Config:
         
         self.CLOUD_WS_URL = os.environ.get(
             "PAPERDROP_WS_URL", 
-            "wss://paperdrop-backend.onrender.com/api/device/connect" 
+            "wss://paperdrop-backend-99k2ag.64.225.69.211.sslip.io/api/device/connect"
         )
         self.FIRMWARE_VERSION = "1.0.0"
         
