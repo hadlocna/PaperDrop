@@ -2,7 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import path from 'path';
 import { prisma } from '../lib/prisma';
-import { broadcastToDevice } from '../websocket/deviceHandler';
+import { broadcastToDevice, requestFromDevice } from '../websocket/deviceHandler';
 import { fetchRelayDeviceStatuses, relayIsOnline, relayLastActive, relayMessageToDevice } from '../lib/deviceRelay';
 
 // Configure multer for firmware uploads
@@ -172,6 +172,142 @@ router.post('/relay-message', async (req, res) => {
         res.status(sent ? 200 : 503).json({ sent });
     } catch (e) {
         console.error('Error relaying message:', e);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+const requestDeviceOrRelay = async (
+    deviceId: string,
+    payload: any,
+    timeoutMs = 20000
+) => {
+    try {
+        const response = await requestFromDevice(deviceId, payload, timeoutMs);
+        return {
+            status: 200,
+            body: { sent: true, relayed: false, response }
+        };
+    } catch (err: any) {
+        if (err?.message !== 'device_offline') {
+            return {
+                status: err?.message === 'device_timeout' ? 504 : 500,
+                body: { sent: false, error: err?.message || 'Device request failed' }
+            };
+        }
+
+        const relayed = await relayMessageToDevice(deviceId, payload);
+        if (relayed) {
+            return {
+                status: 202,
+                body: {
+                    sent: true,
+                    relayed: true,
+                    message: 'Command relayed; response is unavailable through the compatibility relay'
+                }
+            };
+        }
+
+        return {
+            status: 503,
+            body: { sent: false, error: 'Device offline' }
+        };
+    }
+};
+
+router.post('/devices/:id/diagnostics', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await requestDeviceOrRelay(id, { type: 'collect_diagnostics' }, 30000);
+        res.status(result.status).json(result.body);
+    } catch (e) {
+        console.error('Error requesting diagnostics:', e);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+router.post('/devices/:id/commands', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { command } = req.body;
+
+        const allowedCommands = new Set([
+            'agent_status',
+            'ble_status',
+            'disk_status',
+            'network_status',
+            'printer_status',
+            'wifi_status',
+            'restart_agent',
+            'restart_network',
+            'reboot'
+        ]);
+
+        if (!allowedCommands.has(command)) {
+            return res.status(400).json({ error: 'Unsupported command' });
+        }
+
+        const result = await requestDeviceOrRelay(id, {
+            type: 'run_command',
+            command
+        }, command === 'reboot' || command === 'restart_network' ? 5000 : 20000);
+        res.status(result.status).json(result.body);
+    } catch (e) {
+        console.error('Error running device command:', e);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+router.post('/devices/:id/config', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { cloudWsUrl, restart = true } = req.body;
+
+        if (!cloudWsUrl || typeof cloudWsUrl !== 'string') {
+            return res.status(400).json({ error: 'cloudWsUrl is required' });
+        }
+
+        const result = await requestDeviceOrRelay(id, {
+            type: 'set_config',
+            cloud_ws_url: cloudWsUrl,
+            restart
+        }, 10000);
+        res.status(result.status).json(result.body);
+    } catch (e) {
+        console.error('Error updating device config:', e);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+router.post('/devices/:id/test-print', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await requestDeviceOrRelay(id, { type: 'test_print' }, 20000);
+        res.status(result.status).json(result.body);
+    } catch (e) {
+        console.error('Error requesting test print:', e);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+router.post('/devices/:id/update', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { version, url, sha256, critical } = req.body;
+
+        if (!url && !version) {
+            return res.status(400).json({ error: 'version or url is required' });
+        }
+
+        const result = await requestDeviceOrRelay(id, {
+            type: 'update',
+            version,
+            url,
+            sha256,
+            critical: Boolean(critical)
+        }, 10000);
+        res.status(result.status).json(result.body);
+    } catch (e) {
+        console.error('Error requesting OTA update:', e);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });

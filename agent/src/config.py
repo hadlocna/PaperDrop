@@ -14,12 +14,15 @@ class Config:
         
         self.DEVICE_INFO_FILE = self.CONFIG_DIR / "device.json"
         self.WIFI_CREDENTIALS_FILE = self.CONFIG_DIR / "wifi.json"
+        self.DEVICE_CONFIG_FILE = self.CONFIG_DIR / "config.json"
+        self._runtime_config = self._load_runtime_config()
         
-        self.CLOUD_WS_URL = os.environ.get(
-            "PAPERDROP_WS_URL", 
-            "wss://api.paperdrop.me/api/device/connect"
+        self.CLOUD_WS_URL = (
+            os.environ.get("PAPERDROP_WS_URL")
+            or self._runtime_config.get("cloud_ws_url")
+            or "wss://api.paperdrop.me/api/device/connect"
         )
-        self.FIRMWARE_VERSION = "1.0.0"
+        self.FIRMWARE_VERSION = self._load_firmware_version()
         
         self._device_code = None
         self._device_secret = None
@@ -29,6 +32,42 @@ class Config:
         # Helper to ensure loaded
         if not self._device_code:
             self._load_device_info()
+
+    def _load_runtime_config(self) -> dict:
+        """Load mutable runtime config written by remote management commands."""
+        if not self.DEVICE_CONFIG_FILE.exists():
+            return {}
+
+        try:
+            data = json.loads(self.DEVICE_CONFIG_FILE.read_text())
+            return data if isinstance(data, dict) else {}
+        except Exception as e:
+            print(f"Error reading runtime config: {e}")
+            return {}
+
+    def save_runtime_config(self, updates: dict):
+        """Persist mutable runtime configuration."""
+        self._runtime_config.update(updates)
+        self.DEVICE_CONFIG_FILE.write_text(json.dumps(self._runtime_config, indent=2))
+        try:
+            os.chmod(self.DEVICE_CONFIG_FILE, 0o600)
+        except:
+            pass
+
+        if "cloud_ws_url" in updates and not os.environ.get("PAPERDROP_WS_URL"):
+            self.CLOUD_WS_URL = updates["cloud_ws_url"]
+
+    def _load_firmware_version(self) -> str:
+        version_file = self.CONFIG_DIR / "firmware-version"
+        try:
+            if version_file.exists():
+                version = version_file.read_text().strip()
+                if version:
+                    return version
+        except Exception as e:
+            print(f"Error reading firmware version: {e}")
+
+        return os.environ.get("PAPERDROP_FIRMWARE_VERSION", "1.0.0")
 
     def _load_device_info(self):
         """Load device code and secret from file"""

@@ -6,13 +6,13 @@ import { Server } from 'http';
 import crypto from 'crypto';
 import { deviceConnections, shellSessions } from './session';
 
-type PendingLogRequest = {
+type PendingDeviceRequest = {
     resolve: (payload: any) => void;
     reject: (error: Error) => void;
     timer: NodeJS.Timeout;
 };
 
-const pendingLogRequests = new Map<string, PendingLogRequest>();
+const pendingDeviceRequests = new Map<string, PendingDeviceRequest>();
 
 export const setupWebSocket = () => {
     // Use noServer: true to handle upgrade manually in server.ts
@@ -257,12 +257,23 @@ const handleDeviceMessage = async (deviceId: string, message: any) => {
             adminWs.send(JSON.stringify({ type: 'shell_output', deviceId: deviceId, data: message.data }));
         }
     }
-    else if (message.type === 'log_bundle' && message.request_id) {
-        const pending = pendingLogRequests.get(message.request_id);
+    else if (
+        ['log_bundle', 'diagnostics_result', 'command_result', 'test_print_result', 'config_updated', 'update_status'].includes(message.type) &&
+        message.request_id
+    ) {
+        const pending = pendingDeviceRequests.get(message.request_id);
         if (pending) {
             clearTimeout(pending.timer);
             pending.resolve(message);
-            pendingLogRequests.delete(message.request_id);
+            pendingDeviceRequests.delete(message.request_id);
+        }
+    }
+    else if (message.type === 'error' && message.request_id) {
+        const pending = pendingDeviceRequests.get(message.request_id);
+        if (pending) {
+            clearTimeout(pending.timer);
+            pending.reject(new Error(message.message || 'device_error'));
+            pendingDeviceRequests.delete(message.request_id);
         }
     }
     else if (message.type === 'test_connection') {
@@ -283,25 +294,36 @@ export const requestLogsFromDevice = async (
     deviceId: string,
     options: { type: string; lines: number }
 ) => {
-    const requestId = crypto.randomUUID();
+    return requestFromDevice(deviceId, {
+        type: 'fetch_logs',
+        log_type: options.type,
+        lines: options.lines
+    }, 15000);
+};
+
+export const requestFromDevice = async (
+    deviceId: string,
+    payload: any,
+    timeoutMs = 15000
+) => {
+    const requestId = payload.request_id || crypto.randomUUID();
+    const requestPayload = {
+        ...payload,
+        request_id: requestId
+    };
 
     return new Promise<any>((resolve, reject) => {
-        const success = broadcastToDevice(deviceId, {
-            type: 'fetch_logs',
-            request_id: requestId,
-            log_type: options.type,
-            lines: options.lines
-        });
+        const success = broadcastToDevice(deviceId, requestPayload);
 
         if (!success) {
             return reject(new Error('device_offline'));
         }
 
         const timer = setTimeout(() => {
-            pendingLogRequests.delete(requestId);
+            pendingDeviceRequests.delete(requestId);
             reject(new Error('device_timeout'));
-        }, 15000);
+        }, timeoutMs);
 
-        pendingLogRequests.set(requestId, { resolve, reject, timer });
+        pendingDeviceRequests.set(requestId, { resolve, reject, timer });
     });
 };

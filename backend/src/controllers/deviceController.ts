@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
-import { broadcastToDevice, requestLogsFromDevice } from '../websocket/deviceHandler';
+import { broadcastToDevice, requestFromDevice, requestLogsFromDevice } from '../websocket/deviceHandler';
 import crypto from 'crypto';
 import { AuthRequest } from '../middleware/authMiddleware';
 import { fetchRelayDeviceStatuses, relayIsOnline, relayLastActive, relayMessageToDevice } from '../lib/deviceRelay';
@@ -229,18 +229,34 @@ export const testPrint = async (req: AuthRequest, res: Response) => {
         });
         if (!access) return res.status(403).json({ error: 'Access denied' });
 
-        const requestId = crypto.randomUUID();
         const payload = {
-            type: 'test_print',
-            request_id: requestId
+            type: 'test_print'
         };
-        const success = broadcastToDevice(id, payload) || await relayMessageToDevice(id, payload);
 
-        if (success) {
-            res.json({ success: true, message: 'Test print sent' });
-        } else {
-            res.status(503).json({ error: 'Device offline' });
+        try {
+            const result = await requestFromDevice(id, payload, 20000);
+            if (result.ok === false) {
+                return res.status(500).json({ error: result.error || 'Test print failed' });
+            }
+            return res.json({ success: true, message: 'Test print completed' });
+        } catch (err: any) {
+            if (err?.message !== 'device_offline') {
+                if (err?.message === 'device_timeout') {
+                    return res.status(504).json({ error: 'Device did not confirm test print' });
+                }
+                throw err;
+            }
         }
+
+        const relayed = await relayMessageToDevice(id, payload);
+        if (relayed) {
+            return res.status(202).json({
+                success: true,
+                message: 'Test print relayed; confirmation is unavailable through the compatibility relay'
+            });
+        }
+
+        res.status(503).json({ error: 'Device offline' });
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Internal server error' });

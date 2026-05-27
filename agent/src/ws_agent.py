@@ -9,11 +9,16 @@ import subprocess
 import base64
 import tempfile
 import os
+from pathlib import Path
 from device_interface import get_printer_connection
 from PIL import Image
 import io
 import socket
 from PIL import UnidentifiedImageError
+try:
+    from remote_shell import RemoteShell
+except Exception:
+    RemoteShell = None
 
 # Logging setup
 LOG_FILE = '/var/log/paperdrop/agent.log'
@@ -41,6 +46,18 @@ logger = logging.getLogger('WSAgent')
 connection_failures = 0
 MAX_FAILURES_BEFORE_RESTART = 10
 MAX_FAILURES_BEFORE_REBOOT = 30
+MAX_DIAGNOSTIC_BYTES = 60000
+OTA_SCRIPT = Path('/opt/paperdrop/ota-update.sh')
+remote_shell = None
+
+SAFE_COMMANDS = {
+    'agent_status': ['systemctl', '--no-pager', '--full', 'status', 'paperdrop-ws-agent.service', 'paperdrop-agent.service'],
+    'ble_status': ['systemctl', '--no-pager', '--full', 'status', 'paperdrop-ble.service'],
+    'disk_status': ['df', '-h', '/', '/opt', '/var/log'],
+    'network_status': ['sh', '-c', 'ip addr; printf "\\n--- routes ---\\n"; ip route; printf "\\n--- nmcli ---\\n"; nmcli dev status || true'],
+    'printer_status': ['sh', '-c', 'lsusb || true; printf "\\n--- printer device files ---\\n"; ls -l /dev/usb /dev/bus/usb 2>/dev/null || true'],
+    'wifi_status': ['sh', '-c', 'nmcli -t -f DEVICE,TYPE,STATE,CONNECTION dev status || true; printf "\\n--- active wifi ---\\n"; nmcli -t -f ACTIVE,SSID,SIGNAL,SECURITY dev wifi || true'],
+}
 
 def get_health_metrics():
     """Get device health metrics like RSSI and IP."""
@@ -80,6 +97,54 @@ def get_health_metrics():
         logger.warning(f"Failed to get health metrics: {e}")
     return metrics
 
+def run_command(cmd, timeout=15):
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return {
+            'ok': result.returncode == 0,
+            'return_code': result.returncode,
+            'stdout': result.stdout[-MAX_DIAGNOSTIC_BYTES:],
+            'stderr': result.stderr[-MAX_DIAGNOSTIC_BYTES:]
+        }
+    except subprocess.TimeoutExpired as e:
+        return {
+            'ok': False,
+            'return_code': None,
+            'stdout': (e.stdout or '')[-MAX_DIAGNOSTIC_BYTES:] if isinstance(e.stdout, str) else '',
+            'stderr': 'Command timed out'
+        }
+    except Exception as e:
+        return {
+            'ok': False,
+            'return_code': None,
+            'stdout': '',
+            'stderr': str(e)
+        }
+
+def detect_agent_services():
+    services = [
+        'paperdrop-ws-agent.service',
+        'paperdrop-agent.service',
+        'paperdrop.service'
+    ]
+    found = []
+    for service in services:
+        result = subprocess.run(
+            ['systemctl', 'is-enabled', service],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 0:
+            found.append(service)
+    return found or services[:2]
+
+async def send_error(websocket, request_id, message):
+    await websocket.send(json.dumps({
+        'type': 'error',
+        'request_id': request_id,
+        'message': message
+    }))
+
 async def handle_fetch_logs(websocket, data):
     """Handle request to fetch logs from the device."""
     request_id = data.get('request_id')
@@ -113,6 +178,227 @@ async def handle_fetch_logs(websocket, data):
             'request_id': request_id,
             'message': f"Failed to fetch logs: {str(e)}"
         }))
+
+async def handle_test_print(websocket, data):
+    request_id = data.get('request_id')
+    logger.info("Processing test print request")
+
+    try:
+        p = get_printer_connection()
+        if not p:
+            raise Exception("Printer not connected")
+
+        p.set(align='center', font='b')
+        p.text("PaperDrop test print\n")
+        p.set(align='left', font='a')
+        p.text(f"Device: {config.device_code}\n")
+        p.text(f"Time: {time.strftime('%Y-%m-%d %H:%M:%S %Z')}\n\n")
+        p.cut()
+
+        await websocket.send(json.dumps({
+            'type': 'test_print_result',
+            'request_id': request_id,
+            'ok': True
+        }))
+    except Exception as e:
+        logger.error(f"Test print failed: {e}")
+        await websocket.send(json.dumps({
+            'type': 'test_print_result',
+            'request_id': request_id,
+            'ok': False,
+            'error': str(e)
+        }))
+    finally:
+        if 'p' in locals() and p:
+            try:
+                p.close()
+            except Exception as e:
+                logger.warning(f"Error closing printer after test print: {e}")
+
+async def handle_collect_diagnostics(websocket, data):
+    request_id = data.get('request_id')
+    logger.info("Collecting diagnostics")
+
+    sections = []
+    sections.append(("health_metrics", json.dumps(get_health_metrics(), indent=2)))
+
+    diagnostic_commands = {
+        'hostname': ['hostname'],
+        'kernel': ['uname', '-a'],
+        'uptime': ['uptime'],
+        'memory': ['free', '-h'],
+        'disk': ['df', '-h', '/', '/opt', '/var/log'],
+        'network': ['sh', '-c', 'ip addr; printf "\\n--- routes ---\\n"; ip route'],
+        'wifi': SAFE_COMMANDS['wifi_status'],
+        'usb': SAFE_COMMANDS['printer_status'],
+        'services': ['systemctl', '--no-pager', '--full', 'status', 'paperdrop-ws-agent.service', 'paperdrop-agent.service', 'paperdrop-ble.service'],
+        'agent_logs': ['sh', '-c', 'journalctl -u paperdrop-ws-agent.service -u paperdrop-agent.service -n 160 --no-pager 2>/dev/null || tail -n 160 /var/log/paperdrop/agent.log'],
+        'ble_logs': ['journalctl', '-u', 'paperdrop-ble.service', '-n', '80', '--no-pager']
+    }
+
+    for name, cmd in diagnostic_commands.items():
+        result = run_command(cmd, timeout=12)
+        body = result['stdout']
+        if result['stderr']:
+            body += f"\n[stderr]\n{result['stderr']}"
+        sections.append((name, body.strip()))
+
+    content = "\n\n".join(f"===== {name} =====\n{body}" for name, body in sections)
+    await websocket.send(json.dumps({
+        'type': 'diagnostics_result',
+        'request_id': request_id,
+        'content': content[-MAX_DIAGNOSTIC_BYTES:]
+    }))
+
+async def handle_run_command(websocket, data):
+    request_id = data.get('request_id')
+    command = data.get('command')
+    logger.info(f"Processing remote command request: {command}")
+
+    if command == 'restart_agent':
+        await websocket.send(json.dumps({
+            'type': 'command_result',
+            'request_id': request_id,
+            'command': command,
+            'ok': True,
+            'stdout': 'Agent restart scheduled',
+            'stderr': ''
+        }))
+        asyncio.get_running_loop().call_later(1.0, lambda: os._exit(0))
+        return
+
+    if command == 'restart_network':
+        result = run_command(['systemctl', 'restart', 'NetworkManager'], timeout=20)
+    elif command == 'reboot':
+        await websocket.send(json.dumps({
+            'type': 'command_result',
+            'request_id': request_id,
+            'command': command,
+            'ok': True,
+            'stdout': 'Reboot scheduled',
+            'stderr': ''
+        }))
+        subprocess.Popen(['reboot'], start_new_session=True)
+        return
+    elif command in SAFE_COMMANDS:
+        result = run_command(SAFE_COMMANDS[command], timeout=20)
+    else:
+        result = {
+            'ok': False,
+            'return_code': None,
+            'stdout': '',
+            'stderr': f"Unsupported command: {command}"
+        }
+
+    await websocket.send(json.dumps({
+        'type': 'command_result',
+        'request_id': request_id,
+        'command': command,
+        **result
+    }))
+
+async def handle_set_config(websocket, data):
+    request_id = data.get('request_id')
+    cloud_ws_url = data.get('cloud_ws_url')
+    restart = data.get('restart', True)
+
+    if cloud_ws_url:
+        if not isinstance(cloud_ws_url, str) or not cloud_ws_url.startswith(('wss://', 'ws://')):
+            await send_error(websocket, request_id, 'cloud_ws_url must start with ws:// or wss://')
+            return
+        config.save_runtime_config({'cloud_ws_url': cloud_ws_url})
+
+    await websocket.send(json.dumps({
+        'type': 'config_updated',
+        'request_id': request_id,
+        'cloud_ws_url': config.cloud_ws_url,
+        'restart': restart
+    }))
+
+    if restart:
+        asyncio.get_running_loop().call_later(1.0, lambda: os._exit(0))
+
+async def handle_update(websocket, data):
+    request_id = data.get('request_id')
+    version = str(data.get('version') or '')
+    url = str(data.get('url') or '')
+    checksum = str(data.get('sha256') or data.get('checksum') or '')
+
+    if url and not url.startswith(('https://', 'http://')):
+        await send_error(websocket, request_id, 'Update URL must be http:// or https://')
+        return
+
+    script = OTA_SCRIPT if OTA_SCRIPT.exists() else Path(__file__).with_name('ota-update.sh')
+    if not script.exists():
+        await send_error(websocket, request_id, f'OTA script not found at {OTA_SCRIPT}')
+        return
+
+    await websocket.send(json.dumps({
+        'type': 'update_status',
+        'request_id': request_id,
+        'status': 'accepted',
+        'version': version
+    }))
+
+    log_path = '/var/log/paperdrop/ota.log'
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    with open(log_path, 'a') as log_file:
+        subprocess.Popen(
+            [str(script), url, version, checksum],
+            stdout=log_file,
+            stderr=log_file,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True
+        )
+
+    logger.info(f"OTA update started for version {version or 'latest'}")
+
+async def handle_start_shell(websocket, data):
+    global remote_shell
+
+    if RemoteShell is None:
+        await websocket.send(json.dumps({
+            'type': 'shell_output',
+            'data': 'Remote shell support is not installed on this device.\n'
+        }))
+        return
+
+    async def send_output(output):
+        await websocket.send(json.dumps({
+            'type': 'shell_output',
+            'data': output
+        }))
+
+    if remote_shell:
+        remote_shell.stop()
+
+    remote_shell = RemoteShell(send_output)
+    payload = data.get('payload') or {}
+    cols = int(data.get('cols') or payload.get('cols') or 80)
+    rows = int(data.get('rows') or payload.get('rows') or 24)
+    remote_shell.start(cols=cols, rows=rows)
+    await websocket.send(json.dumps({
+        'type': 'shell_output',
+        'data': f'PaperDrop remote shell started on {config.device_code}\\n'
+    }))
+
+async def handle_shell_input(data):
+    if remote_shell:
+        remote_shell.write(str(data.get('data') or ''))
+
+async def handle_resize_shell(data):
+    if remote_shell:
+        payload = data.get('payload') or {}
+        cols = int(data.get('cols') or payload.get('cols') or 80)
+        rows = int(data.get('rows') or payload.get('rows') or 24)
+        remote_shell.resize(cols, rows)
+
+async def handle_stop_shell():
+    global remote_shell
+
+    if remote_shell:
+        remote_shell.stop()
+        remote_shell = None
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -318,8 +604,26 @@ async def connect_to_backend():
                                     await websocket.send(json.dumps({'type': 'pong'}))
                                 elif data.get('type') == 'new_message':
                                     await handle_print_job(websocket, data)
+                                elif data.get('type') == 'test_print':
+                                    await handle_test_print(websocket, data)
                                 elif data.get('type') == 'fetch_logs':
                                     await handle_fetch_logs(websocket, data)
+                                elif data.get('type') == 'collect_diagnostics':
+                                    await handle_collect_diagnostics(websocket, data)
+                                elif data.get('type') == 'run_command':
+                                    await handle_run_command(websocket, data)
+                                elif data.get('type') == 'set_config':
+                                    await handle_set_config(websocket, data)
+                                elif data.get('type') == 'update':
+                                    await handle_update(websocket, data)
+                                elif data.get('type') == 'start_shell':
+                                    await handle_start_shell(websocket, data)
+                                elif data.get('type') == 'shell_input':
+                                    await handle_shell_input(data)
+                                elif data.get('type') == 'resize_shell':
+                                    await handle_resize_shell(data)
+                                elif data.get('type') == 'stop_shell':
+                                    await handle_stop_shell()
                                 elif data.get('type') == 'error':
                                     logger.error(f"Backend error: {data.get('message')}")
                                 elif data.get('type') == 'test_connection':
@@ -337,6 +641,8 @@ async def connect_to_backend():
                         logger.warning(f"Connection closed in listener: Code={e.code}, Reason={e.reason}")
                     except Exception as e:
                         logger.error(f"Error in listener: {e}")
+                    finally:
+                        await handle_stop_shell()
 
                 # Start heartbeat loop
                 async def heartbeat():
