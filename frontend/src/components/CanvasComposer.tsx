@@ -19,6 +19,7 @@ import {
     QrCode
 } from 'lucide-react';
 import { client as api } from '../api/client';
+import { DITHER_STYLES, DitherStyle, processImageForPrint } from '../utils/dithering';
 
 
 interface CanvasElement {
@@ -31,6 +32,8 @@ interface CanvasElement {
     rotation?: number;
     fontSize?: number;
     fontFamily?: string;
+    originalContent?: string; // untouched source image, so filters can be swapped
+    filter?: DitherStyle;
 }
 
 interface CanvasComposerProps {
@@ -68,6 +71,11 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
     const [drawingSize, setDrawingSize] = useState(6);
     const [lastPoint, setLastPoint] = useState<{ x: number; y: number } | null>(null);
     const drawingColor = '#000000';
+    const [isFilterProcessing, setIsFilterProcessing] = useState(false);
+
+    // Mirror of elements for async handlers (filter processing, resize end)
+    const elementsRef = useRef<CanvasElement[]>(elements);
+    elementsRef.current = elements;
 
 
     const selectedElement = elements.find(el => el.id === selectedId);
@@ -192,16 +200,20 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
         if (file) {
             const reader = new FileReader();
             reader.onloadend = () => {
+                const source = reader.result as string;
                 const newElement: CanvasElement = {
                     id: crypto.randomUUID(),
                     type: 'image',
-                    content: reader.result as string,
+                    content: source,
+                    originalContent: source,
                     x: 50,
                     y: 50,
                     width: 200, // Default width
                     rotation: 0
                 };
-                setElements([...elements, newElement]);
+                setElements(prev => [...prev, newElement]);
+                // Photos look far better dithered than hard-thresholded
+                applyFilterTo(newElement, 'photo');
             };
             reader.readAsDataURL(file);
         }
@@ -212,9 +224,46 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
         if (selectedId === id) setSelectedId(null);
     };
 
-    // Unified Update
+    // Unified Update (functional so async filter handlers never clobber fresh state)
     const updateElement = (id: string, updates: Partial<CanvasElement>) => {
-        setElements(elements.map(el => el.id === id ? { ...el, ...updates } : el));
+        setElements(prev => prev.map(el => el.id === id ? { ...el, ...updates } : el));
+    };
+
+    // Re-renders the original image at print resolution with the chosen dither style.
+    // Dithered pixels are pure black/white, so the final threshold pass leaves them intact.
+    const applyFilterTo = async (el: CanvasElement, style: DitherStyle) => {
+        if (el.type !== 'image') return;
+
+        const original = el.originalContent || el.content;
+        if (style === 'none') {
+            updateElement(el.id, { content: original, originalContent: original, filter: 'none' });
+            return;
+        }
+
+        setIsFilterProcessing(true);
+        try {
+            const targetWidth = Math.round(el.width || 200);
+            const processed = await processImageForPrint(original, targetWidth, style);
+            updateElement(el.id, { content: processed, originalContent: original, filter: style });
+        } catch (error) {
+            console.error('Filter failed:', error);
+        } finally {
+            setIsFilterProcessing(false);
+        }
+    };
+
+    const applyFilter = (id: string, style: DitherStyle) => {
+        const el = elementsRef.current.find(e => e.id === id);
+        if (el) applyFilterTo(el, style);
+    };
+
+    // After a resize, dithered images must be re-rendered at the new width,
+    // otherwise the browser rescales the dot pattern and it prints muddy.
+    const handleResizeEnd = (id: string) => {
+        const el = elementsRef.current.find(e => e.id === id);
+        if (el?.type === 'image' && el.filter && el.filter !== 'none') {
+            applyFilter(id, el.filter);
+        }
     };
 
     const generateImage = async (): Promise<string> => {
@@ -668,7 +717,37 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                 <div className="flex gap-0.5 sm:gap-2 items-center flex-shrink-0">
                     {/* Design Tools OR Context Tools */}
                     {!previewImage && (
-                        selectedElement && selectedElement.type === 'text' ? (
+                        selectedElement && selectedElement.type === 'image' ? (
+                            <div className="flex items-center gap-1.5 sm:gap-2 animate-in fade-in slide-in-from-left-2">
+                                <button
+                                    onClick={() => setSelectedId(null)}
+                                    className="mr-1 text-gray-400 hover:text-gray-600"
+                                >
+                                    <XIcon size={20} />
+                                </button>
+
+                                {/* Print Style (Dither) Picker */}
+                                <div className="flex items-center bg-gray-100 rounded-lg p-1 gap-0.5">
+                                    {DITHER_STYLES.map(style => (
+                                        <button
+                                            key={style.id}
+                                            onClick={() => applyFilter(selectedElement.id, style.id)}
+                                            disabled={isFilterProcessing}
+                                            className={`px-2 sm:px-3 py-1 rounded-md text-xs font-bold whitespace-nowrap transition active:scale-95 disabled:opacity-60 ${(selectedElement.filter || 'none') === style.id
+                                                ? 'bg-charcoal-500 text-white shadow-sm'
+                                                : 'text-charcoal-500 hover:bg-white'
+                                                }`}
+                                        >
+                                            {style.label}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {isFilterProcessing && (
+                                    <Loader2 size={16} className="animate-spin text-charcoal-500" />
+                                )}
+                            </div>
+                        ) : selectedElement && selectedElement.type === 'text' ? (
                             <div className="flex items-center gap-2 sm:gap-4 animate-in fade-in slide-in-from-left-2">
                                 {/* Font Context Menu */}
                                 <button
@@ -861,6 +940,7 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                                         onSelect={() => setSelectedId(el.id)}
                                         onRemove={() => removeElement(el.id)}
                                         onUpdate={(vals) => updateElement(el.id, vals)}
+                                        onResizeEnd={() => handleResizeEnd(el.id)}
                                         canvasWidth={logicalWidth}
                                         canvasHeight={canvasHeight}
                                     />
@@ -901,6 +981,7 @@ function DraggableElement({
     element,
     onRemove,
     onUpdate,
+    onResizeEnd,
     isSelected,
     onSelect,
     canvasWidth,
@@ -909,6 +990,7 @@ function DraggableElement({
     element: CanvasElement,
     onRemove: () => void,
     onUpdate: (vals: Partial<CanvasElement>) => void,
+    onResizeEnd: () => void,
     isSelected: boolean,
     onSelect: () => void,
     canvasWidth: number,
@@ -977,6 +1059,7 @@ function DraggableElement({
             document.removeEventListener('mouseup', onEnd);
             document.removeEventListener('touchmove', onMove);
             document.removeEventListener('touchend', onEnd);
+            onResizeEnd();
         };
 
         document.addEventListener('mousemove', onMove);
@@ -1055,7 +1138,10 @@ function DraggableElement({
                     }
                 }}
                 onTouchEnd={() => {
-                    touchDist.current = null;
+                    if (touchDist.current !== null) {
+                        touchDist.current = null;
+                        onResizeEnd();
+                    }
                 }}
             >
                 {/* Visual Wrapper with Rotation */
