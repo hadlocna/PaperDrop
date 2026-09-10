@@ -56,6 +56,31 @@ class SpeakerTests(unittest.TestCase):
                 manager.microphone_test()
         run.assert_not_called()
 
+    def test_music_playback_disconnects_hands_free_before_a2dp(self):
+        manager = speakers.Speakers.__new__(speakers.Speakers)
+        manager.properties = Mock(return_value={'UUIDs': [speakers.HANDS_FREE, speakers.AUDIO_SINK]})
+        manager.dbus = Mock()
+        interface = manager.dbus.Interface.return_value
+        manager.prepare_playback(object())
+        self.assertEqual([call[0] for call in interface.method_calls], ['DisconnectProfile', 'ConnectProfile'])
+        interface.DisconnectProfile.assert_called_once_with(speakers.HANDS_FREE, timeout=5)
+        interface.ConnectProfile.assert_called_once_with(speakers.AUDIO_SINK, timeout=12)
+
+    def test_pairable_setting_restored_if_pairing_times_out(self):
+        manager = speakers.Speakers.__new__(speakers.Speakers)
+        manager.status = Mock(return_value={'audioReady': True})
+        manager.target = Mock()
+        manager.adapter = Mock()
+        manager.properties = Mock(return_value={'Paired': False})
+        manager.dbus = Mock()
+        adapter_props = manager.dbus.Interface.return_value
+        adapter_props.Get.return_value = False
+        manager.dbus.Boolean.side_effect = bool
+        with patch.object(speakers.subprocess, 'run', side_effect=TimeoutError):
+            with self.assertRaises(TimeoutError):
+                manager.connect('AA:BB:CC:DD:EE:FF')
+        self.assertEqual(adapter_props.Set.call_args_list[-1].args, (speakers.ADAPTER, 'Pairable', False))
+
 
 if __name__ == '__main__':
     unittest.main()

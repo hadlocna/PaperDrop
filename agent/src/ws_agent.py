@@ -634,7 +634,7 @@ async def connect_to_backend():
     while True:
         try:
             logger.info(f"Connecting to WebSocket: {base_ws_url}?deviceCode={encoded_code}&deviceSecret=<redacted>")
-            async with websockets.connect(ws_url) as websocket:
+            async with websockets.connect(ws_url, max_size=16 * 1024 * 1024) as websocket:
                 logger.info("Handshake successful! Connected to backend.")
                 connection_failures = 0 # Reset failures on success
                 
@@ -642,9 +642,11 @@ async def connect_to_backend():
                 async def listen():
                     try:
                         async for message in websocket:
-                            logger.info(f"Received from backend: {message}")
                             try:
                                 data = json.loads(message)
+                                logger.info("Received from backend: type=%s request=%s message=%s",
+                                            data.get('type'), data.get('request_id'),
+                                            (data.get('message') or {}).get('id') if isinstance(data.get('message'), dict) else None)
                                 if data.get('type') == 'ping':
                                     await websocket.send(json.dumps({'type': 'pong'}))
                                 elif data.get('type') == 'new_message':

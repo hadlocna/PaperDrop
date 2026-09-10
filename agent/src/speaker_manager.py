@@ -126,15 +126,23 @@ class Speakers:
             raise RuntimeError('Speaker audio support is not installed yet. Update this PaperDrop first.')
         obj = self.target(address)
         props = self.properties(obj)
-        if not props.get('Paired'):
+        if not props.get('Bonded', props.get('Paired')):
             # Register a temporary outgoing-pairing agent; never enable general discoverability.
-            result = subprocess.run(['bluetoothctl', '--agent', 'NoInputNoOutput', '--timeout', '25', 'pair', address],
-                                    capture_output=True, text=True, timeout=30)
-            if not self.properties(obj).get('Paired'):
+            adapter_props = self.dbus.Interface(self.adapter(), PROPS)
+            was_pairable = adapter_props.Get(ADAPTER, 'Pairable')
+            adapter_props.Set(ADAPTER, 'Pairable', self.dbus.Boolean(True))
+            try:
+                subprocess.run(['bluetoothctl', '--agent', 'NoInputNoOutput', '--timeout', '25', 'pair', address],
+                               capture_output=True, text=True, timeout=30)
+            finally:
+                adapter_props.Set(ADAPTER, 'Pairable', was_pairable)
+            props = self.properties(obj)
+            if not props.get('Bonded', props.get('Paired')):
                 raise RuntimeError('Pairing failed. Put the speaker in pairing mode, disconnect it from other devices, and try again.')
         self.dbus.Interface(obj, PROPS).Set(DEVICE, 'Trusted', self.dbus.Boolean(True))
         if not self.properties(obj).get('Connected'):
             self.dbus.Interface(obj, DEVICE).ConnectProfile(AUDIO_SINK, timeout=15)
+        self.prepare_playback(obj)
         if not self.properties(obj).get('Connected'):
             raise RuntimeError('Speaker did not connect. Check its power and pairing mode.')
         old = load_settings().get('address')
@@ -164,22 +172,46 @@ class Speakers:
                 self.dbus.Interface(obj, DEVICE).ConnectProfile(AUDIO_SINK, timeout=12)
         return {'ok': True}
 
+    def prepare_playback(self, obj):
+        # Hands-free mode can mute music on combination speakerphones.
+        interface = self.dbus.Interface(obj, DEVICE)
+        uuids = {str(u).lower() for u in self.properties(obj).get('UUIDs', [])}
+        for profile in (HANDS_FREE, HEADSET):
+            if profile in uuids:
+                try:
+                    interface.DisconnectProfile(profile, timeout=5)
+                except self.dbus.exceptions.DBusException as error:
+                    if error.get_dbus_name() not in ('org.bluez.Error.NotConnected', 'org.bluez.Error.DoesNotExist'):
+                        raise
+        try:
+            interface.ConnectProfile(AUDIO_SINK, timeout=12)
+        except self.dbus.exceptions.DBusException as error:
+            if error.get_dbus_name() != 'org.bluez.Error.AlreadyConnected':
+                raise
+
     def test(self):
         address = validate_address(load_settings().get('address'))
         obj = self.target(address)
         if not self.properties(obj).get('Connected'):
             raise RuntimeError('Connect your selected speaker before playing a test sound.')
-        # Two short, quiet notes, with fades to avoid clicks. No microphone or remote media.
+        self.prepare_playback(obj)
+        # A soft, bouncing marimba flourish, with time for Bluetooth to wake up.
         with tempfile.TemporaryDirectory(prefix='paperdrop-chime-') as directory:
             filename = str(Path(directory) / 'chime.wav')
             with wave.open(filename, 'wb') as output:
                 output.setparams((2, 2, 44100, 0, 'NONE', 'not compressed'))
                 frames = bytearray()
-                for i in range(44100):
+                notes = [(0.65, 523.25), (0.88, 659.25), (1.11, 783.99), (1.46, 1046.5)]
+                for i in range(int(3.0 * 44100)):
                     t = i / 44100
-                    local = t % 0.5
-                    envelope = min(local / 0.02, max(0, (0.4 - local) / 0.06), 1)
-                    sample = int(3000 * envelope * math.sin(2 * math.pi * (660 if t < 0.5 else 880) * t))
+                    value = 0.0
+                    for onset, frequency in notes:
+                        age = t - onset
+                        if 0 <= age < 0.85:
+                            envelope = min(age / 0.008, 1) * math.exp(-6 * age)
+                            value += envelope * (math.sin(2 * math.pi * frequency * age)
+                                                 + 0.22 * math.sin(2 * math.pi * frequency * 3 * age))
+                    sample = int(4500 * value)
                     frames.extend(struct.pack('<hh', sample, sample))
                 output.writeframes(frames)
             result = subprocess.run(['aplay', '-q', '-D', f'bluealsa:DEV={address},PROFILE=a2dp', filename],
@@ -195,24 +227,33 @@ class Speakers:
         profile = HANDS_FREE if HANDS_FREE in uuids else HEADSET if HEADSET in uuids else None
         if not profile:
             raise RuntimeError('This speaker does not expose a Bluetooth microphone. A microphone-capable headset or speaker is needed.')
-        self.dbus.Interface(obj, DEVICE).ConnectProfile(profile, timeout=12)
-        # Explicit user action only: five seconds, local playback, then delete.
-        with tempfile.TemporaryDirectory(prefix='paperdrop-mic-') as directory:
-            filename = str(Path(directory) / 'microphone.wav')
-            pcm = f'bluealsa:DEV={address},PROFILE=sco'
-            result = subprocess.run(['arecord', '-q', '-D', pcm, '-f', 'S16_LE', '-r', '8000', '-c', '1',
-                                     '-d', '5', filename], capture_output=True, text=True, timeout=12)
-            if result.returncode:
-                raise RuntimeError('The Bluetooth microphone could not record. Reconnect the speaker and try again.')
-            result = subprocess.run(['aplay', '-q', '-D', pcm, filename], capture_output=True, text=True, timeout=12)
-            if result.returncode:
-                raise RuntimeError('Microphone recorded, but playback failed. Reconnect the speaker and try again.')
+        try:
+            self.dbus.Interface(obj, DEVICE).ConnectProfile(profile, timeout=12)
+        except self.dbus.exceptions.DBusException as error:
+            if error.get_dbus_name() != 'org.bluez.Error.AlreadyConnected':
+                raise
+        try:
+            # Explicit user action only: five seconds, local playback, then delete.
+            with tempfile.TemporaryDirectory(prefix='paperdrop-mic-') as directory:
+                filename = str(Path(directory) / 'microphone.wav')
+                pcm = f'bluealsa:DEV={address},PROFILE=sco'
+                result = subprocess.run(['arecord', '-q', '-D', pcm, '-f', 'S16_LE', '-r', '8000', '-c', '1',
+                                         '-d', '5', filename], capture_output=True, text=True, timeout=12)
+                if result.returncode:
+                    raise RuntimeError('The Bluetooth microphone could not record. Reconnect the speaker and try again.')
+                result = subprocess.run(['aplay', '-q', '-D', pcm, filename], capture_output=True, text=True, timeout=12)
+                if result.returncode:
+                    raise RuntimeError('Microphone recorded, but playback failed. Reconnect the speaker and try again.')
+        finally:
+            self.prepare_playback(obj)
         return {**self.status(), 'message': 'Microphone test finished. The recording was played locally and deleted.'}
 
     def play(self):
         address = validate_address(load_settings().get('address'))
-        if not self.properties(self.target(address)).get('Connected'):
+        obj = self.target(address)
+        if not self.properties(obj).get('Connected'):
             raise RuntimeError('Connect the selected speaker first.')
+        self.prepare_playback(obj)
         encoded = sys.stdin.read(2000001)
         if len(encoded) > 2000000:
             raise ValueError('Audio clip is too large.')
