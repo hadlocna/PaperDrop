@@ -83,7 +83,28 @@ fi
 SERVICE="$(detect_service)"
 BACKUP_DIR="/opt/paperdrop-backup-$(date +%Y%m%d%H%M%S)"
 WORK_DIR="$(mktemp -d)"
-trap 'rm -rf "$WORK_DIR"' EXIT
+
+rollback() {
+    local line="${1:-unknown}"
+    trap - ERR
+    log "ERROR: OTA update failed near line $line"
+    if [ -d "${BACKUP_DIR:-}" ]; then
+        log "Restoring backup from $BACKUP_DIR"
+        rm -rf "$INSTALL_DIR"
+        cp -a "$BACKUP_DIR" "$INSTALL_DIR"
+    fi
+    if [ -n "${SERVICE:-}" ]; then
+        systemctl daemon-reload || true
+        systemctl restart "$SERVICE" || true
+    fi
+}
+
+cleanup() {
+    rm -rf "$WORK_DIR"
+}
+
+trap cleanup EXIT
+trap 'rollback "$LINENO"' ERR
 
 log "Using service: $SERVICE"
 log "Creating backup at $BACKUP_DIR"
@@ -129,10 +150,20 @@ fi
 
 chmod +x "$INSTALL_DIR/ota-update.sh" 2>/dev/null || true
 chmod +x "$INSTALL_DIR/"*.sh 2>/dev/null || true
+mkdir -p "$INSTALL_DIR/scripts"
+if [ -f "$INSTALL_DIR/ota-update.sh" ]; then
+    cp -a "$INSTALL_DIR/ota-update.sh" "$INSTALL_DIR/scripts/ota-update.sh"
+    chmod +x "$INSTALL_DIR/scripts/ota-update.sh" 2>/dev/null || true
+fi
 
 if [ -f "$INSTALL_DIR/requirements.txt" ] && [ -x "$INSTALL_DIR/venv/bin/pip" ]; then
     log "Updating Python dependencies"
     "$INSTALL_DIR/venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt" || log "WARNING: dependency update failed"
+fi
+
+if [ -f "$INSTALL_DIR/setup-audio.sh" ]; then
+    log "Setting up Bluetooth audio support"
+    bash "$INSTALL_DIR/setup-audio.sh"
 fi
 
 if [ -n "$VERSION" ] && [ "$VERSION" != "latest" ]; then
@@ -145,4 +176,5 @@ systemctl restart "$SERVICE"
 
 ls -dt /opt/paperdrop-backup-* 2>/dev/null | tail -n +4 | xargs rm -rf 2>/dev/null || true
 
+trap - ERR
 log "OTA update completed successfully"

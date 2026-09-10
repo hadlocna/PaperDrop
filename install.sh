@@ -118,6 +118,7 @@ EOF
 
 # Reload and Start
 systemctl daemon-reload
+bash /opt/paperdrop/setup-audio.sh
 systemctl enable paperdrop-ble.service
 systemctl enable paperdrop-agent.service
 

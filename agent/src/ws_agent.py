@@ -5,10 +5,13 @@ import logging
 from logging.handlers import RotatingFileHandler
 import time
 from config import config
+from speaker_control import dispatch_speaker, reconnect_speaker
 import subprocess
 import base64
 import tempfile
 import os
+import shlex
+import shutil
 from pathlib import Path
 from device_interface import get_printer_connection
 from PIL import Image
@@ -47,7 +50,11 @@ connection_failures = 0
 MAX_FAILURES_BEFORE_RESTART = 10
 MAX_FAILURES_BEFORE_REBOOT = 30
 MAX_DIAGNOSTIC_BYTES = 60000
-OTA_SCRIPT = Path('/opt/paperdrop/ota-update.sh')
+OTA_SCRIPT_CANDIDATES = [
+    Path('/opt/paperdrop/ota-update.sh'),
+    Path('/opt/paperdrop/scripts/ota-update.sh'),
+    Path(__file__).with_name('ota-update.sh'),
+]
 remote_shell = None
 
 SAFE_COMMANDS = {
@@ -137,6 +144,48 @@ def detect_agent_services():
         if result.returncode == 0:
             found.append(service)
     return found or services[:2]
+
+def resolve_ota_script():
+    for script in OTA_SCRIPT_CANDIDATES:
+        if script.exists():
+            return script
+    return None
+
+def start_ota_process(script, url, version, checksum, log_path):
+    cmd = [str(script), url, version, checksum]
+    systemd_run = shutil.which('systemd-run')
+
+    if systemd_run:
+        unit = f"paperdrop-ota-{int(time.time())}"
+        shell_cmd = ' '.join(shlex.quote(part) for part in cmd)
+        shell_cmd = f"{shell_cmd} >> {shlex.quote(log_path)} 2>&1"
+        result = subprocess.run(
+            [
+                systemd_run,
+                '--unit', unit,
+                '--description', 'PaperDrop OTA Update',
+                '--collect',
+                '--property', 'Type=exec',
+                '/bin/bash',
+                '-lc',
+                shell_cmd
+            ],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 0:
+            return f"systemd:{unit}"
+        logger.warning(f"systemd-run failed, falling back to detached process: {result.stderr.strip()}")
+
+    with open(log_path, 'a') as log_file:
+        subprocess.Popen(
+            cmd,
+            stdout=log_file,
+            stderr=log_file,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True
+        )
+    return 'popen'
 
 async def send_error(websocket, request_id, message):
     await websocket.send(json.dumps({
@@ -329,9 +378,10 @@ async def handle_update(websocket, data):
         await send_error(websocket, request_id, 'Update URL must be http:// or https://')
         return
 
-    script = OTA_SCRIPT if OTA_SCRIPT.exists() else Path(__file__).with_name('ota-update.sh')
-    if not script.exists():
-        await send_error(websocket, request_id, f'OTA script not found at {OTA_SCRIPT}')
+    script = resolve_ota_script()
+    if not script:
+        candidates = ', '.join(str(path) for path in OTA_SCRIPT_CANDIDATES)
+        await send_error(websocket, request_id, f'OTA script not found. Checked: {candidates}')
         return
 
     await websocket.send(json.dumps({
@@ -343,16 +393,9 @@ async def handle_update(websocket, data):
 
     log_path = '/var/log/paperdrop/ota.log'
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
-    with open(log_path, 'a') as log_file:
-        subprocess.Popen(
-            [str(script), url, version, checksum],
-            stdout=log_file,
-            stderr=log_file,
-            stdin=subprocess.DEVNULL,
-            start_new_session=True
-        )
+    runner = start_ota_process(script, url, version, checksum, log_path)
 
-    logger.info(f"OTA update started for version {version or 'latest'}")
+    logger.info(f"OTA update started for version {version or 'latest'} via {runner}")
 
 async def handle_start_shell(websocket, data):
     global remote_shell
@@ -586,10 +629,11 @@ async def connect_to_backend():
 
     logger.info(f"Starting WebSocket agent for device: {device_code}")
     logger.info(f"Connecting to: {base_ws_url}")
+    speaker_reconnect_task = asyncio.create_task(reconnect_speaker())
     
     while True:
         try:
-            logger.info(f"Connecting to WebSocket: {ws_url}")
+            logger.info(f"Connecting to WebSocket: {base_ws_url}?deviceCode={encoded_code}&deviceSecret=<redacted>")
             async with websockets.connect(ws_url) as websocket:
                 logger.info("Handshake successful! Connected to backend.")
                 connection_failures = 0 # Reset failures on success
@@ -607,6 +651,8 @@ async def connect_to_backend():
                                     await handle_print_job(websocket, data)
                                 elif data.get('type') == 'test_print':
                                     await handle_test_print(websocket, data)
+                                elif data.get('type') == 'speaker':
+                                    dispatch_speaker(websocket, data)
                                 elif data.get('type') == 'fetch_logs':
                                     await handle_fetch_logs(websocket, data)
                                 elif data.get('type') == 'collect_diagnostics':
@@ -681,6 +727,9 @@ async def connect_to_backend():
                 
                 for task in pending:
                     task.cancel()
+
+                logger.info("WebSocket session ended; reconnecting after backoff")
+                await asyncio.sleep(5)
                         
         except Exception as e:
             connection_failures += 1

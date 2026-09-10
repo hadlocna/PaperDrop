@@ -4,6 +4,7 @@ import { Layout } from '../components/Layout';
 import { CanvasComposer } from '../components/CanvasComposer';
 import { ActivityFeed } from '../components/ActivityFeed';
 import { BleProvisioningModal } from '../components/BleProvisioningModal';
+import { SpeakerSettings } from '../components/SpeakerSettings';
 import { useAuth } from '../context/AuthContext';
 import { X, Activity, Printer, Bluetooth, Settings, Trash2, RefreshCw, Download, Share2, Copy, Check, MessageSquare, Rocket } from 'lucide-react';
 import { client as api, updateDevice, unclaimDevice, clearMessageQueue, createInviteLink, downloadDeviceLogs } from '../api/client';
@@ -253,6 +254,8 @@ function DeviceSettingsModal({ deviceId, onClose, onUpdate }: { deviceId: string
                             </p>
                         )}
                     </section>
+
+                    {device.ownerId === user?.id && <SpeakerSettings deviceId={deviceId} />}
 
                     {/* Invites */}
                     <section>

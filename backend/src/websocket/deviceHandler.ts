@@ -258,7 +258,7 @@ const handleDeviceMessage = async (deviceId: string, message: any) => {
         }
     }
     else if (
-        ['log_bundle', 'diagnostics_result', 'command_result', 'test_print_result', 'config_updated', 'update_status'].includes(message.type) &&
+        ['log_bundle', 'diagnostics_result', 'command_result', 'test_print_result', 'config_updated', 'update_status', 'speaker_result'].includes(message.type) &&
         message.request_id
     ) {
         const pending = pendingDeviceRequests.get(message.request_id);
