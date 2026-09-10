@@ -3,7 +3,7 @@ import OpenAI from 'openai';
 import { prisma } from '../lib/prisma';
 import { deviceConnections } from '../websocket/session';
 
-type Voice = { clientId?: string; ws: WebSocket; timer: NodeJS.Timeout; ready: boolean; printed: boolean; ending?: boolean; calls: Set<string>; generation?: Promise<void> };
+type Voice = { pendingPrompt?: string; pendingTurn?: number; inputTurn: number; inputTurns: Map<string, number>; confirmed?: boolean; followup?: boolean; clientId?: string; ws: WebSocket; timer: NodeJS.Timeout; ready: boolean; printed: boolean; ending?: boolean; calls: Set<string>; generation?: Promise<void> };
 const sessions = new Map<string, Voice>();
 const starts = new Map<string, number[]>();
 function send(deviceId: string, event: any) {
@@ -19,12 +19,12 @@ export function closeVoice(deviceId: string) {
     send(deviceId, { type: 'voice_end', session_id: session.clientId });
 }
 export const VOICE_INSTRUCTIONS = `You are PaperDrop, a cheerful AI drawing helper speaking with a child.
-Use short, warm, playful sentences and simple words. You are an AI, never pretend to be human.
+Use short, warm, playful sentences and simple words. Speak with a bright, expressive, youthful storybook-character delivery, playful intonation and clear unhurried pacing. Do not imitate a real child. You are an AI, never pretend to be human.
 Help the child choose a picture and use create_picture exactly once when they clearly request one.
 Keep drawings child-appropriate. Do not request names, age, address, school, secrets or other personal information.
 Do not form exclusive relationships or encourage secrecy. For topics beyond drawing, briefly suggest asking a trusted grown-up.
 Never claim a picture printed: the tool only confirms whether a picture was sent to the printer.
-When a drawing request is clear, call create_picture without extra questions. The device plays a local spoken acknowledgement and progress announcements, so do not give your own drawing-in-progress speech.
+When a drawing request is clear, call create_picture to prepare it. The tool first returns confirmation_required. Read the entire proposed drawing back, including captions, and ask "Is that right? Say yes to draw it." Wait for a new explicit yes before calling create_picture again with the identical prompt. If corrected, prepare the revised prompt and ask again. Never assume consent or invent missing details. The device plays a local spoken acknowledgement and progress announcements, so do not give your own drawing-in-progress speech.
 After the tool returns, tell them it was sent or explain that it did not work. Then say goodbye briefly.
 If asked to stop, be quiet, go to sleep, or wait for the wake word, call end_conversation. Never just promise to wait while keeping the conversation open.`;
 
@@ -54,12 +54,12 @@ export async function handleVoice(deviceId: string, event: any) {
         send(deviceId, { type: 'voice_error', error: 'Voice listening is not enabled or configured.' }); return;
     }
     const ws = new WebSocket(`wss://api.openai.com/v1/realtime?model=${encodeURIComponent(process.env.OPENAI_REALTIME_MODEL || 'gpt-realtime-2.1')}`, { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } });
-    const session: Voice = { clientId: event.session_id, ws, ready: false, printed: false, calls: new Set(), timer: setTimeout(() => { send(deviceId, { type: 'voice_notice', reason: session.printed ? 'image' : 'no-request' }); closeVoice(deviceId); }, 120000) };
+    const session: Voice = { inputTurn: 0, inputTurns: new Map(), clientId: event.session_id, ws, ready: false, printed: false, calls: new Set(), timer: setTimeout(() => { send(deviceId, { type: 'voice_notice', reason: session.printed ? 'image' : 'no-request' }); closeVoice(deviceId); }, 120000) };
     sessions.set(deviceId, session);
     ws.on('open', () => ws.send(JSON.stringify({ type: 'session.update', session: {
         type: 'realtime', output_modalities: ['audio'], instructions: VOICE_INSTRUCTIONS,
-        audio: { input: { format: { type: 'audio/pcm', rate: 24000 }, transcription: { model: 'gpt-4o-mini-transcribe' }, noise_reduction: { type: 'far_field' }, turn_detection: { type: 'server_vad', threshold: 0.35, silence_duration_ms: 900, interrupt_response: false } },
-                 output: { format: { type: 'audio/pcm', rate: 24000 }, voice: 'cedar' } },
+        audio: { input: { format: { type: 'audio/pcm', rate: 24000 }, transcription: { model: 'gpt-4o-mini-transcribe' }, noise_reduction: { type: 'far_field' }, turn_detection: { type: 'semantic_vad', eagerness: 'low', interrupt_response: false } },
+                 output: { format: { type: 'audio/pcm', rate: 24000 }, voice: 'marin' } },
         tools: [{ type: 'function', name: 'create_picture', description: 'Generate one child-friendly drawing and send it to this PaperDrop printer.', parameters: { type: 'object', properties: { prompt: { type: 'string', description: 'Describe the requested drawing and any requested caption.' } }, required: ['prompt'], additionalProperties: false } },
         { type: 'function', name: 'end_conversation', description: 'Return to local wake-word listening when asked to stop, be quiet, sleep, wait for the keyword or end the conversation.', parameters: { type: 'object', properties: {}, additionalProperties: false } }],
         tool_choice: 'auto', max_output_tokens: 600
@@ -73,8 +73,14 @@ export async function handleVoice(deviceId: string, event: any) {
                 send(deviceId, { type: 'voice_ready' });
                 ws.send(JSON.stringify({ type: 'response.create', response: { instructions: 'Say exactly: I’m here! What would you like me to draw?' } }));
             } else if (e.type === 'conversation.item.input_audio_transcription.completed') {
-                send(deviceId, { type: 'voice_heard', text: String(e.transcript || '').slice(0, 800) });
+                const transcript = String(e.transcript || '').trim();
+                const turn = session.inputTurns.get(e.item_id) || 0;
+                if (session.pendingPrompt && turn > (session.pendingTurn || 0)) {
+                    session.confirmed = /^(yes|yes please|yes draw it|yes print it|that is right|that's right|correct|draw it|print it)[.!?]*$/i.test(transcript);
+                }
+                send(deviceId, { type: 'voice_heard', text: transcript.slice(0, 800) });
             } else if (e.type === 'input_audio_buffer.speech_started') {
+                session.inputTurns.set(e.item_id, ++session.inputTurn);
                 send(deviceId, { type: 'voice_progress', state: 'hearing_request' });
             } else if (e.type === 'input_audio_buffer.speech_stopped') {
                 send(deviceId, { type: 'voice_progress', state: 'thinking' });
@@ -98,6 +104,15 @@ export async function handleVoice(deviceId: string, event: any) {
                         const args = JSON.parse(e.arguments);
                         if (session.printed) throw Error('One picture per conversation. Say Hey Paper Drop again for another.');
                         if (typeof args.prompt !== 'string' || !args.prompt.trim() || args.prompt.length > 1500) throw Error('Please ask for a shorter drawing description.');
+                        if (!session.pendingPrompt || session.pendingPrompt !== args.prompt || !session.confirmed) {
+                            session.pendingPrompt = args.prompt;
+                            session.pendingTurn = session.inputTurn;
+                            session.confirmed = false;
+                            session.followup = true;
+                            ws.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: e.call_id, output: JSON.stringify({ status: 'confirmation_required', prompt: args.prompt, instruction: 'Read this complete drawing back and ask for an explicit yes. No image has been made.' }) } }));
+                            return;
+                        }
+                        session.confirmed = false;
                         session.printed = true;
                         send(deviceId, { type: 'voice_progress', state: 'drawing' });
                         const ai = new OpenAI({ timeout: 90000, maxRetries: 0 });
@@ -130,6 +145,9 @@ export async function handleVoice(deviceId: string, event: any) {
                 console.error('[Voice] Realtime error:', e.error?.code);
                 send(deviceId, { type: 'voice_error', error: 'The voice service could not respond. Please try again.' });
                 closeVoice(deviceId);
+            } else if (e.type === 'response.done' && session.followup) {
+                session.followup = false;
+                ws.send(JSON.stringify({ type: 'response.create' }));
             } else if (e.type === 'response.done' && (session.ending || (session.printed && !e.response?.output?.some((o: any) => o.type === 'function_call')))) {
                 send(deviceId, { type: 'voice_finish' });
             }

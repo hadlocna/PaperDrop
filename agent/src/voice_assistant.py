@@ -35,6 +35,7 @@ class VoiceAssistant:
         self.drawing = False
         self.session_id = None
         self.last_progress = 0
+        self.reply_audio = bytearray()
         self.receipt_announced = False
         self.announce_ready = False
         self.ready = False
@@ -120,6 +121,7 @@ class VoiceAssistant:
         self.ready = False
         self.finish = False
         self.receipt_announced = False
+        self.reply_audio.clear()
         self.state = 'connecting'
         self.error = None
         self.last_heard = self.last_reply = ''
@@ -152,23 +154,19 @@ class VoiceAssistant:
             self.ready = True
             self.state = 'talking'
         elif kind == 'voice_output' and self.active:
-            self.speaking = True
-            if self.output.full():
-                self.error = 'Audio playback could not keep up. Please try again.'
-                await self.send({'type': 'voice_stop'})
-                self.active = False
-                return
-            self.output.put_nowait(data.get('audio'))
-        elif kind == 'voice_output_done':
-            await self.output.put(None)
+            self.reply_audio.extend(base64.b64decode(data.get('audio', ''), validate=True))
+            if len(self.reply_audio) > 4000000:
+                raise RuntimeError('Voice reply exceeded playback limit')
+        elif kind == 'voice_output_done' and self.active:
+            if self.reply_audio:
+                self.speaking = True
+                await self.output.put(base64.b64encode(self.reply_audio).decode())
+                await self.output.put(None)
+                self.reply_audio.clear()
         elif kind == 'voice_notice':
             await self.notice(data.get('reason', 'error'))
         elif kind == 'voice_heard':
             self.last_heard = data.get('text', '')
-            heard = self.last_heard.strip().lower().strip('.!?')
-            if self.active and not self.drawing and not self.receipt_announced and heard and heard not in ('stop', 'be quiet', 'go to sleep'):
-                self.receipt_announced = True
-                await self.queue_clip('voice-received.pcm')
         elif kind == 'voice_reply':
             self.last_reply = data.get('text', '')
         elif kind == 'voice_progress':
@@ -177,6 +175,7 @@ class VoiceAssistant:
                 self.drawing = True
                 self.last_progress = time.monotonic()
                 await self.queue_clip('voice-drawing.pcm')
+                await self.queue_clip('voice-scribble.pcm')
             elif state == 'talking':
                 self.drawing = False
             self.state = 'drawing' if self.drawing else state
@@ -185,6 +184,7 @@ class VoiceAssistant:
             self.finish = True
         elif kind in ('voice_end', 'voice_error'):
             self.drawing = False
+            self.reply_audio.clear()
             if kind == 'voice_error':
                 await self.notice('error')
             self.active = False
@@ -285,9 +285,9 @@ class VoiceAssistant:
                         # Start a fresh recorder and decoder after every completed flow.
                         # The ready cue is played only once capture has reopened.
                         return
-                    if self.drawing and not self.speaking and now - self.last_progress > 15:
+                    if self.drawing and not self.speaking and now - self.last_progress > 4:
                         self.last_progress = now
-                        await self.queue_clip('voice-working.pcm')
+                        await self.queue_clip('voice-scribble.pcm')
                     if self.speaking or now < self.mute_until:
                         conversion = None
                         continue

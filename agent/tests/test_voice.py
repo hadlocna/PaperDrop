@@ -77,7 +77,7 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
         await voice.event({'type': 'voice_progress', 'state': 'drawing'})
         await voice.event({'type': 'voice_progress', 'state': 'hearing_request'})
         self.assertEqual(voice.state, 'drawing')
-        voice.queue_clip.assert_awaited_once_with('voice-drawing.pcm')
+        self.assertEqual([c.args[0] for c in voice.queue_clip.await_args_list], ['voice-drawing.pcm', 'voice-scribble.pcm'])
         await voice.event({'type': 'voice_progress', 'state': 'talking'})
         self.assertFalse(voice.drawing)
 
@@ -95,20 +95,25 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
             await voice.supervise()
         self.assertEqual(attempts, 2)
 
-    async def test_prompt_receipt_is_announced_once_and_not_for_stop(self):
+    async def test_transcription_does_not_mute_continuing_child_speech(self):
         voice = VoiceAssistant(AsyncMock())
+        voice.active = True
         voice.queue_clip = AsyncMock()
-        await voice.wake()
-        voice.queue_clip.reset_mock()
-        await voice.event({'type': 'voice_heard', 'text': 'stop'})
+        await voice.event({'type': 'voice_heard', 'text': 'Draw a lizard'})
         voice.queue_clip.assert_not_awaited()
-        await voice.event({'type': 'voice_heard', 'text': 'Draw a lizard'})
-        await voice.event({'type': 'voice_heard', 'text': 'Draw a lizard'})
-        voice.queue_clip.assert_awaited_once_with('voice-received.pcm')
-        await voice.event({'type': 'voice_end'})
-        await voice.wake()
-        await voice.event({'type': 'voice_heard', 'text': 'Draw a cat'})
-        self.assertEqual(voice.queue_clip.await_count, 3)
+        self.assertFalse(voice.speaking)
+
+    async def test_complete_reply_is_buffered_before_bluetooth_playback(self):
+        import base64
+        voice = VoiceAssistant(AsyncMock())
+        voice.active = True
+        for part in (b'\x01\x00', b'\x02\x00'):
+            await voice.event({'type': 'voice_output', 'audio': base64.b64encode(part).decode()})
+        self.assertTrue(voice.output.empty())
+        await voice.event({'type': 'voice_output_done'})
+        self.assertEqual(base64.b64decode(await voice.output.get()), b'\x01\x00\x02\x00')
+        self.assertIsNone(await voice.output.get())
+        self.assertFalse(voice.reply_audio)
 
     async def test_wake_beep_is_queued_before_cloud_request(self):
         voice = VoiceAssistant(AsyncMock())
