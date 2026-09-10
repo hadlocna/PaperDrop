@@ -80,3 +80,17 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
         voice.queue_clip.assert_awaited_once_with('voice-drawing.pcm')
         await voice.event({'type': 'voice_progress', 'state': 'talking'})
         self.assertFalse(voice.drawing)
+
+    async def test_capture_restarts_after_failure_without_heartbeat(self):
+        voice = VoiceAssistant(AsyncMock())
+        voice.enabled = True
+        attempts = 0
+        async def listen():
+            nonlocal attempts
+            attempts += 1
+            if attempts == 2:
+                voice.enabled = False
+        voice.listen = listen
+        with patch('voice_assistant.asyncio.sleep', new_callable=AsyncMock):
+            await voice.supervise()
+        self.assertEqual(attempts, 2)

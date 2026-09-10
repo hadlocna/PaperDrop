@@ -66,7 +66,14 @@ class VoiceAssistant:
     async def start(self):
         if self.enabled and (self.task is None or self.task.done()):
             self.state = 'starting'
-            self.task = asyncio.create_task(self.listen())
+            self.task = asyncio.create_task(self.supervise())
+
+    async def supervise(self):
+        """Recover capture failures without waiting for the cloud heartbeat."""
+        while self.enabled:
+            await self.listen()
+            if self.enabled:
+                await asyncio.sleep(2)
 
     async def stop(self):
         self.active = False
@@ -294,10 +301,11 @@ class VoiceAssistant:
             raise
         except Exception as error:
             self.state = 'error'
-            self.error = f'Microphone or voice audio unavailable: {type(error).__name__}. Check the speaker and toggle listening off and on.'
+            self.error = f'Microphone or voice audio unavailable: {type(error).__name__}. Reconnecting automatically.'
             log.warning('Voice failed: %s', error)
         finally:
-            self.active = self.ready = False
+            self.active = self.ready = self.drawing = self.finish = False
+            self.microphone_level = 0
             if recorder and recorder.returncode is None:
                 recorder.kill()
                 await recorder.wait()
