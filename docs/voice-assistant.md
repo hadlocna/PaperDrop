@@ -1,3 +1,7 @@
+## Audio pack 1.3.9
+
+User-supplied recordings replace the three local assets: Soft, airy puff -> voice-wake.pcm; ElevenLabs Valf -> voice-nathan.pcm (legacy greeting filename); A warm, satisfying -> voice-scribble.pcm. Wake playback queues puff then greeting. Once the request is captured, the warm sound repeats until the matching print completion, cancellation, error or timeout. Converted to mono 24kHz PCM without synthesis, voice transformation or content changes. Cloud behavior is unchanged.
+
 # Current flow: firmware 1.3.8
 
 Wake beep -> Nathan's supplied recording ("Hi, what picture would you like me to make you?") -> one local in-memory request -> four seconds of silence -> local pencil sound -> printer completion -> local wake listening. Normal operation no longer opens Realtime sessions or generates AI speech. It makes one gpt-4o-mini-transcribe transcription and one moderated gpt-image-2.5-flare image request. User-request audio is not saved. Audio under half a second of detected speech is rejected; requests reaching 45 seconds are rejected rather than printed truncated. Pencil playback ends only on the matching print acknowledgement, error, cancellation or timeout.
