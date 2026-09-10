@@ -4,12 +4,11 @@ No microphone audio leaves the device before a wake event. No recordings are sav
 """
 import asyncio
 import base64
-import collections
 import json
 import logging
 import re
-import sys
 import time
+import uuid
 from pathlib import Path
 from speaker_control import lock, run_speaker
 
@@ -19,7 +18,7 @@ MODEL = Path('/opt/paperdrop-models/vosk-model-small-en-us-0.15')
 
 
 def is_wake_phrase(text):
-    return bool(re.search(r'\b(?:hey\s+)?paper\s*drop\b', text.lower()))
+    return bool(re.search(r'\bhey\s+paper\s*drop\b', text.lower()))
 
 
 class VoiceAssistant:
@@ -33,6 +32,9 @@ class VoiceAssistant:
         self.error = None
         self.task = None
         self.active = False
+        self.drawing = False
+        self.session_id = None
+        self.last_progress = 0
         self.ready = False
         self.speaking = False
         self.mute_until = 0
@@ -51,6 +53,8 @@ class VoiceAssistant:
         self.last_activity = time.monotonic()
 
     async def send(self, event):
+        if event.get('type') in ('voice_start', 'voice_audio', 'voice_stop'):
+            event['session_id'] = self.session_id
         await self.ws.send(json.dumps(event))
 
     def status(self):
@@ -96,9 +100,13 @@ class VoiceAssistant:
             result = {'ok': False, 'error': str(error)}
         await self.send({**result, 'type': 'voice_result', 'request_id': data.get('request_id')})
 
-    async def wake(self):
+    async def wake(self, restart=False):
         if self.active:
-            return
+            if not restart:
+                return
+            await self.send({'type': 'voice_stop'})
+        self.session_id = uuid.uuid4().hex
+        self.drawing = False
         self.active = True
         self.ready = False
         self.finish = False
@@ -110,20 +118,25 @@ class VoiceAssistant:
         await self.send({'type': 'voice_start'})
         log.info('Wake phrase detected; opening voice conversation')
 
+    async def queue_clip(self, filename):
+        path = Path(__file__).with_name(filename)
+        if path.exists() and self.play_task and not self.play_task.done():
+            self.speaking = True
+            await self.output.put(base64.b64encode(path.read_bytes()).decode())
+            await self.output.put(None)
+
     async def notice(self, reason='error'):
         if (self.last_notice is not None and time.monotonic() - self.last_notice < 10) or not self.play_task or self.play_task.done():
             return
         filenames = {'error': 'voice-error.pcm', 'no-request': 'voice-no-request.pcm',
                      'image': 'voice-image-error.pcm', 'print': 'voice-print-error.pcm'}
-        path = Path(__file__).with_name(filenames.get(reason, 'voice-error.pcm'))
-        if path.exists():
-            self.last_notice = time.monotonic()
-            self.speaking = True
-            await self.output.put(base64.b64encode(path.read_bytes()).decode())
-            await self.output.put(None)
+        self.last_notice = time.monotonic()
+        await self.queue_clip(filenames.get(reason, 'voice-error.pcm'))
 
     async def event(self, data):
         kind = data['type']
+        if data.get('session_id') and data['session_id'] != self.session_id:
+            return
         if kind == 'voice_ready':
             self.ready = True
             self.state = 'talking'
@@ -144,10 +157,19 @@ class VoiceAssistant:
         elif kind == 'voice_reply':
             self.last_reply = data.get('text', '')
         elif kind == 'voice_progress':
-            self.state = data.get('state', 'talking')
+            state = data.get('state', 'talking')
+            if state == 'drawing' and not self.drawing:
+                self.drawing = True
+                self.last_progress = time.monotonic()
+                await self.queue_clip('voice-drawing.pcm')
+            elif state == 'talking':
+                self.drawing = False
+            self.state = 'drawing' if self.drawing else state
         elif kind == 'voice_finish':
+            self.drawing = False
             self.finish = True
         elif kind in ('voice_end', 'voice_error'):
+            self.drawing = False
             if kind == 'voice_error':
                 await self.notice('error')
             self.active = False
@@ -205,7 +227,7 @@ class VoiceAssistant:
             SetLogLevel(-1)
             self.state = 'starting'
             model = await asyncio.to_thread(Model, str(MODEL))
-            self.recognizer = KaldiRecognizer(model, 16000, json.dumps(['hey paper drop', 'paper drop', '[unk]']))
+            self.recognizer = KaldiRecognizer(model, 16000, json.dumps(['hey paper drop', 'stop', '[unk]']))
             # Voice owns audio while enabled so pairing/test commands cannot tear down capture.
             async with lock:
                 info = await run_speaker('microphone_ready')
@@ -235,28 +257,39 @@ class VoiceAssistant:
                         self.active = self.ready = self.finish = False
                         self.state = 'listening'
                         self.recognizer.Reset()
+                    if self.drawing and not self.speaking and now - self.last_progress > 15:
+                        self.last_progress = now
+                        await self.queue_clip('voice-working.pcm')
                     if self.speaking or now < self.mute_until:
                         conversion = None
                         continue
+                    final = self.recognizer.AcceptWaveform(data)
+                    result = json.loads(self.recognizer.Result() if final else self.recognizer.PartialResult())
+                    phrase = result.get('text', result.get('partial', ''))
+                    if is_wake_phrase(phrase):
+                        self.recognizer.Reset()
+                        await self.wake(restart=True)
+                        conversion = None
+                        continue
+                    if self.active and final and phrase.strip() == 'stop':
+                        await self.send({'type': 'voice_stop'})
+                        self.active = self.ready = self.drawing = False
+                        self.state = 'listening'
+                        self.recognizer.Reset()
+                        continue
                     if self.active:
-                        if now - self.last_activity > 40 and self.state != 'drawing':
+                        if now - self.last_activity > 40 and not self.drawing:
                             await self.notice('no-request')
                             await self.send({'type': 'voice_stop'})
                             self.active = self.ready = False
                             self.state = 'listening'
                             self.recognizer.Reset()
-                        elif self.ready:
+                        elif self.ready and not self.drawing:
                             audio, conversion = audioop.ratecv(data, 2, 1, 16000, 24000, conversion)
                             self.sent_chunks += 1
                             await self.send({'type': 'voice_audio', 'audio': base64.b64encode(audio).decode()})
-                            if audioop.rms(data, 2) > 250:
+                            if self.microphone_level > 250:
                                 self.last_activity = now
-                    else:
-                        final = self.recognizer.AcceptWaveform(data)
-                        result = json.loads(self.recognizer.Result() if final else self.recognizer.PartialResult())
-                        if is_wake_phrase(result.get('text', result.get('partial', ''))):
-                            self.recognizer.Reset()
-                            await self.wake()
         except asyncio.CancelledError:
             raise
         except Exception as error:

@@ -9,9 +9,9 @@ from voice_assistant import VoiceAssistant, is_wake_phrase
 
 class VoiceTests(unittest.IsolatedAsyncioTestCase):
     def test_wake_phrase_boundaries(self):
-        for text in ('hey paper drop', 'PaperDrop', 'paper drop'):
+        for text in ('hey paper drop', 'Hey PaperDrop', 'please hey paper drop'):
             self.assertTrue(is_wake_phrase(text))
-        for text in ('drop the paper', 'paper', 'hey there', 'newspaper drop', ''):
+        for text in ('PaperDrop', 'paper drop', 'drop the paper', 'paper', 'hey there', 'newspaper drop', ''):
             self.assertFalse(is_wake_phrase(text))
 
     async def test_duplicate_wake_starts_only_one_session(self):
@@ -59,3 +59,24 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
         voice.ws.send.assert_not_awaited()
         await voice.notice('error')
         self.assertEqual(voice.output.qsize(), 2)
+
+    async def test_wake_during_conversation_ignores_old_session_end(self):
+        voice = VoiceAssistant(AsyncMock())
+        await voice.wake()
+        old = voice.session_id
+        await voice.wake(restart=True)
+        self.assertNotEqual(old, voice.session_id)
+        await voice.event({'type': 'voice_end', 'session_id': old})
+        self.assertTrue(voice.active)
+        await voice.event({'type': 'voice_end', 'session_id': voice.session_id})
+        self.assertFalse(voice.active)
+
+    async def test_drawing_progress_is_not_overwritten_by_input_activity(self):
+        voice = VoiceAssistant(AsyncMock())
+        voice.queue_clip = AsyncMock()
+        await voice.event({'type': 'voice_progress', 'state': 'drawing'})
+        await voice.event({'type': 'voice_progress', 'state': 'hearing_request'})
+        self.assertEqual(voice.state, 'drawing')
+        voice.queue_clip.assert_awaited_once_with('voice-drawing.pcm')
+        await voice.event({'type': 'voice_progress', 'state': 'talking'})
+        self.assertFalse(voice.drawing)

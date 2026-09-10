@@ -35,3 +35,11 @@ The end_conversation tool returns control to the local detector when asked to st
 BlueALSA now uses its documented scheduling configuration for HFP audio threads. The Pi still logged some mSBC packet loss during testing; the CVSD fallback produced silence and was reverted. Speech detection uses far-field noise reduction. This hardware combination still needs physical microphone and second-turn verification.
 
 The four fallback audio assets were generated with gpt-4o-mini-tts-2025-12-15, cedar, raw PCM16 mono 24 kHz, with warm reassuring delivery and clear gentle pacing. They are AI-generated speech.
+
+## Physical print accepted; repeat-cycle update
+
+The user subsequently confirmed wake phrase -> spoken request -> desired physical image print. Device/cloud evidence includes messages 5651b465-b440-4bb2-9a44-18c152058213 (printed 10:39:43 UTC) and d770fe8f-84ce-4a08-a80f-fbd7f1ebb932 (printed 10:40:47 UTC). The previous unresolved physical-print note above is superseded by that confirmation.
+
+The remaining reported problem was perceived freezing after completion. Logs showed return to wake mode, followed by another activation that captured nearby feedback. The detector now requires the full Hey Paper Drop phrase. It can restart an active conversation; session identifiers prevent a delayed end event from the old conversation from ending the new one. A standalone stop is also recognized locally during the listening turn. Drawing generation plays a local acknowledgement and another short progress clip after fifteen seconds if still working. Ordinary microphone audio is not uploaded during generation; local wake/stop recognition stays available between announcements.
+
+Sixteen agent tests and twelve backend tests pass. The updated repeat-cycle behavior still requires a physical test. The user requested additional prerecorded routine phrases and a more youthful synthetic voice only after the whole functional cycle is reliable; those voice-style changes remain queued.

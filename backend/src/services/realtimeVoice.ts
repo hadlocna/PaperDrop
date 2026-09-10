@@ -3,12 +3,12 @@ import OpenAI from 'openai';
 import { prisma } from '../lib/prisma';
 import { deviceConnections } from '../websocket/session';
 
-type Voice = { ws: WebSocket; timer: NodeJS.Timeout; ready: boolean; printed: boolean; ending?: boolean; calls: Set<string>; generation?: Promise<void> };
+type Voice = { clientId?: string; ws: WebSocket; timer: NodeJS.Timeout; ready: boolean; printed: boolean; ending?: boolean; calls: Set<string>; generation?: Promise<void> };
 const sessions = new Map<string, Voice>();
 const starts = new Map<string, number[]>();
 function send(deviceId: string, event: any) {
     const ws = deviceConnections.get(deviceId);
-    if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(event));
+    if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ session_id: sessions.get(deviceId)?.clientId, ...event }));
 }
 export function closeVoice(deviceId: string) {
     const session = sessions.get(deviceId);
@@ -16,7 +16,7 @@ export function closeVoice(deviceId: string) {
     sessions.delete(deviceId);
     clearTimeout(session.timer);
     session.ws.close();
-    send(deviceId, { type: 'voice_end' });
+    send(deviceId, { type: 'voice_end', session_id: session.clientId });
 }
 export const VOICE_INSTRUCTIONS = `You are PaperDrop, a cheerful AI drawing helper speaking with a child.
 Use short, warm, playful sentences and simple words. You are an AI, never pretend to be human.
@@ -24,15 +24,18 @@ Help the child choose a picture and use create_picture exactly once when they cl
 Keep drawings child-appropriate. Do not request names, age, address, school, secrets or other personal information.
 Do not form exclusive relationships or encourage secrecy. For topics beyond drawing, briefly suggest asking a trusted grown-up.
 Never claim a picture printed: the tool only confirms whether a picture was sent to the printer.
-When a drawing request is clear, say one short acknowledgement and call the tool without extra questions.
+When a drawing request is clear, call create_picture without extra questions. The device plays a local spoken acknowledgement and progress announcements, so do not give your own drawing-in-progress speech.
 After the tool returns, tell them it was sent or explain that it did not work. Then say goodbye briefly.
 If asked to stop, be quiet, go to sleep, or wait for the wake word, call end_conversation. Never just promise to wait while keeping the conversation open.`;
 
 export async function handleVoice(deviceId: string, event: any) {
-    if (event.type === 'voice_stop') { closeVoice(deviceId); return; }
+    if (event.type === 'voice_stop') {
+        if (!event.session_id || sessions.get(deviceId)?.clientId === event.session_id) closeVoice(deviceId);
+        return;
+    }
     if (event.type === 'voice_audio') {
         const s = sessions.get(deviceId);
-        if (s?.ready && s.ws.readyState === WebSocket.OPEN && typeof event.audio === 'string' && event.audio.length <= 32768 && /^[A-Za-z0-9+/]*={0,2}$/.test(event.audio)) {
+        if (s?.ready && (!event.session_id || s.clientId === event.session_id) && s.ws.readyState === WebSocket.OPEN && typeof event.audio === 'string' && event.audio.length <= 32768 && /^[A-Za-z0-9+/]*={0,2}$/.test(event.audio)) {
             if (s.ws.bufferedAmount > 256000) { closeVoice(deviceId); return; }
             s.ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: event.audio }));
         }
@@ -51,7 +54,7 @@ export async function handleVoice(deviceId: string, event: any) {
         send(deviceId, { type: 'voice_error', error: 'Voice listening is not enabled or configured.' }); return;
     }
     const ws = new WebSocket(`wss://api.openai.com/v1/realtime?model=${encodeURIComponent(process.env.OPENAI_REALTIME_MODEL || 'gpt-realtime-2.1')}`, { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } });
-    const session: Voice = { ws, ready: false, printed: false, calls: new Set(), timer: setTimeout(() => { send(deviceId, { type: 'voice_notice', reason: session.printed ? 'image' : 'no-request' }); closeVoice(deviceId); }, 120000) };
+    const session: Voice = { clientId: event.session_id, ws, ready: false, printed: false, calls: new Set(), timer: setTimeout(() => { send(deviceId, { type: 'voice_notice', reason: session.printed ? 'image' : 'no-request' }); closeVoice(deviceId); }, 120000) };
     sessions.set(deviceId, session);
     ws.on('open', () => ws.send(JSON.stringify({ type: 'session.update', session: {
         type: 'realtime', output_modalities: ['audio'], instructions: VOICE_INSTRUCTIONS,
