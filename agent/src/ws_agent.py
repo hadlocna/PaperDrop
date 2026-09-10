@@ -192,6 +192,7 @@ async def handle_test_print(websocket, data):
         p.text("PaperDrop test print\n")
         p.set(align='left', font='a')
         p.text(f"Device: {config.device_code}\n")
+        p.text(f"Firmware: {config.firmware_version}\n")
         p.text(f"Time: {time.strftime('%Y-%m-%d %H:%M:%S %Z')}\n\n")
         p.cut()
 

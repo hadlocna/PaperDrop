@@ -85,7 +85,7 @@ export class AiController {
 
             console.log('[AI] Design Specs:', designSpecs);
 
-            // 2. Generate Image with DALL-E 3 (or gpt-image-1.5 if available)
+            // 2. Generate thermal artwork with GPT Image 2.5 Flare.
             const imagePrompt = [
                 "Black and white thermal printer line art. Simple, bold lines. No shading. No grayscale. White background.",
                 designSpecs.image_prompt,
@@ -95,14 +95,15 @@ export class AiController {
             console.log('[AI] Generating image...');
             console.log('[AI] Prompt:', imagePrompt);
 
-            const imageResponse = (await openai.images.generate({
-                model: "dall-e-3", // Reverting to dall-e-3 as it's more standard if gpt-image-1.5 was causing issues
+            const imageResponse = await openai.images.generate({
+                model: "gpt-image-2.5-flare",
                 prompt: imagePrompt,
                 n: 1,
                 size: "1024x1024",
-                quality: "standard",
-                response_format: "b64_json"
-            } as any)) as any;
+                quality: "medium",
+                output_format: "png",
+                background: "opaque"
+            });
 
             if (!imageResponse.data || !imageResponse.data[0]) {
                 console.error('[AI] No image data in response:', JSON.stringify(imageResponse));
