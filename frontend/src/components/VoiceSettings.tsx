@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Mic, MicOff } from 'lucide-react';
 import { client as api } from '../api/client';
 
-type VoiceState = { enabled: boolean; state: string; error?: string; lastReply?: string; lastHeard?: string; ready: boolean };
+type VoiceState = { enabled: boolean; state: string; error?: string; mode?: string; lastReply?: string; lastHeard?: string; ready: boolean };
 export function VoiceSettings({ deviceId }: { deviceId: string }) {
     const [state, setState] = useState<VoiceState | null>(null);
     const [busy, setBusy] = useState(false);
@@ -25,7 +25,7 @@ export function VoiceSettings({ deviceId }: { deviceId: string }) {
     return <section className="border-t pt-4 space-y-3" aria-label="PaperDrop voice assistant">
         <h3 className="font-semibold flex items-center gap-2"><Mic size={18} /> Hey Paper Drop</h3>
         <p className="text-sm text-gray-600">Say “Hey Paper Drop”, wait for the reply, then ask for a picture. PaperDrop will draw it and print it for you.</p>
-        <p className="text-xs text-gray-500">When enabled, the microphone listens locally for the wake phrase. After waking, conversation audio goes to OpenAI for an AI voice reply. PaperDrop does not save voice recordings or transcripts. Conversations end after 2 minutes at most. One picture per conversation.</p>
+        <p className="text-xs text-gray-500">When enabled, the microphone listens locally for the wake phrase. On updated devices, the greeting is a local recording. After your request and a four-second pause, one recording is sent to OpenAI for transcription and image creation. No AI voice conversation is used. Request audio is kept in memory only; PaperDrop does not save it. One picture per wake. Older devices may still use live AI voice.</p>
         <p role="status" className="text-sm">{state?.enabled ? `Voice on · ${state.state}` : 'Voice listening off'}</p>
         {state?.lastHeard && <p className="text-sm text-gray-600">Heard: {state.lastHeard}</p>}
         {state?.lastReply && <p className="text-sm text-gray-600">PaperDrop: {state.lastReply}</p>}

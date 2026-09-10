@@ -1,3 +1,13 @@
+# Current flow: firmware 1.3.8
+
+Wake beep -> Nathan's supplied recording ("Hi, what picture would you like me to make you?") -> one local in-memory request -> four seconds of silence -> local pencil sound -> printer completion -> local wake listening. Normal operation no longer opens Realtime sessions or generates AI speech. It makes one gpt-4o-mini-transcribe transcription and one moderated gpt-image-2.5-flare image request. User-request audio is not saved. Audio under half a second of detected speech is rejected; requests reaching 45 seconds are rejected rather than printed truncated. Pencil playback ends only on the matching print acknowledgement, error, cancellation or timeout.
+
+The supplied M4A is converted to 24kHz mono PCM without voice synthesis. Speech capture stays muted until the recording and playback tail finish. Legacy Realtime support remains for older agents. No other physical device was updated.
+
+Validation: 24 agent tests, 18 backend tests, backend and frontend builds, synthetic request capture with pause, and a live transcription-to-image test with simulated print acknowledgement. Audible greeting and physical repeat-cycle acceptance are separate device tests.
+
+---
+
 # PaperDrop voice prototype
 
 Say **Hey Paper Drop**, wait for “I'm here! What would you like me to draw?”, then ask for a picture. One drawing is generated and sent to the printer per conversation. Say the wake phrase again for another picture. The short **brrk** sound plays when a speaker connects and from Play test sound.

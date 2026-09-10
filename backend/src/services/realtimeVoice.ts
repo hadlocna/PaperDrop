@@ -1,5 +1,6 @@
 import WebSocket from 'ws';
 import OpenAI from 'openai';
+import { closeRecordedVoice, handleRecordedVoice, hasRecordedVoice } from './recordedVoice';
 import { prisma } from '../lib/prisma';
 import { deviceConnections } from '../websocket/session';
 
@@ -11,6 +12,7 @@ function send(deviceId: string, event: any) {
     if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ session_id: sessions.get(deviceId)?.clientId, ...event }));
 }
 export function closeVoice(deviceId: string) {
+    closeRecordedVoice(deviceId);
     const session = sessions.get(deviceId);
     if (!session) return;
     sessions.delete(deviceId);
@@ -29,6 +31,9 @@ After the tool returns, tell them it was sent or explain that it did not work. T
 If asked to stop, be quiet, go to sleep, or wait for the wake word, call end_conversation. Never just promise to wait while keeping the conversation open.`;
 
 export async function handleVoice(deviceId: string, event: any) {
+    if (event.mode === 'recorded' || event.type === 'voice_request' || hasRecordedVoice(deviceId)) {
+        await handleRecordedVoice(deviceId, event); return;
+    }
     if (event.type === 'voice_stop') {
         if (!event.session_id || sessions.get(deviceId)?.clientId === event.session_id) closeVoice(deviceId);
         return;

@@ -4,6 +4,7 @@ import url from 'url';
 import { prisma } from '../lib/prisma';
 import { Server } from 'http';
 import crypto from 'crypto';
+import { recordedPrintStatus } from '../services/recordedVoice';
 import { handleVoice, closeVoice } from '../services/realtimeVoice';
 import { deviceConnections, shellSessions } from './session';
 
@@ -221,7 +222,7 @@ export const setupWebSocket = () => {
 };
 
 const handleDeviceMessage = async (deviceId: string, message: any) => {
-    if (['voice_start', 'voice_audio', 'voice_stop'].includes(message.type)) {
+    if (['voice_start', 'voice_audio', 'voice_request', 'voice_stop'].includes(message.type)) {
         await handleVoice(deviceId, message);
         return;
     }
@@ -244,6 +245,7 @@ const handleDeviceMessage = async (deviceId: string, message: any) => {
         }
     }
     else if (message.type === 'print_status') {
+        recordedPrintStatus(deviceId, message.message_id, message.status);
         if (message.status === 'failed') broadcastToDevice(deviceId, { type: 'voice_notice', reason: 'print' });
         try {
             if (message.message_id) {

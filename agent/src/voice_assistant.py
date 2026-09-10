@@ -11,6 +11,7 @@ import time
 import uuid
 from pathlib import Path
 from speaker_control import lock, run_speaker
+from voice_capture import RequestCapture
 
 log = logging.getLogger('Voice')
 SETTINGS = Path('/etc/paperdrop/voice.json')
@@ -36,11 +37,13 @@ class VoiceAssistant:
         self.session_id = None
         self.last_progress = 0
         self.reply_audio = bytearray()
+        self.capture = None
         self.receipt_announced = False
         self.announce_ready = False
         self.ready = False
         self.speaking = False
         self.mute_until = 0
+        self.pcm = None
         self.player = None
         self.play_task = None
         self.output = asyncio.Queue(maxsize=200)
@@ -56,13 +59,13 @@ class VoiceAssistant:
         self.last_activity = time.monotonic()
 
     async def send(self, event):
-        if event.get('type') in ('voice_start', 'voice_audio', 'voice_stop'):
+        if event.get('type') in ('voice_start', 'voice_audio', 'voice_request', 'voice_stop'):
             event['session_id'] = self.session_id
         await self.ws.send(json.dumps(event))
 
     def status(self):
         return {'ok': True, 'enabled': self.enabled, 'state': self.state, 'error': self.error,
-                'wakePhrase': 'Hey Paper Drop', 'ready': MODEL.exists(),
+                'mode': 'recorded', 'wakePhrase': 'Hey Paper Drop', 'ready': MODEL.exists(),
                 'lastHeard': self.last_heard, 'lastReply': self.last_reply, 'microphoneLevel': self.microphone_level, 'sentChunks': self.sent_chunks,
                 'playedReplies': self.played_replies, 'speaking': self.speaking, 'sessionActive': self.active}
 
@@ -128,7 +131,9 @@ class VoiceAssistant:
         self.session_started = time.monotonic()
         self.last_activity = time.monotonic()
         await self.queue_clip('voice-wake.pcm')
-        await self.send({'type': 'voice_start'})
+        self.capture = None
+        await self.queue_clip('voice-nathan.pcm')
+        await self.send({'type': 'voice_start', 'mode': 'recorded'})
         log.info('Wake phrase detected; opening voice conversation')
 
     async def queue_clip(self, filename):
@@ -137,6 +142,17 @@ class VoiceAssistant:
             self.speaking = True
             await self.output.put(base64.b64encode(path.read_bytes()).decode())
             await self.output.put(None)
+
+    async def clear_playback(self):
+        if self.play_task:
+            self.play_task.cancel()
+            await asyncio.gather(self.play_task, return_exceptions=True)
+        while not self.output.empty():
+            self.output.get_nowait()
+        self.speaking = False
+        self.mute_until = time.monotonic() + 0.6
+        if self.pcm:
+            self.play_task = asyncio.create_task(self.playback(self.pcm))
 
     async def notice(self, reason='error'):
         if (self.last_notice is not None and time.monotonic() - self.last_notice < 10) or not self.play_task or self.play_task.done():
@@ -152,7 +168,14 @@ class VoiceAssistant:
             return
         if kind == 'voice_ready':
             self.ready = True
-            self.state = 'talking'
+            self.state = 'listening_for_request'
+        elif kind == 'voice_print_complete':
+            await self.clear_playback()
+            self.drawing = self.active = self.ready = False
+            self.capture = None
+            self.state = 'listening'
+            if self.recognizer:
+                self.recognizer.Reset()
         elif kind == 'voice_output' and self.active:
             self.reply_audio.extend(base64.b64decode(data.get('audio', ''), validate=True))
             if len(self.reply_audio) > 4000000:
@@ -183,13 +206,18 @@ class VoiceAssistant:
             self.drawing = False
             self.finish = True
         elif kind in ('voice_end', 'voice_error'):
+            if self.drawing:
+                await self.clear_playback()
             self.drawing = False
             self.reply_audio.clear()
             if kind == 'voice_error':
                 await self.notice('error')
             self.active = False
             self.ready = False
+            if self.finish:
+                self.announce_ready = False
             self.finish = False
+            self.capture = None
             if data.get('error'):
                 self.error = data['error']
             self.state = 'listening' if self.enabled else 'off'
@@ -251,6 +279,7 @@ class VoiceAssistant:
                 if not info.get('ok'):
                     raise RuntimeError(info.get('error', 'Microphone unavailable'))
                 pcm = 'plug:{SLAVE="' + info['pcm'] + '"}'
+                self.pcm = pcm
                 recorder = await asyncio.create_subprocess_exec('arecord', '-q', '-D', pcm, '-t', 'raw', '-f', 'S16_LE', '-r', '16000', '-c', '1',
                     stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
                 self.play_task = asyncio.create_task(self.playback(pcm))
@@ -270,7 +299,7 @@ class VoiceAssistant:
                         log.info('Audio health: state=%s active=%s speaking=%s level=%d uploaded=%d replies=%d',
                                  self.state, self.active, self.speaking, self.microphone_level,
                                  self.sent_chunks, self.played_replies)
-                    if self.active and now - self.session_started > 120:
+                    if self.active and now - self.session_started > 180:
                         await self.notice('image' if self.state == 'drawing' else 'no-request')
                         await self.send({'type': 'voice_stop'})
                         self.active = self.ready = False
@@ -281,14 +310,14 @@ class VoiceAssistant:
                     if self.finish and not self.speaking and self.output.empty() and now >= self.mute_until:
                         await self.send({'type': 'voice_stop'})
                         self.active = self.ready = self.finish = False
-                        self.announce_ready = True
+                        self.announce_ready = False
                         # Start a fresh recorder and decoder after every completed flow.
                         # The ready cue is played only once capture has reopened.
                         return
-                    if self.drawing and not self.speaking and now - self.last_progress > 4:
+                    if self.drawing and not self.speaking and now - self.last_progress > 0.1:
                         self.last_progress = now
                         await self.queue_clip('voice-scribble.pcm')
-                    if self.speaking or now < self.mute_until:
+                    if (self.speaking or now < self.mute_until) and not self.drawing:
                         conversion = None
                         continue
                     final = self.recognizer.AcceptWaveform(data)
@@ -313,10 +342,26 @@ class VoiceAssistant:
                             self.state = 'listening'
                             self.recognizer.Reset()
                         elif self.ready and not self.drawing:
-                            audio, conversion = audioop.ratecv(data, 2, 1, 16000, 24000, conversion)
-                            self.sent_chunks += 1
-                            await self.send({'type': 'voice_audio', 'audio': base64.b64encode(audio).decode()})
-                            if self.microphone_level > 250:
+                            if self.capture is None:
+                                self.capture = RequestCapture(now)
+                            outcome = self.capture.add(data, now)
+                            if outcome == 'complete':
+                                audio = self.capture.wav()
+                                self.capture = None
+                                self.drawing = True
+                                self.state = 'drawing'
+                                self.last_progress = now
+                                await self.queue_clip('voice-scribble.pcm')
+                                await self.send({'type': 'voice_request', 'audio': base64.b64encode(audio).decode()})
+                                self.sent_chunks += 1
+                            elif outcome in ('too_long', 'no_request'):
+                                self.capture = None
+                                await self.notice('no-request')
+                                await self.send({'type': 'voice_stop'})
+                                self.active = self.ready = False
+                                self.state = 'listening'
+                                self.recognizer.Reset()
+                            if self.microphone_level > 80:
                                 self.last_activity = now
         except asyncio.CancelledError:
             raise
@@ -326,6 +371,7 @@ class VoiceAssistant:
             log.warning('Voice failed: %s', error)
         finally:
             self.active = self.ready = self.drawing = self.finish = False
+            self.capture = None
             self.microphone_level = 0
             if recorder and recorder.returncode is None:
                 recorder.kill()

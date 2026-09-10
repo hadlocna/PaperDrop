@@ -123,4 +123,14 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
         voice.queue_clip = clip
         voice.send = send
         await voice.wake()
-        self.assertEqual(events, ['voice-wake.pcm', 'voice_start'])
+        self.assertEqual(events, ['voice-wake.pcm', 'voice-nathan.pcm', 'voice_start'])
+
+    async def test_print_completion_stops_sound_and_rearms_wake(self):
+        voice = VoiceAssistant(AsyncMock())
+        voice.active = voice.drawing = voice.ready = True
+        voice.clear_playback = AsyncMock()
+        await voice.event({'type': 'voice_print_complete', 'ok': True})
+        voice.clear_playback.assert_awaited_once()
+        self.assertFalse(voice.active)
+        self.assertFalse(voice.drawing)
+        self.assertEqual(voice.state, 'listening')
