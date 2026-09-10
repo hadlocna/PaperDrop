@@ -35,6 +35,8 @@ class VoiceAssistant:
         self.drawing = False
         self.session_id = None
         self.last_progress = 0
+        self.receipt_announced = False
+        self.announce_ready = False
         self.ready = False
         self.speaking = False
         self.mute_until = 0
@@ -117,6 +119,7 @@ class VoiceAssistant:
         self.active = True
         self.ready = False
         self.finish = False
+        self.receipt_announced = False
         self.state = 'connecting'
         self.error = None
         self.last_heard = self.last_reply = ''
@@ -161,6 +164,10 @@ class VoiceAssistant:
             await self.notice(data.get('reason', 'error'))
         elif kind == 'voice_heard':
             self.last_heard = data.get('text', '')
+            heard = self.last_heard.strip().lower().strip('.!?')
+            if self.active and not self.drawing and not self.receipt_announced and heard and heard not in ('stop', 'be quiet', 'go to sleep'):
+                self.receipt_announced = True
+                await self.queue_clip('voice-received.pcm')
         elif kind == 'voice_reply':
             self.last_reply = data.get('text', '')
         elif kind == 'voice_progress':
@@ -203,7 +210,9 @@ class VoiceAssistant:
                         self.played_replies += 1
                         self.player = None
                     conversion = None
-                    self.speaking = False
+                    self.speaking = not self.output.empty()
+                    if self.recognizer:
+                        self.recognizer.Reset()
                     if self.active and self.state != 'drawing':
                         self.state = 'listening_for_request'
                     self.mute_until = time.monotonic() + 0.6
@@ -246,11 +255,20 @@ class VoiceAssistant:
                 self.play_task = asyncio.create_task(self.playback(pcm))
                 self.state = 'listening'
                 self.error = None
+                if self.announce_ready:
+                    self.announce_ready = False
+                    await self.queue_clip('voice-ready.pcm')
                 conversion = None
+                diagnostics_at = 0
                 while True:
                     data = await asyncio.wait_for(recorder.stdout.readexactly(3200), 5)
                     now = time.monotonic()
                     self.microphone_level = audioop.rms(data, 2)
+                    if now - diagnostics_at >= 10:
+                        diagnostics_at = now
+                        log.info('Audio health: state=%s active=%s speaking=%s level=%d uploaded=%d replies=%d',
+                                 self.state, self.active, self.speaking, self.microphone_level,
+                                 self.sent_chunks, self.played_replies)
                     if self.active and now - self.session_started > 120:
                         await self.notice('image' if self.state == 'drawing' else 'no-request')
                         await self.send({'type': 'voice_stop'})
@@ -262,8 +280,10 @@ class VoiceAssistant:
                     if self.finish and not self.speaking and self.output.empty() and now >= self.mute_until:
                         await self.send({'type': 'voice_stop'})
                         self.active = self.ready = self.finish = False
-                        self.state = 'listening'
-                        self.recognizer.Reset()
+                        self.announce_ready = True
+                        # Start a fresh recorder and decoder after every completed flow.
+                        # The ready cue is played only once capture has reopened.
+                        return
                     if self.drawing and not self.speaking and now - self.last_progress > 15:
                         self.last_progress = now
                         await self.queue_clip('voice-working.pcm')

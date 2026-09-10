@@ -94,3 +94,17 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
         with patch('voice_assistant.asyncio.sleep', new_callable=AsyncMock):
             await voice.supervise()
         self.assertEqual(attempts, 2)
+
+    async def test_prompt_receipt_is_announced_once_and_not_for_stop(self):
+        voice = VoiceAssistant(AsyncMock())
+        voice.queue_clip = AsyncMock()
+        await voice.wake()
+        await voice.event({'type': 'voice_heard', 'text': 'stop'})
+        voice.queue_clip.assert_not_awaited()
+        await voice.event({'type': 'voice_heard', 'text': 'Draw a lizard'})
+        await voice.event({'type': 'voice_heard', 'text': 'Draw a lizard'})
+        voice.queue_clip.assert_awaited_once_with('voice-received.pcm')
+        await voice.event({'type': 'voice_end'})
+        await voice.wake()
+        await voice.event({'type': 'voice_heard', 'text': 'Draw a cat'})
+        self.assertEqual(voice.queue_clip.await_count, 2)
