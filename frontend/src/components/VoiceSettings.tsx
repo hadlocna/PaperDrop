@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Mic, MicOff } from 'lucide-react';
 import { client as api } from '../api/client';
 
-type VoiceState = { enabled: boolean; state: string; error?: string; lastReply?: string; ready: boolean };
+type VoiceState = { enabled: boolean; state: string; error?: string; lastReply?: string; lastHeard?: string; ready: boolean };
 export function VoiceSettings({ deviceId }: { deviceId: string }) {
     const [state, setState] = useState<VoiceState | null>(null);
     const [busy, setBusy] = useState(false);
@@ -27,6 +27,7 @@ export function VoiceSettings({ deviceId }: { deviceId: string }) {
         <p className="text-sm text-gray-600">Say “Hey Paper Drop”, wait for the reply, then ask for a picture. PaperDrop will draw it and print it for you.</p>
         <p className="text-xs text-gray-500">When enabled, the microphone listens locally for the wake phrase. After waking, conversation audio goes to OpenAI for an AI voice reply. PaperDrop does not save voice recordings or transcripts. Conversations end after 2 minutes at most. One picture per conversation.</p>
         <p role="status" className="text-sm">{state?.enabled ? `Voice on · ${state.state}` : 'Voice listening off'}</p>
+        {state?.lastHeard && <p className="text-sm text-gray-600">Heard: {state.lastHeard}</p>}
         {state?.lastReply && <p className="text-sm text-gray-600">PaperDrop: {state.lastReply}</p>}
         {(error || state?.error) && <p role="alert" className="text-sm text-red-700">{error || state?.error}</p>}
         <div className="flex flex-wrap gap-2">

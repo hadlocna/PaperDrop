@@ -42,6 +42,8 @@ class VoiceAssistant:
         self.finish = False
         self.recognizer = None
         self.last_reply = ''
+        self.last_heard = ''
+        self.last_notice = None
         self.microphone_level = 0
         self.sent_chunks = 0
         self.played_replies = 0
@@ -54,7 +56,7 @@ class VoiceAssistant:
     def status(self):
         return {'ok': True, 'enabled': self.enabled, 'state': self.state, 'error': self.error,
                 'wakePhrase': 'Hey Paper Drop', 'ready': MODEL.exists(),
-                'lastReply': self.last_reply, 'microphoneLevel': self.microphone_level, 'sentChunks': self.sent_chunks,
+                'lastHeard': self.last_heard, 'lastReply': self.last_reply, 'microphoneLevel': self.microphone_level, 'sentChunks': self.sent_chunks,
                 'playedReplies': self.played_replies, 'speaking': self.speaking, 'sessionActive': self.active}
 
     async def start(self):
@@ -101,10 +103,24 @@ class VoiceAssistant:
         self.ready = False
         self.finish = False
         self.state = 'connecting'
+        self.error = None
+        self.last_heard = self.last_reply = ''
         self.session_started = time.monotonic()
         self.last_activity = time.monotonic()
         await self.send({'type': 'voice_start'})
         log.info('Wake phrase detected; opening voice conversation')
+
+    async def notice(self, reason='error'):
+        if (self.last_notice is not None and time.monotonic() - self.last_notice < 10) or not self.play_task or self.play_task.done():
+            return
+        filenames = {'error': 'voice-error.pcm', 'no-request': 'voice-no-request.pcm',
+                     'image': 'voice-image-error.pcm', 'print': 'voice-print-error.pcm'}
+        path = Path(__file__).with_name(filenames.get(reason, 'voice-error.pcm'))
+        if path.exists():
+            self.last_notice = time.monotonic()
+            self.speaking = True
+            await self.output.put(base64.b64encode(path.read_bytes()).decode())
+            await self.output.put(None)
 
     async def event(self, data):
         kind = data['type']
@@ -121,6 +137,10 @@ class VoiceAssistant:
             self.output.put_nowait(data.get('audio'))
         elif kind == 'voice_output_done':
             await self.output.put(None)
+        elif kind == 'voice_notice':
+            await self.notice(data.get('reason', 'error'))
+        elif kind == 'voice_heard':
+            self.last_heard = data.get('text', '')
         elif kind == 'voice_reply':
             self.last_reply = data.get('text', '')
         elif kind == 'voice_progress':
@@ -128,10 +148,13 @@ class VoiceAssistant:
         elif kind == 'voice_finish':
             self.finish = True
         elif kind in ('voice_end', 'voice_error'):
+            if kind == 'voice_error':
+                await self.notice('error')
             self.active = False
             self.ready = False
             self.finish = False
-            self.error = data.get('error')
+            if data.get('error'):
+                self.error = data['error']
             self.state = 'listening' if self.enabled else 'off'
             if self.recognizer:
                 self.recognizer.Reset()
@@ -200,6 +223,7 @@ class VoiceAssistant:
                     now = time.monotonic()
                     self.microphone_level = audioop.rms(data, 2)
                     if self.active and now - self.session_started > 120:
+                        await self.notice('image' if self.state == 'drawing' else 'no-request')
                         await self.send({'type': 'voice_stop'})
                         self.active = self.ready = False
                         self.state = 'listening'
@@ -216,6 +240,7 @@ class VoiceAssistant:
                         continue
                     if self.active:
                         if now - self.last_activity > 40 and self.state != 'drawing':
+                            await self.notice('no-request')
                             await self.send({'type': 'voice_stop'})
                             self.active = self.ready = False
                             self.state = 'listening'

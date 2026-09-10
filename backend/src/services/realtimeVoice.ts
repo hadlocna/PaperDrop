@@ -3,7 +3,7 @@ import OpenAI from 'openai';
 import { prisma } from '../lib/prisma';
 import { deviceConnections } from '../websocket/session';
 
-type Voice = { ws: WebSocket; timer: NodeJS.Timeout; ready: boolean; printed: boolean; calls: Set<string>; generation?: Promise<void> };
+type Voice = { ws: WebSocket; timer: NodeJS.Timeout; ready: boolean; printed: boolean; ending?: boolean; calls: Set<string>; generation?: Promise<void> };
 const sessions = new Map<string, Voice>();
 const starts = new Map<string, number[]>();
 function send(deviceId: string, event: any) {
@@ -25,7 +25,8 @@ Keep drawings child-appropriate. Do not request names, age, address, school, sec
 Do not form exclusive relationships or encourage secrecy. For topics beyond drawing, briefly suggest asking a trusted grown-up.
 Never claim a picture printed: the tool only confirms whether a picture was sent to the printer.
 When a drawing request is clear, say one short acknowledgement and call the tool without extra questions.
-After the tool returns, tell them it was sent or explain that it did not work. Then say goodbye briefly.`;
+After the tool returns, tell them it was sent or explain that it did not work. Then say goodbye briefly.
+If asked to stop, be quiet, go to sleep, or wait for the wake word, call end_conversation. Never just promise to wait while keeping the conversation open.`;
 
 export async function handleVoice(deviceId: string, event: any) {
     if (event.type === 'voice_stop') { closeVoice(deviceId); return; }
@@ -50,13 +51,14 @@ export async function handleVoice(deviceId: string, event: any) {
         send(deviceId, { type: 'voice_error', error: 'Voice listening is not enabled or configured.' }); return;
     }
     const ws = new WebSocket(`wss://api.openai.com/v1/realtime?model=${encodeURIComponent(process.env.OPENAI_REALTIME_MODEL || 'gpt-realtime-2.1')}`, { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } });
-    const session: Voice = { ws, ready: false, printed: false, calls: new Set(), timer: setTimeout(() => closeVoice(deviceId), 120000) };
+    const session: Voice = { ws, ready: false, printed: false, calls: new Set(), timer: setTimeout(() => { send(deviceId, { type: 'voice_notice', reason: session.printed ? 'image' : 'no-request' }); closeVoice(deviceId); }, 120000) };
     sessions.set(deviceId, session);
     ws.on('open', () => ws.send(JSON.stringify({ type: 'session.update', session: {
         type: 'realtime', output_modalities: ['audio'], instructions: VOICE_INSTRUCTIONS,
-        audio: { input: { format: { type: 'audio/pcm', rate: 24000 }, noise_reduction: { type: 'far_field' }, turn_detection: { type: 'server_vad', threshold: 0.35, silence_duration_ms: 900, interrupt_response: false } },
+        audio: { input: { format: { type: 'audio/pcm', rate: 24000 }, transcription: { model: 'gpt-4o-mini-transcribe' }, noise_reduction: { type: 'far_field' }, turn_detection: { type: 'server_vad', threshold: 0.35, silence_duration_ms: 900, interrupt_response: false } },
                  output: { format: { type: 'audio/pcm', rate: 24000 }, voice: 'cedar' } },
-        tools: [{ type: 'function', name: 'create_picture', description: 'Generate one child-friendly drawing and send it to this PaperDrop printer.', parameters: { type: 'object', properties: { prompt: { type: 'string', description: 'Describe the requested drawing and any requested caption.' } }, required: ['prompt'], additionalProperties: false } }],
+        tools: [{ type: 'function', name: 'create_picture', description: 'Generate one child-friendly drawing and send it to this PaperDrop printer.', parameters: { type: 'object', properties: { prompt: { type: 'string', description: 'Describe the requested drawing and any requested caption.' } }, required: ['prompt'], additionalProperties: false } },
+        { type: 'function', name: 'end_conversation', description: 'Return to local wake-word listening when asked to stop, be quiet, sleep, wait for the keyword or end the conversation.', parameters: { type: 'object', properties: {}, additionalProperties: false } }],
         tool_choice: 'auto', max_output_tokens: 600
     } })));
     ws.on('message', async raw => {
@@ -67,6 +69,8 @@ export async function handleVoice(deviceId: string, event: any) {
                 session.ready = true;
                 send(deviceId, { type: 'voice_ready' });
                 ws.send(JSON.stringify({ type: 'response.create', response: { instructions: 'Say exactly: I’m here! What would you like me to draw?' } }));
+            } else if (e.type === 'conversation.item.input_audio_transcription.completed') {
+                send(deviceId, { type: 'voice_heard', text: String(e.transcript || '').slice(0, 800) });
             } else if (e.type === 'input_audio_buffer.speech_started') {
                 send(deviceId, { type: 'voice_progress', state: 'hearing_request' });
             } else if (e.type === 'input_audio_buffer.speech_stopped') {
@@ -80,6 +84,9 @@ export async function handleVoice(deviceId: string, event: any) {
                 send(deviceId, { type: 'voice_output', audio: e.delta });
             } else if (e.type === 'response.output_audio.done') {
                 send(deviceId, { type: 'voice_output_done' });
+            } else if (e.type === 'response.function_call_arguments.done' && e.name === 'end_conversation') {
+                session.ending = true;
+                ws.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: e.call_id, output: '{"ok":true}' } }));
             } else if (e.type === 'response.function_call_arguments.done' && e.name === 'create_picture' && !session.calls.has(e.call_id)) {
                 session.calls.add(e.call_id);
                 session.generation = (async () => {
@@ -101,7 +108,14 @@ export async function handleVoice(deviceId: string, event: any) {
                         const message = await prisma.message.create({ data: { deviceId, senderId: device.ownerId!, contentType: 'image', content, status: 'sent', sentAt: new Date() } });
                         send(deviceId, { type: 'new_message', message: { ...message, senderName: 'PaperDrop' } });
                         result = { ok: true, status: 'sent_to_printer', messageId: message.id };
-                    } catch (error: any) { result = { ok: false, error: error.message?.slice(0, 180) || 'The drawing failed. Please try again.' }; }
+                    } catch (error: any) {
+                        result = { ok: false, error: error.message?.slice(0, 180) || 'The drawing failed. Please try again.' };
+                        if (sessions.get(deviceId) === session) {
+                            send(deviceId, { type: 'voice_notice', reason: 'image' });
+                            send(deviceId, { type: 'voice_error', error: 'The picture could not be created. Please try another request.' });
+                            closeVoice(deviceId);
+                        }
+                    }
                     if (ws.readyState === WebSocket.OPEN && sessions.get(deviceId) === session) {
                         ws.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: e.call_id, output: JSON.stringify(result) } }));
                         ws.send(JSON.stringify({ type: 'response.create' }));
@@ -113,7 +127,7 @@ export async function handleVoice(deviceId: string, event: any) {
                 console.error('[Voice] Realtime error:', e.error?.code);
                 send(deviceId, { type: 'voice_error', error: 'The voice service could not respond. Please try again.' });
                 closeVoice(deviceId);
-            } else if (e.type === 'response.done' && session.printed && !e.response?.output?.some((o: any) => o.type === 'function_call')) {
+            } else if (e.type === 'response.done' && (session.ending || (session.printed && !e.response?.output?.some((o: any) => o.type === 'function_call')))) {
                 send(deviceId, { type: 'voice_finish' });
             }
         } catch { send(deviceId, { type: 'voice_error', error: 'Voice conversation failed. Please try again.' }); closeVoice(deviceId); }

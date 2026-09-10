@@ -16,7 +16,7 @@ In device Settings, the owner can enable/disable **Hey Paper Drop** or use **Try
 
 ## Validation
 
-Backend/frontend builds pass. Thirteen agent tests and ten API tests cover owner access, disabled listening, wake boundaries, duplicate wakes, cancellation and speaker controls. A live Realtime smoke check returned PCM speech. A spoken drawing fixture went through Realtime function calling, moderation, Flare generation, and message delivery to a local test receiver (no physical print). The device's Vosk recognized a spoken wake fixture and rejected an ordinary greeting.
+Backend/frontend builds pass. Fourteen agent tests and twelve API tests cover owner access, disabled listening, wake boundaries, duplicate wakes, cancellation and speaker controls. A live Realtime smoke check returned PCM speech. A spoken drawing fixture went through Realtime function calling, moderation, Flare generation, and message delivery to a local test receiver (no physical print). The device's Vosk recognized a spoken wake fixture and rejected an ordinary greeting.
 
 Live smoke command (uses the local backend key and incurs API usage):
 
@@ -25,3 +25,13 @@ PAPERDROP_LIVE_TEST=1 node backend/tests/realtime-live.cjs
 ```
 
 Official references: [Realtime conversations](https://developers.openai.com/api/docs/guides/realtime-conversations), [Vosk model](https://alphacephei.com/vosk/models).
+
+## Recovery and current device testing
+
+Firmware 1.3.4 contains local AI-generated cedar error clips for missed requests, service errors, failed image creation, and failed printing. These clips play without another OpenAI call. The microphone is suppressed during announcements. The cloud exposes transient heard-request and spoken-reply captions in owner Settings; they are not written to the database or logs.
+
+The end_conversation tool returns control to the local detector when asked to stop or wait for the keyword. The live spoken-stop fixture verified this transition. The user confirmed the physical wake phrase and opening greeting, but reported that their drawing request did not print; that physical acceptance remains unresolved after recovery changes. Do not describe the full hardware voice-to-print flow as proven solely by the local simulated drawing test.
+
+BlueALSA now uses its documented scheduling configuration for HFP audio threads. The Pi still logged some mSBC packet loss during testing; the CVSD fallback produced silence and was reverted. Speech detection uses far-field noise reduction. This hardware combination still needs physical microphone and second-turn verification.
+
+The four fallback audio assets were generated with gpt-4o-mini-tts-2025-12-15, cedar, raw PCM16 mono 24 kHz, with warm reassuring delivery and clear gentle pacing. They are AI-generated speech.

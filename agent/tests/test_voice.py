@@ -28,6 +28,9 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(voice.active)
         self.assertFalse(voice.ready)
         self.assertEqual(voice.state, 'listening')
+        await voice.wake()
+        self.assertTrue(voice.active)
+        self.assertEqual(json.loads(voice.ws.send.call_args.args[0])['type'], 'voice_start')
 
     async def test_wake_control_cannot_start_when_disabled(self):
         voice = VoiceAssistant(AsyncMock())
@@ -44,3 +47,15 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
         await voice.stop()
         self.assertTrue(task.cancelled())
         self.assertEqual(voice.state, 'off')
+
+    async def test_error_notice_is_local_audio_and_does_not_upload_microphone(self):
+        from unittest.mock import Mock
+        voice = VoiceAssistant(AsyncMock())
+        voice.play_task = Mock()
+        voice.play_task.done.return_value = False
+        await voice.notice('image')
+        self.assertTrue(voice.speaking)
+        self.assertEqual(voice.output.qsize(), 2)
+        voice.ws.send.assert_not_awaited()
+        await voice.notice('error')
+        self.assertEqual(voice.output.qsize(), 2)

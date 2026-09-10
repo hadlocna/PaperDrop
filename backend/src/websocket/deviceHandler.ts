@@ -244,6 +244,7 @@ const handleDeviceMessage = async (deviceId: string, message: any) => {
         }
     }
     else if (message.type === 'print_status') {
+        if (message.status === 'failed') broadcastToDevice(deviceId, { type: 'voice_notice', reason: 'print' });
         try {
             if (message.message_id) {
                 await prisma.message.update({
