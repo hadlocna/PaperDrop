@@ -17,6 +17,7 @@ export async function voiceCommand(req: AuthRequest, res: Response) {
             if (action === 'disable') closeVoice(device.id);
         }
         if (action === 'wake' && config.voiceEnabled !== true) return res.status(409).json({ error: 'Enable voice listening first.' });
+        if (action === 'wake') closeVoice(device.id);
         const result = await requestFromDevice(device.id, { type: 'voice_control', action, enabled: config.voiceEnabled === true }, 25000);
         return res.status(result.ok ? 200 : 409).json(result);
     } catch (error: any) {

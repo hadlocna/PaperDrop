@@ -54,7 +54,7 @@ export async function handleVoice(deviceId: string, event: any) {
     sessions.set(deviceId, session);
     ws.on('open', () => ws.send(JSON.stringify({ type: 'session.update', session: {
         type: 'realtime', output_modalities: ['audio'], instructions: VOICE_INSTRUCTIONS,
-        audio: { input: { format: { type: 'audio/pcm', rate: 24000 }, turn_detection: { type: 'server_vad', silence_duration_ms: 800, interrupt_response: false } },
+        audio: { input: { format: { type: 'audio/pcm', rate: 24000 }, noise_reduction: { type: 'far_field' }, turn_detection: { type: 'server_vad', threshold: 0.35, silence_duration_ms: 900, interrupt_response: false } },
                  output: { format: { type: 'audio/pcm', rate: 24000 }, voice: 'cedar' } },
         tools: [{ type: 'function', name: 'create_picture', description: 'Generate one child-friendly drawing and send it to this PaperDrop printer.', parameters: { type: 'object', properties: { prompt: { type: 'string', description: 'Describe the requested drawing and any requested caption.' } }, required: ['prompt'], additionalProperties: false } }],
         tool_choice: 'auto', max_output_tokens: 600
@@ -67,6 +67,15 @@ export async function handleVoice(deviceId: string, event: any) {
                 session.ready = true;
                 send(deviceId, { type: 'voice_ready' });
                 ws.send(JSON.stringify({ type: 'response.create', response: { instructions: 'Say exactly: I’m here! What would you like me to draw?' } }));
+            } else if (e.type === 'input_audio_buffer.speech_started') {
+                send(deviceId, { type: 'voice_progress', state: 'hearing_request' });
+            } else if (e.type === 'input_audio_buffer.speech_stopped') {
+                send(deviceId, { type: 'voice_progress', state: 'thinking' });
+            } else if (e.type === 'response.output_audio_transcript.done') {
+                send(deviceId, { type: 'voice_reply', text: String(e.transcript || '').slice(0, 800) });
+            } else if (e.type === 'response.done' && e.response?.status === 'failed') {
+                send(deviceId, { type: 'voice_error', error: 'The voice service could not complete its reply. Start another conversation.' });
+                closeVoice(deviceId);
             } else if (e.type === 'response.output_audio.delta') {
                 send(deviceId, { type: 'voice_output', audio: e.delta });
             } else if (e.type === 'response.output_audio.done') {

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Mic, MicOff } from 'lucide-react';
 import { client as api } from '../api/client';
 
-type VoiceState = { enabled: boolean; state: string; error?: string; ready: boolean };
+type VoiceState = { enabled: boolean; state: string; error?: string; lastReply?: string; ready: boolean };
 export function VoiceSettings({ deviceId }: { deviceId: string }) {
     const [state, setState] = useState<VoiceState | null>(null);
     const [busy, setBusy] = useState(false);
@@ -27,10 +27,11 @@ export function VoiceSettings({ deviceId }: { deviceId: string }) {
         <p className="text-sm text-gray-600">Say “Hey Paper Drop”, wait for the reply, then ask for a picture. PaperDrop will draw it and print it for you.</p>
         <p className="text-xs text-gray-500">When enabled, the microphone listens locally for the wake phrase. After waking, conversation audio goes to OpenAI for an AI voice reply. PaperDrop does not save voice recordings or transcripts. Conversations end after 2 minutes at most. One picture per conversation.</p>
         <p role="status" className="text-sm">{state?.enabled ? `Voice on · ${state.state}` : 'Voice listening off'}</p>
+        {state?.lastReply && <p className="text-sm text-gray-600">PaperDrop: {state.lastReply}</p>}
         {(error || state?.error) && <p role="alert" className="text-sm text-red-700">{error || state?.error}</p>}
         <div className="flex flex-wrap gap-2">
             <button disabled={busy || !state} onClick={() => run(state?.enabled ? 'disable' : 'enable')} className="px-3 py-2 rounded-xl bg-charcoal-800 text-white text-sm flex gap-2 items-center disabled:opacity-50">{state?.enabled ? <MicOff size={16} /> : <Mic size={16} />}{state?.enabled ? 'Turn listening off' : 'Enable voice listening'}</button>
-            <button disabled={busy || !state?.enabled || state.state !== 'listening'} onClick={() => run('wake')} className="px-3 py-2 border rounded-xl text-sm disabled:opacity-50">Try a conversation</button>
+            <button disabled={busy || !state?.enabled || ['starting', 'error'].includes(state.state)} onClick={() => run('wake')} className="px-3 py-2 border rounded-xl text-sm disabled:opacity-50">{state?.state === 'listening' ? 'Try a conversation' : 'Start over'}</button>
         </div>
         {state?.enabled && <p className="text-xs text-gray-500">Turn listening off before changing the Bluetooth speaker or running a sound or microphone test.</p>}
     </section>;

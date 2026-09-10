@@ -16,7 +16,12 @@ mkdir -p /etc/systemd/system/bluealsa.service.d
 override=/etc/systemd/system/bluealsa.service.d/paperdrop.conf
 contents='[Service]
 ExecStart=
-ExecStart=/usr/bin/bluealsa -S -p a2dp-source -p hfp-ag -p hsp-ag'
+ExecStart=/usr/bin/bluealsa -S -p a2dp-source -p hfp-ag -p hsp-ag --io-rt-priority=10 --keep-alive=3
+RestrictRealtime=no
+LimitRTPRIO=10
+CapabilityBoundingSet=CAP_NET_RAW CAP_SYS_NICE
+AmbientCapabilities=CAP_NET_RAW CAP_SYS_NICE
+SystemCallFilter=@resources'
 changed=0
 if [ ! -f "$override" ] || [ "$(cat "$override")" != "$contents" ]; then
     printf '%s\n' "$contents" > "$override"

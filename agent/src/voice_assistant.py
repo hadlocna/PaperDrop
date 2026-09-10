@@ -41,6 +41,11 @@ class VoiceAssistant:
         self.output = asyncio.Queue(maxsize=200)
         self.finish = False
         self.recognizer = None
+        self.last_reply = ''
+        self.microphone_level = 0
+        self.sent_chunks = 0
+        self.played_replies = 0
+        self.session_started = 0
         self.last_activity = time.monotonic()
 
     async def send(self, event):
@@ -48,10 +53,13 @@ class VoiceAssistant:
 
     def status(self):
         return {'ok': True, 'enabled': self.enabled, 'state': self.state, 'error': self.error,
-                'wakePhrase': 'Hey Paper Drop', 'ready': MODEL.exists()}
+                'wakePhrase': 'Hey Paper Drop', 'ready': MODEL.exists(),
+                'lastReply': self.last_reply, 'microphoneLevel': self.microphone_level, 'sentChunks': self.sent_chunks,
+                'playedReplies': self.played_replies, 'speaking': self.speaking, 'sessionActive': self.active}
 
     async def start(self):
         if self.enabled and (self.task is None or self.task.done()):
+            self.state = 'starting'
             self.task = asyncio.create_task(self.listen())
 
     async def stop(self):
@@ -93,6 +101,7 @@ class VoiceAssistant:
         self.ready = False
         self.finish = False
         self.state = 'connecting'
+        self.session_started = time.monotonic()
         self.last_activity = time.monotonic()
         await self.send({'type': 'voice_start'})
         log.info('Wake phrase detected; opening voice conversation')
@@ -112,6 +121,8 @@ class VoiceAssistant:
             self.output.put_nowait(data.get('audio'))
         elif kind == 'voice_output_done':
             await self.output.put(None)
+        elif kind == 'voice_reply':
+            self.last_reply = data.get('text', '')
         elif kind == 'voice_progress':
             self.state = data.get('state', 'talking')
         elif kind == 'voice_finish':
@@ -134,10 +145,15 @@ class VoiceAssistant:
                 if chunk is None:
                     if self.player:
                         self.player.stdin.close()
-                        await asyncio.wait_for(self.player.wait(), 15)
+                        code = await asyncio.wait_for(self.player.wait(), 15)
+                        if code:
+                            raise RuntimeError('Bluetooth voice playback failed')
+                        self.played_replies += 1
                         self.player = None
                     conversion = None
                     self.speaking = False
+                    if self.active and self.state != 'drawing':
+                        self.state = 'listening_for_request'
                     self.mute_until = time.monotonic() + 0.6
                     self.last_activity = time.monotonic()
                     continue
@@ -172,7 +188,7 @@ class VoiceAssistant:
                 info = await run_speaker('microphone_ready')
                 if not info.get('ok'):
                     raise RuntimeError(info.get('error', 'Microphone unavailable'))
-                pcm = 'plug:' + info['pcm']
+                pcm = 'plug:{SLAVE="' + info['pcm'] + '"}'
                 recorder = await asyncio.create_subprocess_exec('arecord', '-q', '-D', pcm, '-t', 'raw', '-f', 'S16_LE', '-r', '16000', '-c', '1',
                     stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
                 self.play_task = asyncio.create_task(self.playback(pcm))
@@ -182,6 +198,12 @@ class VoiceAssistant:
                 while True:
                     data = await asyncio.wait_for(recorder.stdout.readexactly(3200), 5)
                     now = time.monotonic()
+                    self.microphone_level = audioop.rms(data, 2)
+                    if self.active and now - self.session_started > 120:
+                        await self.send({'type': 'voice_stop'})
+                        self.active = self.ready = False
+                        self.state = 'listening'
+                        self.recognizer.Reset()
                     if self.play_task.done():
                         await self.play_task
                     if self.finish and not self.speaking and self.output.empty() and now >= self.mute_until:
@@ -200,6 +222,7 @@ class VoiceAssistant:
                             self.recognizer.Reset()
                         elif self.ready:
                             audio, conversion = audioop.ratecv(data, 2, 1, 16000, 24000, conversion)
+                            self.sent_chunks += 1
                             await self.send({'type': 'voice_audio', 'audio': base64.b64encode(audio).decode()})
                             if audioop.rms(data, 2) > 250:
                                 self.last_activity = now
