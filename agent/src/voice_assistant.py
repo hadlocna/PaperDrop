@@ -125,6 +125,7 @@ class VoiceAssistant:
         self.last_heard = self.last_reply = ''
         self.session_started = time.monotonic()
         self.last_activity = time.monotonic()
+        await self.queue_clip('voice-wake.pcm')
         await self.send({'type': 'voice_start'})
         log.info('Wake phrase detected; opening voice conversation')
 

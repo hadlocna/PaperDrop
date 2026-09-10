@@ -99,6 +99,7 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
         voice = VoiceAssistant(AsyncMock())
         voice.queue_clip = AsyncMock()
         await voice.wake()
+        voice.queue_clip.reset_mock()
         await voice.event({'type': 'voice_heard', 'text': 'stop'})
         voice.queue_clip.assert_not_awaited()
         await voice.event({'type': 'voice_heard', 'text': 'Draw a lizard'})
@@ -107,4 +108,14 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
         await voice.event({'type': 'voice_end'})
         await voice.wake()
         await voice.event({'type': 'voice_heard', 'text': 'Draw a cat'})
-        self.assertEqual(voice.queue_clip.await_count, 2)
+        self.assertEqual(voice.queue_clip.await_count, 3)
+
+    async def test_wake_beep_is_queued_before_cloud_request(self):
+        voice = VoiceAssistant(AsyncMock())
+        events = []
+        async def clip(name): events.append(name)
+        async def send(event): events.append(event['type'])
+        voice.queue_clip = clip
+        voice.send = send
+        await voice.wake()
+        self.assertEqual(events, ['voice-wake.pcm', 'voice_start'])
