@@ -31,8 +31,10 @@ async def run_speaker(action, address=None, audio=None):
 
 async def handle_speaker(websocket, data):
     try:
-        if lock.locked():
-            result = {'ok': False, 'error': 'Another speaker operation is running. Please wait.'}
+        if data.get('action') == 'status':
+            result = await run_speaker('status')
+        elif lock.locked():
+            result = {'ok': False, 'error': 'Audio is in use. Turn voice listening off before changing speakers or running a test.'}
         elif data.get('action') not in ('status', 'scan', 'connect', 'disconnect', 'test', 'microphone_test', 'play'):
             result = {'ok': False, 'error': 'Unsupported speaker action.'}
         else:

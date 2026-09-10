@@ -152,6 +152,7 @@ class Speakers:
                 self.dbus.Interface(self.target(old), DEVICE).Disconnect(timeout=5)
             except Exception:
                 pass
+        self.test()
         return self.status()
 
     def disconnect(self, address):
@@ -170,6 +171,7 @@ class Speakers:
             obj = self.target(saved['address'])
             if not self.properties(obj).get('Connected'):
                 self.dbus.Interface(obj, DEVICE).ConnectProfile(AUDIO_SINK, timeout=12)
+                self.test()
         return {'ok': True}
 
     def prepare_playback(self, obj):
@@ -195,23 +197,21 @@ class Speakers:
         if not self.properties(obj).get('Connected'):
             raise RuntimeError('Connect your selected speaker before playing a test sound.')
         self.prepare_playback(obj)
-        # A soft, bouncing marimba flourish, with time for Bluetooth to wake up.
+        # A friendly short brrk, with time for Bluetooth to wake up.
         with tempfile.TemporaryDirectory(prefix='paperdrop-chime-') as directory:
             filename = str(Path(directory) / 'chime.wav')
             with wave.open(filename, 'wb') as output:
                 output.setparams((2, 2, 44100, 0, 'NONE', 'not compressed'))
                 frames = bytearray()
-                notes = [(0.65, 523.25), (0.88, 659.25), (1.11, 783.99), (1.46, 1046.5)]
-                for i in range(int(3.0 * 44100)):
-                    t = i / 44100
+                for i in range(int(1.4 * 44100)):
+                    t = i / 44100 - 0.45
                     value = 0.0
-                    for onset, frequency in notes:
-                        age = t - onset
-                        if 0 <= age < 0.85:
-                            envelope = min(age / 0.008, 1) * math.exp(-6 * age)
-                            value += envelope * (math.sin(2 * math.pi * frequency * age)
-                                                 + 0.22 * math.sin(2 * math.pi * frequency * 3 * age))
-                    sample = int(4500 * value)
+                    if 0 <= t < 0.52:
+                        envelope = min(t / 0.012, 1) * min((0.52 - t) / 0.07, 1)
+                        flutter = 0.3 + 0.7 * max(0, math.sin(2 * math.pi * 34 * t))
+                        phase = 2 * math.pi * (240 * t - 90 * t * t)
+                        value = envelope * flutter * (math.sin(phase) + 0.25 * math.sin(phase * 2))
+                    sample = int(6000 * value)
                     frames.extend(struct.pack('<hh', sample, sample))
                 output.writeframes(frames)
             result = subprocess.run(['aplay', '-q', '-D', f'bluealsa:DEV={address},PROFILE=a2dp', filename],
@@ -220,6 +220,33 @@ class Speakers:
                 raise RuntimeError('Unable to play audio. Reconnect the speaker and try again.')
         return {**self.status(), 'message': 'Test sound played.'}
 
+    def microphone_ready(self):
+        address = validate_address(load_settings().get('address'))
+        obj = self.target(address)
+        uuids = [str(u).lower() for u in self.properties(obj).get('UUIDs', [])]
+        profile = HANDS_FREE if HANDS_FREE in uuids else HEADSET if HEADSET in uuids else None
+        if not profile:
+            raise RuntimeError('This speaker does not expose a Bluetooth microphone.')
+        try:
+            self.dbus.Interface(obj, DEVICE).ConnectProfile(profile, timeout=12)
+        except self.dbus.exceptions.DBusException as error:
+            if error.get_dbus_name() != 'org.bluez.Error.AlreadyConnected':
+                raise
+        # BlueZ Connected precedes HFP codec negotiation. Wait for an actual PCM rate.
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            try:
+                objects = self.dbus.Interface(self.bus.get_object('org.bluealsa', '/org/bluealsa'),
+                    'org.freedesktop.DBus.ObjectManager').GetManagedObjects()
+                for path, interfaces in objects.items():
+                    props = interfaces.get('org.bluealsa.PCM1', {})
+                    if address.replace(':', '_') in str(path) and str(props.get('Mode')) == 'source' and int(props.get('Sampling', 0)) > 0:
+                        return {'ok': True, 'pcm': f'bluealsa:DEV={address},PROFILE=sco', 'rate': int(props['Sampling'])}
+            except self.dbus.exceptions.DBusException:
+                pass
+            time.sleep(0.25)
+        raise RuntimeError('The Bluetooth microphone did not become ready. Reconnect the speaker.')
+
     def microphone_test(self):
         address = validate_address(load_settings().get('address'))
         obj = self.target(address)
@@ -227,17 +254,13 @@ class Speakers:
         profile = HANDS_FREE if HANDS_FREE in uuids else HEADSET if HEADSET in uuids else None
         if not profile:
             raise RuntimeError('This speaker does not expose a Bluetooth microphone. A microphone-capable headset or speaker is needed.')
-        try:
-            self.dbus.Interface(obj, DEVICE).ConnectProfile(profile, timeout=12)
-        except self.dbus.exceptions.DBusException as error:
-            if error.get_dbus_name() != 'org.bluez.Error.AlreadyConnected':
-                raise
+        info = self.microphone_ready()
         try:
             # Explicit user action only: five seconds, local playback, then delete.
             with tempfile.TemporaryDirectory(prefix='paperdrop-mic-') as directory:
                 filename = str(Path(directory) / 'microphone.wav')
                 pcm = f'bluealsa:DEV={address},PROFILE=sco'
-                result = subprocess.run(['arecord', '-q', '-D', pcm, '-f', 'S16_LE', '-r', '8000', '-c', '1',
+                result = subprocess.run(['arecord', '-q', '-D', pcm, '-f', 'S16_LE', '-r', str(info['rate']), '-c', '1',
                                          '-d', '5', filename], capture_output=True, text=True, timeout=12)
                 if result.returncode:
                     raise RuntimeError('The Bluetooth microphone could not record. Reconnect the speaker and try again.')
@@ -273,7 +296,7 @@ class Speakers:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('action', choices=['status', 'scan', 'connect', 'disconnect', 'test', 'reconnect', 'microphone_test', 'play'])
+    parser.add_argument('action', choices=['status', 'scan', 'connect', 'disconnect', 'test', 'reconnect', 'microphone_test', 'microphone_ready', 'play'])
     parser.add_argument('address', nargs='?')
     args = parser.parse_args()
     try:

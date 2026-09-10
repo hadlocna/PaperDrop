@@ -1,3 +1,4 @@
+import { VoiceSettings } from './VoiceSettings';
 import { useEffect, useState } from 'react';
 import { Bluetooth, Mic, RefreshCw, Volume2 } from 'lucide-react';
 import { client as api } from '../api/client';
@@ -71,8 +72,9 @@ export function SpeakerSettings({ deviceId }: { deviceId: string }) {
         </ul>
         {selected && <div className="space-y-3 border-t pt-3">
             <button disabled={!!busy || !selected.connected} onClick={() => run('test')} className="flex items-center gap-2 text-sm font-medium text-coral-600 disabled:opacity-50"><Volume2 size={17} /> Play test sound</button>
-            <p className="text-sm text-gray-500 flex items-center gap-2"><Mic size={17} />{selected.microphoneSupported ? 'Bluetooth microphone supported. Ready to test for future voice features.' : 'This speaker does not advertise a Bluetooth microphone.'}</p>
-            {selected.microphoneSupported && <><p className="text-xs text-gray-500">Microphone test records 5 seconds, plays it on the speaker, then deletes it. Nothing is uploaded. There is no background listening.</p><button disabled={!!busy || !selected.connected} onClick={() => run('microphone_test')} className="px-3 py-2 border rounded-xl text-sm disabled:opacity-50">Test microphone (5 seconds)</button></>}
+            <p className="text-sm text-gray-500 flex items-center gap-2"><Mic size={17} />{selected.microphoneSupported ? 'Bluetooth microphone supported. Available for voice conversations.' : 'This speaker does not advertise a Bluetooth microphone.'}</p>
+            {selected.microphoneSupported && <><p className="text-xs text-gray-500">Microphone test records 5 seconds, plays it on the speaker, then deletes it. Nothing is uploaded. Wake-phrase listening is controlled separately below.</p><button disabled={!!busy || !selected.connected} onClick={() => run('microphone_test')} className="px-3 py-2 border rounded-xl text-sm disabled:opacity-50">Test microphone (5 seconds)</button></>}
         </div>}
+        <VoiceSettings deviceId={deviceId} />
     </section>;
 }

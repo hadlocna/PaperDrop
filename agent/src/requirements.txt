@@ -7,3 +7,7 @@ aiohttp>=3.8.0
 python-multipart>=0.0.6
 python-multipart
 pyusb>=1.0.0
+
+# Offline wake phrase and PCM conversion on Python 3.13
+vosk==0.3.45
+audioop-lts==0.2.2; python_version >= "3.13"

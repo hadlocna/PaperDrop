@@ -13,6 +13,7 @@ import {
 } from '../controllers/deviceController';
 
 import { authenticateToken } from '../middleware/authMiddleware';
+import { voiceCommand } from '../controllers/voiceController';
 import { speakerCommand } from '../controllers/speakerController';
 
 const router = Router();
@@ -25,6 +26,8 @@ router.get('/', getDevices);
 router.get('/:id', getDevice);
 router.patch('/:id', updateDevice);
 router.post('/:id/test', testPrint);
+router.get('/:id/voice', voiceCommand);
+router.post('/:id/voice', voiceCommand);
 router.get('/:id/speaker', speakerCommand);
 router.post('/:id/speaker', speakerCommand);
 router.get('/:id/logs', downloadLogs);

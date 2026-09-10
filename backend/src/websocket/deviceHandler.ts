@@ -4,6 +4,7 @@ import url from 'url';
 import { prisma } from '../lib/prisma';
 import { Server } from 'http';
 import crypto from 'crypto';
+import { handleVoice, closeVoice } from '../services/realtimeVoice';
 import { deviceConnections, shellSessions } from './session';
 
 type PendingDeviceRequest = {
@@ -19,7 +20,7 @@ export const setupWebSocket = () => {
     const wss = new WebSocketServer({ noServer: true });
 
     wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
-        console.log(`[WS] CONNECTION ATTEMPT: ${req.url}`);
+        console.log('[WS] Device connection attempt');
         ws.send(JSON.stringify({ type: 'connection_established' }));
         let deviceId: string | null = null;
         let deviceCode: string | null = null;
@@ -62,6 +63,7 @@ export const setupWebSocket = () => {
             if (deviceId) {
                 if (deviceConnections.get(deviceId) === ws) {
                     console.log(`Removing ${deviceCode} from active connections`);
+                    closeVoice(deviceId);
                     deviceConnections.delete(deviceId);
                     try {
                         await prisma.device.update({
@@ -151,6 +153,8 @@ export const setupWebSocket = () => {
                 console.error(`[${deviceCode}] Error updating device status:`, e);
             }
 
+            ws.send(JSON.stringify({ type: 'voice_control', action: 'status', enabled: JSON.parse(device.config || '{}').voiceEnabled === true }));
+
             // Process buffered messages
             if (messageBuffer.length > 0) {
                 console.log(`[${deviceCode}] Processing ${messageBuffer.length} buffered messages`);
@@ -217,6 +221,10 @@ export const setupWebSocket = () => {
 };
 
 const handleDeviceMessage = async (deviceId: string, message: any) => {
+    if (['voice_start', 'voice_audio', 'voice_stop'].includes(message.type)) {
+        await handleVoice(deviceId, message);
+        return;
+    }
     if (message.type === 'device_hello' || message.type === 'heartbeat') {
         try {
             const metrics = message.metrics || {};
@@ -258,7 +266,7 @@ const handleDeviceMessage = async (deviceId: string, message: any) => {
         }
     }
     else if (
-        ['log_bundle', 'diagnostics_result', 'command_result', 'test_print_result', 'config_updated', 'update_status', 'speaker_result'].includes(message.type) &&
+        ['log_bundle', 'diagnostics_result', 'command_result', 'test_print_result', 'config_updated', 'update_status', 'speaker_result', 'voice_result'].includes(message.type) &&
         message.request_id
     ) {
         const pending = pendingDeviceRequests.get(message.request_id);

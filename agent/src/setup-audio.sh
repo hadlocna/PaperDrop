@@ -27,3 +27,13 @@ systemctl enable --now bluetooth.service bluealsa.service
 if [ "$changed" -eq 1 ]; then
     systemctl restart bluealsa.service
 fi
+
+# Small offline English recognizer: audio never leaves the device for wake detection.
+model_dir=/opt/paperdrop-models/vosk-model-small-en-us-0.15
+if [ ! -d "$model_dir" ]; then
+    model_archive="$(mktemp)"
+    curl -fL --retry 2 --max-time 180 https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip -o "$model_archive"
+    mkdir -p /opt/paperdrop-models
+    python3 -m zipfile -e "$model_archive" /opt/paperdrop-models
+    rm -f "$model_archive"
+fi

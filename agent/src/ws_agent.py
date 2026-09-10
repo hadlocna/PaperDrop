@@ -6,6 +6,7 @@ from logging.handlers import RotatingFileHandler
 import time
 from config import config
 from speaker_control import dispatch_speaker, reconnect_speaker
+from voice_assistant import VoiceAssistant
 import subprocess
 import base64
 import tempfile
@@ -638,13 +639,16 @@ async def connect_to_backend():
                 logger.info("Handshake successful! Connected to backend.")
                 connection_failures = 0 # Reset failures on success
                 
+                voice = VoiceAssistant(websocket)
+                await voice.start()
+
                 # Start background listener
                 async def listen():
                     try:
                         async for message in websocket:
                             try:
                                 data = json.loads(message)
-                                logger.info("Received from backend: type=%s request=%s message=%s",
+                                (logger.debug if data.get('type') == 'voice_output' else logger.info)("Received from backend: type=%s request=%s message=%s",
                                             data.get('type'), data.get('request_id'),
                                             (data.get('message') or {}).get('id') if isinstance(data.get('message'), dict) else None)
                                 if data.get('type') == 'ping':
@@ -653,6 +657,10 @@ async def connect_to_backend():
                                     await handle_print_job(websocket, data)
                                 elif data.get('type') == 'test_print':
                                     await handle_test_print(websocket, data)
+                                elif data.get('type') == 'voice_control':
+                                    await voice.control(data)
+                                elif str(data.get('type', '')).startswith('voice_'):
+                                    await voice.event(data)
                                 elif data.get('type') == 'speaker':
                                     dispatch_speaker(websocket, data)
                                 elif data.get('type') == 'fetch_logs':
@@ -691,12 +699,14 @@ async def connect_to_backend():
                     except Exception as e:
                         logger.error(f"Error in listener: {e}")
                     finally:
+                        await voice.stop()
                         await handle_stop_shell()
 
                 # Start heartbeat loop
                 async def heartbeat():
                     while True:
                         try:
+                            await voice.start()
                             metrics = get_health_metrics()
                             await websocket.send(json.dumps({
                                 'type': 'heartbeat',
