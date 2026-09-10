@@ -134,3 +134,38 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(voice.active)
         self.assertFalse(voice.drawing)
         self.assertEqual(voice.state, 'listening')
+
+    async def test_playback_reports_named_clip_and_process_completion(self):
+        import base64
+        voice = VoiceAssistant(AsyncMock())
+        real_spawn = asyncio.create_subprocess_exec
+        async def spawn(*args, **kwargs):
+            return await real_spawn(sys.executable, '-c', 'import sys; sys.stdin.buffer.read()', **kwargs)
+        with patch('voice_assistant.asyncio.create_subprocess_exec', side_effect=spawn):
+            task = asyncio.create_task(voice.playback('test-pcm'))
+            await voice.output.put(('greeting', base64.b64encode(b'\0' * 4800).decode()))
+            await voice.output.put(None)
+            for _ in range(100):
+                if voice.played_replies:
+                    break
+                await asyncio.sleep(.01)
+            self.assertEqual(voice.played_replies, 1)
+            self.assertEqual(voice.status()['audioDiagnostics']['clip'], 'greeting')
+            self.assertEqual(voice.audio_diagnostics['stage'], 'process_completed')
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    async def test_playback_preserves_process_error(self):
+        import base64
+        voice = VoiceAssistant(AsyncMock())
+        real_spawn = asyncio.create_subprocess_exec
+        async def spawn(*args, **kwargs):
+            return await real_spawn(sys.executable, '-c', 'import sys; sys.stdin.buffer.read(); sys.stderr.write("transport unavailable"); sys.exit(7)', **kwargs)
+        with patch('voice_assistant.asyncio.create_subprocess_exec', side_effect=spawn):
+            task = asyncio.create_task(voice.playback('test-pcm'))
+            await voice.output.put(('greeting', base64.b64encode(b'\0' * 4800).decode()))
+            await voice.output.put(None)
+            with self.assertRaisesRegex(RuntimeError, 'transport unavailable'):
+                await asyncio.wait_for(task, 2)
+            self.assertEqual(voice.audio_diagnostics['stage'], 'error')
+            self.assertEqual(voice.played_replies, 0)

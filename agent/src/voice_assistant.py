@@ -47,6 +47,7 @@ class VoiceAssistant:
         self.player = None
         self.play_task = None
         self.output = asyncio.Queue(maxsize=200)
+        self.audio_diagnostics = {'stage': 'idle'}
         self.finish = False
         self.recognizer = None
         self.last_reply = ''
@@ -67,7 +68,7 @@ class VoiceAssistant:
         return {'ok': True, 'enabled': self.enabled, 'state': self.state, 'error': self.error,
                 'mode': 'recorded', 'wakePhrase': 'Hey Paper Drop', 'ready': MODEL.exists(),
                 'lastHeard': self.last_heard, 'lastReply': self.last_reply, 'microphoneLevel': self.microphone_level, 'sentChunks': self.sent_chunks,
-                'playedReplies': self.played_replies, 'speaking': self.speaking, 'sessionActive': self.active}
+                'audioDiagnostics': dict(self.audio_diagnostics), 'playedReplies': self.played_replies, 'speaking': self.speaking, 'sessionActive': self.active}
 
     async def start(self):
         if self.enabled and (self.task is None or self.task.done()):
@@ -140,8 +141,13 @@ class VoiceAssistant:
         path = Path(__file__).with_name(filename)
         if path.exists() and self.play_task and not self.play_task.done():
             self.speaking = True
-            await self.output.put(base64.b64encode(path.read_bytes()).decode())
+            audio = path.read_bytes()
+            log.info('Audio queued: clip=%s bytes=%d seconds=%.2f', filename, len(audio), len(audio) / 48000)
+            await self.output.put((filename, base64.b64encode(audio).decode()))
             await self.output.put(None)
+        else:
+            self.audio_diagnostics = {'stage': 'error', 'clip': filename, 'error': 'Asset missing or playback worker unavailable'}
+            log.error('Audio unavailable: clip=%s exists=%s', filename, path.exists())
 
     async def clear_playback(self):
         if self.play_task:
@@ -170,6 +176,7 @@ class VoiceAssistant:
             self.ready = True
             self.state = 'listening_for_request'
         elif kind == 'voice_print_complete':
+            log.info('Voice stage: print complete session=%s ok=%s', self.session_id, data.get('ok'))
             await self.clear_playback()
             self.drawing = self.active = self.ready = False
             self.capture = None
@@ -189,6 +196,7 @@ class VoiceAssistant:
         elif kind == 'voice_notice':
             await self.notice(data.get('reason', 'error'))
         elif kind == 'voice_heard':
+            log.info('Voice stage: request transcribed session=%s', self.session_id)
             self.last_heard = data.get('text', '')
         elif kind == 'voice_reply':
             self.last_reply = data.get('text', '')
@@ -206,6 +214,7 @@ class VoiceAssistant:
             self.drawing = False
             self.finish = True
         elif kind in ('voice_end', 'voice_error'):
+            log.info('Voice stage: %s session=%s error=%s', kind, self.session_id, data.get('error'))
             if self.drawing:
                 await self.clear_playback()
             self.drawing = False
@@ -227,15 +236,21 @@ class VoiceAssistant:
     async def playback(self, pcm):
         import audioop
         conversion = None
+        clip = 'cloud-reply'
+        started = 0
         try:
             while True:
                 chunk = await self.output.get()
                 if chunk is None:
                     if self.player:
                         self.player.stdin.close()
-                        code = await asyncio.wait_for(self.player.wait(), 15)
+                        _, stderr = await asyncio.wait_for(self.player.communicate(), 15)
+                        code = self.player.returncode
+                        elapsed = time.monotonic() - started
+                        self.audio_diagnostics.update(stage='process_completed', exitCode=code, elapsedSeconds=round(elapsed, 2))
+                        log.info('Audio process completed (audibility unverified): clip=%s exit=%s elapsed=%.2fs', clip, code, elapsed)
                         if code:
-                            raise RuntimeError('Bluetooth voice playback failed')
+                            raise RuntimeError('Bluetooth playback exit %s: %s' % (code, stderr.decode(errors='replace')[-1500:]))
                         self.played_replies += 1
                         self.player = None
                     conversion = None
@@ -247,15 +262,29 @@ class VoiceAssistant:
                     self.mute_until = time.monotonic() + 0.6
                     self.last_activity = time.monotonic()
                     continue
+                if isinstance(chunk, tuple):
+                    clip, chunk = chunk
                 self.speaking = True
                 if not self.player:
+                    started = time.monotonic()
+                    self.audio_diagnostics = {'stage': 'opening', 'clip': clip, 'pcm': pcm}
+                    log.info('Audio opening: clip=%s pcm=%s', clip, pcm)
                     self.player = await asyncio.create_subprocess_exec('aplay', '-q', '-D', pcm, '-t', 'raw', '-f', 'S16_LE', '-r', '16000', '-c', '1',
-                        stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+                        stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
                     # Short lead-in keeps the first syllable from being lost by the speaker.
                     self.player.stdin.write(b'\0' * 9600)
                 audio, conversion = audioop.ratecv(base64.b64decode(chunk, validate=True), 2, 1, 24000, 16000, conversion)
                 self.player.stdin.write(audio)
                 await asyncio.wait_for(self.player.stdin.drain(), 8)
+                self.audio_diagnostics.update(stage='written', bytes=len(audio), seconds=round(len(audio) / 32000, 2))
+                log.info('Audio written: clip=%s bytes=%d seconds=%.2f', clip, len(audio), len(audio) / 32000)
+        except asyncio.CancelledError:
+            self.audio_diagnostics['stage'] = 'cancelled'
+            raise
+        except Exception as error:
+            self.audio_diagnostics.update(stage='error', error=str(error))
+            log.exception('Audio playback failed: clip=%s', clip)
+            raise
         finally:
             if self.player and self.player.returncode is None:
                 self.player.kill()
@@ -347,6 +376,7 @@ class VoiceAssistant:
                             outcome = self.capture.add(data, now)
                             if outcome == 'complete':
                                 audio = self.capture.wav()
+                                log.info('Voice stage: request captured session=%s seconds=%.2f speech_seconds=%.2f', self.session_id, len(self.capture.audio) / 32000, self.capture.speech_seconds)
                                 self.capture = None
                                 self.drawing = True
                                 self.state = 'drawing'
