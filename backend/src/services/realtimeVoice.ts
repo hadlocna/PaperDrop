@@ -76,7 +76,7 @@ export async function handleVoice(deviceId: string, event: any) {
                 const transcript = String(e.transcript || '').trim();
                 const turn = session.inputTurns.get(e.item_id) || 0;
                 if (session.pendingPrompt && turn > (session.pendingTurn || 0)) {
-                    session.confirmed = /^(yes|yes please|yes draw it|yes print it|that is right|that's right|correct|draw it|print it)[.!?]*$/i.test(transcript);
+                    session.confirmed = /^(yes|yes please|yes draw it|yes print it|that is right|that's right|correct|draw it|print it)$/i.test(transcript.replace(/[,.!?]/g, '').trim());
                 }
                 send(deviceId, { type: 'voice_heard', text: transcript.slice(0, 800) });
             } else if (e.type === 'input_audio_buffer.speech_started') {

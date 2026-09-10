@@ -86,7 +86,7 @@ test('new explicit confirmation generates only the reviewed prompt once', async 
     await new Promise(resolve=>setImmediate(resolve));
     assert.equal(generated,0);
     emit({type:'input_audio_buffer.speech_started',item_id:'yes'});
-    emit({type:'conversation.item.input_audio_transcription.completed',item_id:'yes',transcript:'Yes please.'});
+    emit({type:'conversation.item.input_audio_transcription.completed',item_id:'yes',transcript:'Yes, please.'});
     emit({type:'response.function_call_arguments.done',name:'create_picture',call_id:'approved',arguments:'{"prompt":"A lizard with Theodore underneath"}'});
     await new Promise(resolve=>setImmediate(resolve));
     assert.equal(generated,1);
