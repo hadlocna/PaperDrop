@@ -2,7 +2,7 @@ import OpenAI, { toFile } from 'openai';
 import { prisma } from '../lib/prisma';
 import { deviceConnections } from '../websocket/session';
 
-type Session = { id: string; ownerId?: string; busy: boolean; messageId?: string; timer: NodeJS.Timeout; abort: AbortController };
+type Session = { id: string; ownerId?: string; busy: boolean; quality: 'low' | 'medium'; messageId?: string; timer: NodeJS.Timeout; abort: AbortController };
 const sessions = new Map<string, Session>();
 const starts = new Map<string, number[]>();
 function send(deviceId: string, s: Session, event: any) {
@@ -25,7 +25,7 @@ export function recordedPrintStatus(deviceId: string, messageId: string, status:
 export async function handleRecordedVoice(deviceId: string, event: any) {
     if (event.type === 'voice_start') {
         if (sessions.has(deviceId)) return;
-        const s: Session = { id: event.session_id, busy: false, abort: new AbortController(), timer: setTimeout(() => {
+        const s: Session = { id: event.session_id, busy: false, quality: event.quality === 'low' ? 'low' : 'medium', abort: new AbortController(), timer: setTimeout(() => {
             send(deviceId, s, { type: 'voice_error', error: 'Drawing request timed out. Please try again.' });
             closeRecordedVoice(deviceId);
         }, 180000) };
@@ -60,7 +60,7 @@ export async function handleRecordedVoice(deviceId: string, event: any) {
         send(deviceId, s, {type:'voice_heard', text:prompt});
         const moderation = await ai.moderations.create({model:'omni-moderation-latest',input:prompt}, options);
         if (moderation.results.some(r=>r.flagged)) throw Error('Choose a child-friendly picture');
-        const image = await ai.images.generate({model:'gpt-image-2.5-flare',prompt:`Create exactly the child's requested picture: ${prompt}. Preserve requested subjects and captions; do not invent extra text. Child-friendly black and white line art, bold outlines, white background, no shading or large black areas. Simple charming drawing for a thermal printer.`,n:1,size:'1024x1024',quality:'medium',output_format:'png',background:'opaque'}, options);
+        const image = await ai.images.generate({model:'gpt-image-2.5-flare',prompt:`Create exactly the child's requested picture: ${prompt}. Preserve requested subjects and captions; do not invent extra text. Child-friendly black and white line art, bold outlines, white background, no shading or large black areas. Simple charming drawing for a thermal printer.`,n:1,size:'1024x1024',quality:s.quality,output_format:'png',background:'opaque'}, options);
         const content=image.data?.[0]?.b64_json;
         if (!content) throw Error('Image generation failed');
         const current=await prisma.device.findUnique({where:{id:deviceId}});

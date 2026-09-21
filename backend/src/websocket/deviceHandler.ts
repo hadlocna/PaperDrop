@@ -4,6 +4,7 @@ import url from 'url';
 import { prisma } from '../lib/prisma';
 import { Server } from 'http';
 import crypto from 'crypto';
+import { handleHousePostcard } from '../services/housePostcards';
 import { recordedPrintStatus } from '../services/recordedVoice';
 import { handleVoice, closeVoice } from '../services/realtimeVoice';
 import { deviceConnections, shellSessions } from './session';
@@ -222,6 +223,10 @@ export const setupWebSocket = () => {
 };
 
 const handleDeviceMessage = async (deviceId: string, message: any) => {
+    if (['postcard_send', 'postcard_status'].includes(message.type)) {
+        await handleHousePostcard(deviceId, message);
+        return;
+    }
     if (['voice_start', 'voice_audio', 'voice_request', 'voice_stop'].includes(message.type)) {
         await handleVoice(deviceId, message);
         return;
@@ -245,12 +250,13 @@ const handleDeviceMessage = async (deviceId: string, message: any) => {
         }
     }
     else if (message.type === 'print_status') {
+        if (!['printing', 'printed', 'failed'].includes(message.status)) return;
         recordedPrintStatus(deviceId, message.message_id, message.status);
         if (message.status === 'failed') broadcastToDevice(deviceId, { type: 'voice_notice', reason: 'print' });
         try {
             if (message.message_id) {
-                await prisma.message.update({
-                    where: { id: message.message_id },
+                await prisma.message.updateMany({
+                    where: { id: message.message_id, deviceId },
                     data: {
                         status: message.status,
                         errorMessage: message.error || null,

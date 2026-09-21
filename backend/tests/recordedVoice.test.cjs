@@ -1,16 +1,16 @@
 const {test,beforeEach}=require('node:test');
 const assert=require('node:assert/strict');
-let transcriptions, images, transcript, pause, release;
+let transcriptions, images, transcript, pause, release, qualities;
 class FakeAI {
  audio={transcriptions:{create:async()=>{transcriptions++; if(pause)await new Promise(r=>release=r);return {text:transcript};}}};
  moderations={create:async()=>({results:[{flagged:false}]})};
- images={generate:async()=>{images++;return {data:[{b64_json:'dGVzdA=='}]};}};
+ images={generate:async(options)=>{qualities.push(options.quality);images++;return {data:[{b64_json:'dGVzdA=='}]};}};
 }
 require('openai');require.cache[require.resolve('openai')].exports={__esModule:true,default:FakeAI,toFile:async a=>a};
 const {prisma}=require('../dist/lib/prisma');
 const {deviceConnections}=require('../dist/websocket/session');
 const {handleRecordedVoice,closeRecordedVoice,recordedPrintStatus}=require('../dist/services/recordedVoice');
-beforeEach(()=>{transcriptions=images=0;transcript='A lizard with Theodore underneath';pause=false;process.env.OPENAI_API_KEY='test';prisma.device.findUnique=async()=>({ownerId:'owner',config:'{"voiceEnabled":true}'});prisma.message.create=async({data})=>({...data,id:'image'});});
+beforeEach(()=>{qualities=[];transcriptions=images=0;transcript='A lizard with Theodore underneath';pause=false;process.env.OPENAI_API_KEY='test';prisma.device.findUnique=async()=>({ownerId:'owner',config:'{"voiceEnabled":true}'});prisma.message.create=async({data})=>({...data,id:'image'});});
 function fixture(id){const events=[];deviceConnections.set(id,{readyState:1,send:r=>events.push(JSON.parse(r))});const b=Buffer.alloc(32044);b.write('RIFF');b.write('WAVE',8);return {events,request:{type:'voice_request',session_id:id,audio:b.toString('base64')}};}
 test('one transcription and image; sound ends only for matching print acknowledgement',async()=>{
  const {events,request}=fixture('one');await handleRecordedVoice('one',{type:'voice_start',session_id:'one'});
@@ -34,3 +34,5 @@ test('cancelled transcription cannot later create or print an image',async()=>{
 test('empty or common noise hallucination does not print',async()=>{
  const {request}=fixture('noise');transcript='Thank you.';await handleRecordedVoice('noise',{type:'voice_start',session_id:'noise'});await handleRecordedVoice('noise',request);assert.equal(images,0);
 });
+
+test('button station can explicitly select Flare low quality',async()=>{const {request}=fixture('low-quality');await handleRecordedVoice('low-quality',{type:'voice_start',session_id:'low-quality',quality:'low'});await handleRecordedVoice('low-quality',request);assert.deepEqual(qualities,['low']);closeRecordedVoice('low-quality');});
