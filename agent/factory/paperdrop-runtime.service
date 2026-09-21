@@ -1,0 +1,17 @@
+[Unit]
+Description=PaperDrop managed runtime
+After=network-online.target bluetooth.service bluealsa.service paperdrop-enroll.service
+Wants=network-online.target
+Requires=paperdrop-enroll.service
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/paperdrop/current
+ExecStart=/opt/paperdrop/current/venv/bin/python /opt/paperdrop/current/runtime.py
+Restart=always
+RestartSec=10
+UMask=0077
+RuntimeDirectory=paperdrop
+Environment=PYTHONUNBUFFERED=1
+[Install]
+WantedBy=multi-user.target

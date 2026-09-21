@@ -80,6 +80,8 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+import { redeemEnrollment } from './controllers/enrollmentController';
+app.post('/api/device-enrollment', redeemEnrollment);
 app.use('/api/users', userRoutes);
 app.use('/api/devices', deviceRoutes);
 app.use('/api/auth', authRoutes);

@@ -45,3 +45,10 @@ test('owner scan waits for the device result', async () => {
     assert.equal(calls[0][0], 'device');
     assert.equal(calls[0][1].type, 'speaker');
 });
+test('only the owner can change volume and only bounded integers reach the device', async () => {
+    assert.equal((await request({ action: 'volume', volume: 50 }, 'sender')).code, 403);
+    for (const volume of [-1, 101, 5.5, '50', null, true]) assert.equal((await request({ action: 'volume', volume })).code, 400);
+    assert.equal(calls.length, 0);
+    assert.equal((await request({ action: 'volume', volume: 0 })).code, 200);
+    assert.equal(calls[0][1].volume, 0);
+});

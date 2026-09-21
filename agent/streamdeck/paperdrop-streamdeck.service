@@ -1,0 +1,20 @@
+[Unit]
+Description=PaperDrop Pi controller and button demo
+Wants=network-online.target bluealsa.service bluetooth.service
+After=network-online.target bluealsa.service bluetooth.service paperdrop-ws-agent.service
+Conflicts=paperdrop-ws-agent.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/paperdrop/streamdeck
+ExecStartPre=-/usr/bin/timeout 12 /usr/bin/python3 /opt/paperdrop/streamdeck/pi_speaker.py
+ExecStart=/opt/paperdrop/venv/bin/python /opt/paperdrop/streamdeck/app.py --pi --state-dir /var/lib/paperdrop/streamdeck
+Restart=on-failure
+RestartSec=3
+UMask=0077
+Environment=PYTHONUNBUFFERED=1
+Environment=PAPERDROP_CAPTURE_PCM=plughw:CARD=Device,DEV=0
+
+[Install]
+WantedBy=multi-user.target

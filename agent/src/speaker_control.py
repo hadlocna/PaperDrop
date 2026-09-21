@@ -9,9 +9,13 @@ lock = asyncio.Lock()
 tasks = set()
 
 
-async def run_speaker(action, address=None, audio=None):
+async def run_speaker(action, address=None, audio=None, volume=None):
     cmd = ['/usr/bin/python3', str(Path(__file__).with_name('speaker_manager.py')), action]
-    if address:
+    if action == 'volume':
+        if isinstance(volume, bool) or not isinstance(volume, int) or not 0 <= volume <= 100:
+            return {'ok': False, 'error': 'Volume must be a whole number from 0 to 100.'}
+        cmd.append(str(volume))
+    elif address:
         cmd.append(address)
     if action == 'play' and (not isinstance(audio, str) or len(audio) > 2000000):
         return {'ok': False, 'error': 'A short WAV audio clip is required.'}
@@ -35,11 +39,11 @@ async def handle_speaker(websocket, data):
             result = await run_speaker('status')
         elif lock.locked():
             result = {'ok': False, 'error': 'Audio is in use. Turn voice listening off before changing speakers or running a test.'}
-        elif data.get('action') not in ('status', 'scan', 'connect', 'disconnect', 'test', 'microphone_test', 'play'):
+        elif data.get('action') not in ('status', 'scan', 'connect', 'disconnect', 'test', 'microphone_test', 'play', 'volume'):
             result = {'ok': False, 'error': 'Unsupported speaker action.'}
         else:
             async with lock:
-                result = await run_speaker(data['action'], data.get('address'), data.get('audio'))
+                result = await run_speaker(data['action'], data.get('address'), data.get('audio'), data.get('volume'))
         await websocket.send(json.dumps({**result, 'type': 'speaker_result', 'request_id': data.get('request_id')}))
     except Exception as error:
         logger.warning('Speaker request failed: %s', error)

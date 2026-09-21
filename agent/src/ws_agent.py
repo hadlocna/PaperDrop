@@ -5,6 +5,8 @@ import logging
 from logging.handlers import RotatingFileHandler
 import time
 from config import config
+from release_health import mark_healthy
+from update_guard import protects
 from speaker_control import dispatch_speaker, reconnect_speaker
 from voice_assistant import VoiceAssistant
 import subprocess
@@ -229,6 +231,7 @@ async def handle_fetch_logs(websocket, data):
             'message': f"Failed to fetch logs: {str(e)}"
         }))
 
+@protects
 async def handle_test_print(websocket, data):
     request_id = data.get('request_id')
     logger.info("Processing test print request")
@@ -500,6 +503,7 @@ def add_watermark(img, text):
         logger.error(f"Failed to add watermark: {e}")
         return img
 
+@protects
 async def handle_print_job(websocket, message_data):
     msg = message_data.get('message', {})
     msg_id = msg.get('id')
@@ -658,6 +662,7 @@ async def connect_to_backend():
                                 elif data.get('type') == 'test_print':
                                     await handle_test_print(websocket, data)
                                 elif data.get('type') == 'voice_control':
+                                    mark_healthy()
                                     await voice.control(data)
                                 elif str(data.get('type', '')).startswith('voice_'):
                                     await voice.event(data)

@@ -23,6 +23,20 @@ def is_wake_phrase(text):
 
 
 class VoiceAssistant:
+    @property
+    def active(self):
+        return getattr(self, '_active', False)
+
+    @active.setter
+    def active(self, value):
+        if value and not getattr(self, '_activity_guard', None):
+            from update_guard import acquire
+            self._activity_guard = acquire()
+        elif not value and getattr(self, '_activity_guard', None):
+            self._activity_guard.close()
+            self._activity_guard = None
+        self._active = value
+
     def __init__(self, websocket):
         self.ws = websocket
         try:

@@ -16,11 +16,14 @@ import { authenticateToken } from '../middleware/authMiddleware';
 import { voiceCommand } from '../controllers/voiceController';
 import { speakerCommand } from '../controllers/speakerController';
 
+import { createEnrollment } from '../controllers/enrollmentController';
+
 const router = Router();
 
 router.use(authenticateToken);
 
 router.post('/claim', claimDevice);
+router.post('/:id/enrollment', (req, res, next) => { createEnrollment(req, res).catch(next); });
 router.delete('/:id/claim', unclaimDevice);
 router.get('/', getDevices);
 router.get('/:id', getDevice);

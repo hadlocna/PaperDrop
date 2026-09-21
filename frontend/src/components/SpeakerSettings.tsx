@@ -12,6 +12,8 @@ interface Speaker {
     microphoneSupported: boolean;
 }
 interface SpeakerState {
+    volume?: number | null;
+    volumeSupported?: boolean;
     audioReady: boolean;
     powered: boolean;
     devices: Speaker[];
@@ -23,6 +25,8 @@ export function SpeakerSettings({ deviceId }: { deviceId: string }) {
     const [busy, setBusy] = useState<string | null>(null);
     const [error, setError] = useState('');
     const [message, setMessage] = useState('');
+    const [volume, setVolume] = useState(50);
+    useEffect(() => { if (typeof state?.volume === 'number') setVolume(state.volume); }, [state]);
 
     useEffect(() => {
         let active = true;
@@ -34,12 +38,12 @@ export function SpeakerSettings({ deviceId }: { deviceId: string }) {
         return () => { active = false; };
     }, [deviceId]);
 
-    const run = async (action: string, address?: string) => {
+    const run = async (action: string, address?: string, volume?: number) => {
         setBusy(action);
         setError('');
         setMessage('');
         try {
-            const res = await api.post(`/devices/${deviceId}/speaker`, { action, address }, { timeout: 65000 });
+            const res = await api.post(`/devices/${deviceId}/speaker`, { action, address, volume }, { timeout: 65000 });
             setState(res.data);
             setMessage(res.data.message || (action === 'scan' ? 'Scan finished.' : action === 'connect' ? 'Speaker connected and saved.' : ''));
         } catch (err: any) {
@@ -71,6 +75,15 @@ export function SpeakerSettings({ deviceId }: { deviceId: string }) {
             </li>)}
         </ul>
         {selected && <div className="space-y-3 border-t pt-3">
+            {state?.volumeSupported && <div className="space-y-2">
+                <label htmlFor={`speaker-volume-${deviceId}`} className="text-sm font-medium">Speaker volume: {volume}%</label>
+                <input id={`speaker-volume-${deviceId}`} aria-label="Speaker volume" type="range" min="0" max="100" step="1" value={volume} disabled={!!busy || !selected.connected} onChange={event => setVolume(Number(event.target.value))} className="w-full accent-coral-600" />
+                <div className="flex gap-2">
+                    <button disabled={!!busy || !selected.connected || volume === state.volume} onClick={() => run('volume', undefined, volume)} className="px-3 py-2 border rounded-xl text-sm disabled:opacity-50">{busy === 'volume' ? 'Saving…' : 'Save volume'}</button>
+                    <button disabled={!!busy || !selected.connected} onClick={() => run('volume', undefined, 0)} className="px-3 py-2 border rounded-xl text-sm disabled:opacity-50">Mute</button>
+                </div>
+            </div>}
+            {selected.connected && !state?.volumeSupported && <p className="text-xs text-gray-500">Volume control is unavailable. Update PaperDrop, then refresh.</p>}
             <button disabled={!!busy || !selected.connected} onClick={() => run('test')} className="flex items-center gap-2 text-sm font-medium text-coral-600 disabled:opacity-50"><Volume2 size={17} /> Play test sound</button>
             <p className="text-sm text-gray-500 flex items-center gap-2"><Mic size={17} />{selected.microphoneSupported ? 'Bluetooth microphone supported. Available for voice conversations.' : 'This speaker does not advertise a Bluetooth microphone.'}</p>
             {selected.microphoneSupported && <><p className="text-xs text-gray-500">Microphone test records 5 seconds, plays it on the speaker, then deletes it. Nothing is uploaded. Wake-phrase listening is controlled separately below.</p><button disabled={!!busy || !selected.connected} onClick={() => run('microphone_test')} className="px-3 py-2 border rounded-xl text-sm disabled:opacity-50">Test microphone (5 seconds)</button></>}

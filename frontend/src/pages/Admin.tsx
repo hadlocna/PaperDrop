@@ -782,6 +782,12 @@ export function Admin() {
                                             <td className="p-4 text-sm">{fw.description || '-'}</td>
                                             <td className="p-4 text-sm text-gray-500">{new Date(fw.createdAt).toLocaleDateString()}</td>
                                             <td className="p-4">
+                                                <button className="p-2 border rounded-lg text-sm mr-2" onClick={async () => {
+                                                    if (!window.confirm(`Publish ${fw.version} as the automatic update for managed PaperDrops?`)) return;
+                                                    const response = await fetch(`${API_BASE_URL}/api/admin/firmware/publish`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-password': password }, body: JSON.stringify({ version: fw.version, format: 2 }) });
+                                                    const result = await response.json();
+                                                    alert(response.ok ? `Published ${fw.version}. Managed devices will update when idle.` : result.error || 'Unable to publish.');
+                                                }}>Publish automatic update</button>
                                                 <select
                                                     onChange={e => e.target.value && deployFirmware(e.target.value, fw.version)}
                                                     className="p-2 border rounded-lg text-sm"

@@ -1,0 +1,18 @@
+{
+  "station": "portugal",
+  "houses": [
+    {"id": "portugal", "artwork": "portugal.png", "name": "Lisbon", "color": "#85b8a2"},
+    {"id": "ohio", "artwork": "ohio.png", "name": "Ohio", "color": "#f0cb86"},
+    {"id": "dusseldorf", "artwork": "dusseldorf.png", "name": "Düsseldorf", "color": "#e89179"}
+  ],
+  "children": [
+    {"id": "alma", "name": "Alma", "house": "portugal", "portrait": "alma-transparent.png", "icon": "Cat", "color": "#f4c878"},
+    {"id": "theodore", "name": "Theodore", "house": "portugal", "portrait": "theodore-transparent.png", "icon": "Dog", "color": "#90c5cb"},
+    {"id": "margo", "name": "Margaux", "house": "portugal", "city": "Lisbon", "portrait": "margaux-transparent.png", "icon": "Flower2", "color": "#e8a4b8"},
+    {"id": "andy", "name": "Andi", "house": "ohio", "portrait": "andi-transparent.png", "icon": "Dog", "color": "#f0bd7c"},
+    {"id": "sloan", "name": "Sloan", "house": "ohio", "portrait": "sloan-transparent.png", "icon": "Cat", "color": "#bab0dc"},
+    {"id": "rue", "name": "Roux", "house": "ohio", "portrait": "roux-transparent.png", "icon": "Rabbit", "color": "#a8cc90"},
+    {"id": "elise", "name": "Elise", "house": "dusseldorf", "portrait": "elise-transparent.png", "icon": "Bird", "color": "#a1cddd"},
+    {"id": "lore", "name": "Laure", "house": "dusseldorf", "portrait": "laure-transparent.png", "icon": "Fish", "color": "#f0a28b"}
+  ]
+}
