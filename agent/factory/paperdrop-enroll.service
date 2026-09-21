@@ -1,0 +1,15 @@
+[Unit]
+Description=Initialize or restore the PaperDrop device identity
+After=network-online.target
+Wants=network-online.target
+Before=paperdrop-runtime.service
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/paperdrop/first_boot.py
+ExecStartPost=/usr/bin/systemctl --no-block start paperdrop-runtime.service
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=20
+UMask=0077
+[Install]
+WantedBy=multi-user.target

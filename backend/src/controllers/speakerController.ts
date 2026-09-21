@@ -12,8 +12,11 @@ export const speakerCommand = async (req: AuthRequest, res: Response) => {
         if (!device || device.ownerId !== req.user?.userId) {
             return res.status(403).json({ error: 'Only the device owner can manage speakers and microphones.' });
         }
-        if (!['status', 'scan', 'connect', 'disconnect', 'test', 'microphone_test', 'play'].includes(action)) {
+        if (!['status', 'scan', 'connect', 'disconnect', 'test', 'microphone_test', 'play', 'volume'].includes(action)) {
             return res.status(400).json({ error: 'Unsupported speaker action.' });
+        }
+        if (action === 'volume' && (!Number.isInteger(req.body.volume) || req.body.volume < 0 || req.body.volume > 100)) {
+            return res.status(400).json({ error: 'Volume must be a whole number from 0 to 100.' });
         }
         if (action === 'play' && (typeof req.body.audio !== 'string' || req.body.audio.length > 2000000)) {
             return res.status(400).json({ error: 'A short WAV audio clip is required.' });
@@ -23,7 +26,7 @@ export const speakerCommand = async (req: AuthRequest, res: Response) => {
             return res.status(400).json({ error: 'Select a valid speaker.' });
         }
         // Live replies are required; the legacy relay cannot confirm pairing or capture.
-        const response = await requestFromDevice(id, { type: 'speaker', action, address, audio: action === 'play' ? req.body.audio : undefined }, 60000);
+        const response = await requestFromDevice(id, { type: 'speaker', action, address, volume: action === 'volume' ? req.body.volume : undefined, audio: action === 'play' ? req.body.audio : undefined }, 60000);
         return res.status(response.ok ? 200 : 409).json(response);
     } catch (error: any) {
         const offline = error.message === 'device_offline';

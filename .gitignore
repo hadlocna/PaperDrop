@@ -30,3 +30,9 @@ agent.log
 *.img
 raspios*
 releases/
+
+# Generated release images, voice caches and private device state
+/artifacts/
+/output/
+/tmp/
+agent/streamdeck/.state/

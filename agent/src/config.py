@@ -58,6 +58,8 @@ class Config:
             self.CLOUD_WS_URL = updates["cloud_ws_url"]
 
     def _load_firmware_version(self) -> str:
+        if os.environ.get("PAPERDROP_FIRMWARE_VERSION"):
+            return os.environ["PAPERDROP_FIRMWARE_VERSION"]
         version_file = self.CONFIG_DIR / "firmware-version"
         try:
             if version_file.exists():

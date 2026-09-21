@@ -1,0 +1,6 @@
+streamdeck==0.10.0
+Pillow>=11,<13
+openai>=2,<4
+python-dotenv>=1,<2
+cairosvg>=2.7,<3
+websockets>=15,<17

@@ -1,6 +1,11 @@
 import express from 'express';
+import imageUpload from './imageUpload';
 import multer from 'multer';
 import path from 'path';
+import fs from 'fs';
+import crypto from 'crypto';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { prisma } from '../lib/prisma';
 import { broadcastToDevice, requestFromDevice } from '../websocket/deviceHandler';
 import { fetchRelayDeviceStatuses, relayIsOnline, relayLastActive, relayMessageToDevice } from '../lib/deviceRelay';
@@ -15,6 +20,36 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
+const uploadDir = path.join(__dirname, '../../uploads');
+fs.mkdirSync(uploadDir, { recursive: true });
+const sha256File = (filePath: string): Promise<string> => new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const stream = fs.createReadStream(filePath);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('error', reject);
+    stream.on('end', () => resolve(hash.digest('hex')));
+});
+
+const uploadedFirmwarePathForUrl = (firmwareUrl: string): string | null => {
+    try {
+        const parsed = new URL(firmwareUrl, 'http://paperdrop.local');
+        if (!parsed.pathname.startsWith('/uploads/')) return null;
+
+        const filename = path.basename(parsed.pathname);
+        const filePath = path.join(uploadDir, filename);
+        if (!filePath.startsWith(uploadDir) || !fs.existsSync(filePath)) return null;
+        return filePath;
+    } catch {
+        return null;
+    }
+};
+
+const sha256ForFirmwareUrl = async (firmwareUrl: string): Promise<string | undefined> => {
+    const filePath = uploadedFirmwarePathForUrl(firmwareUrl);
+    if (!filePath) return undefined;
+    return sha256File(filePath);
+};
+
 const router = express.Router();
 
 // Middleware to check password
@@ -27,6 +62,7 @@ const checkAdminAuth = (req: express.Request, res: express.Response, next: expre
 };
 
 router.use(checkAdminAuth);
+router.use('/images', imageUpload);
 
 // List all devices
 router.get('/devices', async (req, res) => {
@@ -81,6 +117,29 @@ router.get('/firmware', async (req, res) => {
     } catch (e) {
         res.status(500).json({ error: 'Internal Server Error' });
     }
+});
+
+// Publishing is explicit: uploads alone are never automatically installed.
+router.post('/firmware/publish', async (req, res) => {
+    try {
+        const release = await prisma.firmwareRelease.findUnique({ where: { version: req.body.version } });
+        if (!release || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(release.version)) return res.status(404).json({ error: 'Release not found' });
+        const sha256 = await sha256ForFirmwareUrl(release.url);
+        if (!sha256 || req.body.format !== 2) return res.status(400).json({ error: 'A verified managed-runtime package is required' });
+        const localPath = uploadedFirmwarePathForUrl(release.url)!;
+        const { stdout } = await promisify(execFile)('tar', ['-xOzf', localPath, 'release.json'], { maxBuffer: 8192, timeout: 30000 });
+        const packaged = JSON.parse(stdout);
+        if (packaged.format !== 2 || packaged.version !== release.version) return res.status(400).json({ error: 'The package is not a matching managed release' });
+        const origin = new URL(process.env.PUBLIC_API_URL || 'https://api.paperdrop.me');
+        const packageUrl = new URL(release.url);
+        if (packageUrl.protocol !== 'https:' || packageUrl.origin !== origin.origin || !packageUrl.pathname.startsWith('/uploads/')) return res.status(400).json({ error: 'Release must be hosted on the public HTTPS API origin' });
+        const manifest = { format: 2, version: release.version, url: release.url, sha256, publishedAt: new Date().toISOString() };
+        const target = path.join(uploadDir, 'stable.json');
+        const temporary = target + '.' + crypto.randomUUID() + '.tmp';
+        await fs.promises.writeFile(temporary, JSON.stringify(manifest));
+        await fs.promises.rename(temporary, target);
+        res.json(manifest);
+    } catch { res.status(500).json({ error: 'Unable to publish stable release' }); }
 });
 
 // Create new firmware release

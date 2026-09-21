@@ -1,0 +1,9 @@
+[Unit]
+Description=Automatic PaperDrop updates
+[Timer]
+OnBootSec=30
+OnUnitInactiveSec=5min
+RandomizedDelaySec=15
+Persistent=true
+[Install]
+WantedBy=timers.target

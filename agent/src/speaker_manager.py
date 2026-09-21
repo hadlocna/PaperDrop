@@ -85,6 +85,47 @@ class Speakers:
     def properties(self, obj):
         return self.dbus.Interface(obj, PROPS).GetAll(DEVICE)
 
+    def volume_pcm(self):
+        address = validate_address(load_settings().get('address'))
+        objects = self.dbus.Interface(self.bus.get_object('org.bluealsa', '/org/bluealsa'),
+                                      'org.freedesktop.DBus.ObjectManager').GetManagedObjects()
+        for path, interfaces in objects.items():
+            props = interfaces.get('org.bluealsa.PCM1', {})
+            if address.replace(':', '_') in str(path) and str(props.get('Transport')) == 'A2DP-source' and str(props.get('Mode')) == 'sink':
+                return self.dbus.Interface(self.bus.get_object('org.bluealsa', path), PROPS), props
+        raise RuntimeError('Connect your selected speaker before adjusting the volume.')
+
+    def volume_status(self):
+        try:
+            _, props = self.volume_pcm()
+            raw = props['Volume']
+            # BlueALSA 4 uses packed uint16; newer releases use byte arrays.
+            levels = [int(raw) >> 8, int(raw) & 255] if isinstance(raw, int) else [int(v) for v in raw]
+            level = round(sum(0 if v & 128 else v & 127 for v in levels) / len(levels) * 100 / 127)
+            return {'volume': level, 'volumeSupported': True}
+        except Exception:
+            return {'volume': None, 'volumeSupported': False}
+
+    def set_volume(self, value):
+        if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 100:
+            raise ValueError('Volume must be a whole number from 0 to 100.')
+        interface, props = self.volume_pcm()
+        level = round(value * 127 / 100)
+        raw = self.dbus.UInt16((level << 8) | level) if isinstance(props['Volume'], int) else self.dbus.Array([self.dbus.Byte(level)] * len(props['Volume']), signature='y')
+        interface.Set('org.bluealsa.PCM1', 'SoftVolume', self.dbus.Boolean(True))
+        interface.Set('org.bluealsa.PCM1', 'Volume', raw)
+        result = self.volume_status()
+        if not result['volumeSupported'] or abs(result['volume'] - value) > 1:
+            raise RuntimeError('Speaker did not confirm the volume. Please try again.')
+        saved = load_settings()
+        save_settings({**saved, 'volume': value})
+        return {**self.status(), 'message': 'Speaker volume saved.'}
+
+    def restore_volume(self):
+        saved = load_settings()
+        if isinstance(saved.get('volume'), int):
+            self.set_volume(saved['volume'])
+
     def status(self):
         saved = load_settings()
         adapter = self.adapter()
@@ -104,7 +145,7 @@ class Speakers:
             })
         ready = (shutil.which('aplay') is not None and
                  subprocess.run(['systemctl', 'is-active', '--quiet', 'bluealsa.service']).returncode == 0)
-        return {'ok': True, 'powered': powered, 'audioReady': ready,
+        return {**self.volume_status(), 'ok': True, 'powered': powered, 'audioReady': ready,
                 'selectedAddress': saved.get('address'), 'autoConnect': bool(saved.get('autoConnect')),
                 'devices': sorted(devices, key=lambda d: (not d['selected'], not d['connected'], d['name']))}
 
@@ -146,7 +187,8 @@ class Speakers:
         if not self.properties(obj).get('Connected'):
             raise RuntimeError('Speaker did not connect. Check its power and pairing mode.')
         old = load_settings().get('address')
-        save_settings({'address': address, 'autoConnect': True})
+        save_settings({**load_settings(), 'address': address, 'autoConnect': True})
+        self.restore_volume()
         if old and old != address:
             try:
                 self.dbus.Interface(self.target(old), DEVICE).Disconnect(timeout=5)
@@ -160,7 +202,7 @@ class Speakers:
         obj = self.target(address)
         saved = load_settings()
         if saved.get('address') == address:
-            save_settings({'address': address, 'autoConnect': False})
+            save_settings({**saved, 'address': address, 'autoConnect': False})
         if self.properties(obj).get('Connected'):
             self.dbus.Interface(obj, DEVICE).Disconnect(timeout=8)
         return self.status()
@@ -171,7 +213,7 @@ class Speakers:
             obj = self.target(saved['address'])
             if not self.properties(obj).get('Connected'):
                 self.dbus.Interface(obj, DEVICE).ConnectProfile(AUDIO_SINK, timeout=12)
-                self.test()
+                self.restore_volume()
         return {'ok': True}
 
     def prepare_playback(self, obj):
@@ -296,12 +338,12 @@ class Speakers:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('action', choices=['status', 'scan', 'connect', 'disconnect', 'test', 'reconnect', 'microphone_test', 'microphone_ready', 'play'])
+    parser.add_argument('action', choices=['status', 'scan', 'connect', 'disconnect', 'test', 'reconnect', 'microphone_test', 'microphone_ready', 'play', 'volume'])
     parser.add_argument('address', nargs='?')
     args = parser.parse_args()
     try:
         speakers = Speakers()
-        result = getattr(speakers, args.action)(args.address) if args.action in ('connect', 'disconnect') else getattr(speakers, args.action)()
+        result = speakers.set_volume(int(args.address)) if args.action == 'volume' else getattr(speakers, args.action)(args.address) if args.action in ('connect', 'disconnect') else getattr(speakers, args.action)()
     except Exception as error:
         result = {'ok': False, 'error': str(error)}
     print(json.dumps(result))
