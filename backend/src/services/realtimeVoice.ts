@@ -1,3 +1,4 @@
+import { IMAGE_MODEL, imagePrompt } from './thermalArtwork';
 import WebSocket from 'ws';
 import OpenAI from 'openai';
 import { closeRecordedVoice, handleRecordedVoice, hasRecordedVoice } from './recordedVoice';
@@ -123,7 +124,7 @@ export async function handleVoice(deviceId: string, event: any) {
                         const ai = new OpenAI({ timeout: 90000, maxRetries: 0 });
                         const moderation = await ai.moderations.create({ model: 'omni-moderation-latest', input: args.prompt });
                         if (moderation.results.some(r => r.flagged)) throw Error('Please choose a different, child-friendly drawing.');
-                        const image = await ai.images.generate({ model: 'gpt-image-2.5-flare', prompt: `Create a child-friendly drawing: ${args.prompt}. Black and white line art, bold outlines, white background, no shading, no large black areas. Simple charming doodle for a thermal receipt printer. Include only text explicitly requested.`, n: 1, size: '1024x1024', quality: 'medium', output_format: 'png', background: 'opaque' });
+                        const image = await ai.images.generate({ model: IMAGE_MODEL, prompt: imagePrompt(args.prompt), n: 1, size: '1024x1024', quality: 'medium', output_format: 'png', background: 'opaque' });
                         const content = image.data?.[0]?.b64_json;
                         if (!content) throw Error('The drawing could not be generated.');
                         const current = await prisma.device.findUnique({ where: { id: deviceId } });

@@ -31,6 +31,13 @@ ROWS = [
 ('Let us try another one. Listen carefully.', 'Essaie encore. Écoute bien.', 'Versuch es noch einmal. Hör gut zu.', 'Riprova. Ascolta bene.', 'Tenta outra vez. Ouve com atenção.'),
 ('Tap the red button when you are finished talking.', 'Touche le bouton rouge quand tu as fini de parler.', 'Tippe auf die rote Taste, wenn du fertig gesprochen hast.', 'Tocca il pulsante rosso quando hai finito di parlare.', 'Toca no botão vermelho quando acabares de falar.'),
 ]
+from riddles import RIDDLES, ANSWERS
+ROWS += [row for _, row in RIDDLES]
+ROWS += [
+('Let’s play! Choose colors, letters, numbers, or riddles.', 'On joue ! Choisis les couleurs, les lettres, les nombres ou les devinettes.', 'Lass uns spielen! Wähle Farben, Buchstaben, Zahlen oder Rätsel.', 'Giochiamo! Scegli colori, lettere, numeri o indovinelli.', 'Vamos brincar! Escolhe cores, letras, números ou adivinhas.'),
+('Try again. Here is the same question.', 'Essaie encore. Voici la même question.', 'Versuch es noch einmal. Hier ist dieselbe Frage.', 'Riprova. Ecco la stessa domanda.', 'Tenta outra vez. Aqui está a mesma pergunta.'),
+('Five stars! You earned a special prize. Press the green button to print it.', 'Cinq étoiles ! Tu as gagné une surprise. Touche le bouton vert pour l’imprimer.', 'Fünf Sterne! Du hast einen besonderen Preis gewonnen. Drücke die grüne Taste zum Drucken.', 'Cinque stelle! Hai vinto un premio speciale. Premi il pulsante verde per stamparlo.', 'Cinco estrelas! Ganhaste um prémio especial. Carrega no botão verde para o imprimir.'),
+]
 CATALOG = {row[0]:dict(zip(LANGUAGES,row)) for row in ROWS}
 TEMPLATES = {
 'letter': ['Can you find the letter {x}?','Peux-tu trouver la lettre {x} ?','Findest du den Buchstaben {x}?','Trovi la lettera {x}?','Consegues encontrar a letra {x}?'],
@@ -76,6 +83,11 @@ LABEL_ROWS = [
 ('Sent','Envoyé','Gesendet','Inviato','Enviado'),('Queued','En attente','Wartet','In attesa','Em espera'),('Printing','Impression','Druckt','In stampa','A imprimir'),
 ('Printed','Imprimé','Gedruckt','Stampato','Impresso'),('Checking','Vérification','Prüfen','Controllo','A verificar'),('Needs help','Besoin d’aide','Hilfe nötig','Serve aiuto','Precisa de ajuda'),
 ('Oops','Oups','Hoppla','Ops','Ups'),('Retry','Réessayer','Erneut','Riprova','Tentar'),
+]
+LABEL_ROWS += list(ANSWERS.values()) + [
+('Riddles','Devinettes','Rätsel','Indovinelli','Adivinhas'),
+('My prize','Mon prix','Mein Preis','Il mio premio','O meu prémio'),
+('Five stars!','Cinq étoiles !','Fünf Sterne!','Cinque stelle!','Cinco estrelas!'),
 ]
 LABELS={row[0]:dict(zip(LANGUAGES,row)) for row in LABEL_ROWS}
 def label(text, language):
