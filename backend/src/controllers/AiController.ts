@@ -1,44 +1,7 @@
 import { Request, Response } from 'express';
 import OpenAI from 'openai';
 
-const THERMAL_SYSTEM_PROMPT = `You are a designer for a thermal receipt printer used for intimate family notes.
-
-Your job is to create PRINT-READY artwork and layouts that will be printed on a black-and-white thermal printer.
-
-CRITICAL CONSTRAINTS:
-- Output must be black and white only (no grayscale, no color).
-- Maximum width is exactly 576 pixels.
-- Height can vary but should be as compact as possible.
-- Background must be white.
-- Artwork must print clearly on thermal paper:
-  - Use bold lines
-  - Avoid fine details
-  - Avoid large dark filled areas
-- Favor simple line art, icons, doodles, and high-contrast typography.
-
-STYLE GUIDELINES:
-- Warm, gentle, hand-made, human.
-- Suitable for children and family.
-- Never creepy, scary, or overly realistic.
-- Think: refrigerator note, lunchbox drawing, bedtime doodle.
-- Slight imperfections are good.
-
-CONTENT GUIDELINES:
-- Assume the sender is a father.
-- The recipient may be a child or partner.
-- Tone should feel loving, reassuring, and calm.
-- Avoid sarcasm or irony.
-
-OUTPUT FORMAT:
-Return a single JSON object with:
-- "image_prompt": a concise internal description of the image to generate
-- "layout_description": how text and image are arranged vertically
-- "suggested_caption" (optional): short text to include
-- "style_tags": list of tags like ["line_art", "doodle", "bedtime"]
-- "generation_instructions": explicit instructions to constrain the image generator
-
-DO NOT mention printers, pixels, or technical details in the image content itself.
-DO NOT include any explanatory text outside the JSON.`;
+import { IMAGE_MODEL, DESIGN_SYSTEM_PROMPT, imagePrompt } from '../services/thermalArtwork';
 
 export class AiController {
     static async generateDesign(req: Request, res: Response) {
@@ -46,8 +9,8 @@ export class AiController {
             const { prompt } = req.body as {
                 prompt?: string;
             };
-            if (!prompt) {
-                res.status(400).json({ error: 'Prompt is required' });
+            if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 3000) {
+                res.status(400).json({ error: 'Please enter a request of 1 to 3000 characters' });
                 return;
             }
 
@@ -59,13 +22,16 @@ export class AiController {
 
             const openai = new OpenAI();
 
-            console.log('[AI] Generating design for:', prompt);
+            const moderation = await openai.moderations.create({model: 'omni-moderation-latest', input: prompt});
+            if (moderation.results.some(result => result.flagged)) {
+                res.status(400).json({error: 'Please choose a family-friendly idea.'}); return;
+            }
 
             // 1. Refine Prompt with GPT-4o
             const completion = await openai.chat.completions.create({
                 model: "gpt-4o",
                 messages: [
-                    { role: "system", content: THERMAL_SYSTEM_PROMPT },
+                    { role: "system", content: DESIGN_SYSTEM_PROMPT },
                     {
                         role: "user",
                         content: `User wants to create the following message: "${prompt}"`
@@ -83,21 +49,11 @@ export class AiController {
                 throw new Error('AI returned invalid design specifications');
             }
 
-            console.log('[AI] Design Specs:', designSpecs);
 
             // 2. Generate thermal artwork with GPT Image 2.5 Flare.
-            const imagePrompt = [
-                "Black and white thermal printer line art. Simple, bold lines. No shading. No grayscale. White background.",
-                designSpecs.image_prompt,
-                designSpecs.generation_instructions
-            ].filter(Boolean).join(' ').trim();
-
-            console.log('[AI] Generating image...');
-            console.log('[AI] Prompt:', imagePrompt);
-
             const imageResponse = await openai.images.generate({
-                model: "gpt-image-2.5-flare",
-                prompt: imagePrompt,
+                model: IMAGE_MODEL,
+                prompt: imagePrompt(prompt, designSpecs),
                 n: 1,
                 size: "1024x1024",
                 quality: "medium",

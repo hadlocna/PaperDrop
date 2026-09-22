@@ -17,6 +17,7 @@ class PrintOutcomeUnknown(RuntimeError):
 
 
 class PiMedia(Media):
+    local_printer = True
     def __init__(self, root):
         super().__init__(root)
         from pi_cloud import Cloud

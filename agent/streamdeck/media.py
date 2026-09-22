@@ -76,6 +76,31 @@ class Media:
                     self.player = subprocess.Popen(['/usr/bin/say', '-r', '175', text], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         threading.Thread(target=run, daemon=True).start()
 
+    def cue_sequence(self, texts, star=False):
+        """One cancellable playback: feedback cannot cut off its following question."""
+        from audio_cues import combine
+        import json
+        self.stop_audio()
+        token = self.generation
+        def run():
+            try:
+                speech = ROOT/'speech' if (ROOT/'speech').exists() else self.root/'speech'
+                paths = [speech/(hashlib.sha256(text.encode()).hexdigest()+'.wav') for text in texts]
+                # Never quietly skip the question if its cached recording is missing.
+                if any(not path.exists() for path in paths):
+                    logging.warning('game_cue_missing')
+                    return
+                ident = hashlib.sha256(json.dumps([texts,star]).encode()).hexdigest()
+                path = self.root/'game-cues'/(ident+'.wav')
+                with self.audio_lock:
+                    if token != self.generation or self.recording:return
+                    if not path.exists():combine(paths,path,star=star)
+                    command = self.playback_command(path) if hasattr(self,'playback_command') else ['/usr/bin/afplay',str(path)]
+                    self.player = subprocess.Popen(command,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            except (OSError, ValueError, wave.Error, subprocess.SubprocessError):
+                logging.warning('game_cue_unavailable')
+        threading.Thread(target=run,daemon=True).start()
+
     def play(self, path):
         self.stop_audio()
         with self.audio_lock:
@@ -160,10 +185,11 @@ class Media:
         # Keep the same model and thermal-art contract as recordedVoice.ts.
         result = ai.images.generate(
             model=os.environ.get('PAPERDROP_IMAGE_MODEL', 'gpt-image-2.5-flare'),
-            prompt=f'Create the child\'s requested picture: {prompt}. Child-friendly black and white line art. '
-                   'One clear scene, large simple shapes, bold outlines, plain white background. '
-                   'No shading or large black areas. Preserve the requested subjects. No added captions. '
-                   'The image must remain legible on a tiny screen and a thermal printer.',
+            prompt=f"Create the child's requested artwork: {prompt}. Honor the requested format: a comic, map, puzzle, card, poster or illustration. "
+                   'Family-friendly monochrome artwork on white paper, readable at 576 dots wide. '
+                   'Use confident contours, clear focal points, generous spacing, small black accents and sparse hatching where useful. '
+                   'Avoid dense dark backgrounds, muddy gray washes and tiny details. Use coloring-page style only if requested. '
+                   'Preserve requested subjects and captions; do not invent greetings or personal details.',
             n=1, size='1024x1024', quality=os.environ.get('PAPERDROP_IMAGE_QUALITY', 'medium'), output_format='png', background='opaque')
         if not result.data or not result.data[0].b64_json:
             raise RuntimeError('No picture returned')

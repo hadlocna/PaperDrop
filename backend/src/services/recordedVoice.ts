@@ -1,3 +1,4 @@
+import { IMAGE_MODEL, imagePrompt } from './thermalArtwork';
 import OpenAI, { toFile } from 'openai';
 import { prisma } from '../lib/prisma';
 import { deviceConnections } from '../websocket/session';
@@ -60,7 +61,7 @@ export async function handleRecordedVoice(deviceId: string, event: any) {
         send(deviceId, s, {type:'voice_heard', text:prompt});
         const moderation = await ai.moderations.create({model:'omni-moderation-latest',input:prompt}, options);
         if (moderation.results.some(r=>r.flagged)) throw Error('Choose a child-friendly picture');
-        const image = await ai.images.generate({model:'gpt-image-2.5-flare',prompt:`Create exactly the child's requested picture: ${prompt}. Preserve requested subjects and captions; do not invent extra text. Child-friendly black and white line art, bold outlines, white background, no shading or large black areas. Simple charming drawing for a thermal printer.`,n:1,size:'1024x1024',quality:s.quality,output_format:'png',background:'opaque'}, options);
+        const image = await ai.images.generate({model:IMAGE_MODEL,prompt: imagePrompt(prompt),n:1,size:'1024x1024',quality:s.quality,output_format:'png',background:'opaque'}, options);
         const content=image.data?.[0]?.b64_json;
         if (!content) throw Error('Image generation failed');
         const current=await prisma.device.findUnique({where:{id:deviceId}});

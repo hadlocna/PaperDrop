@@ -11,6 +11,7 @@ import threading
 import time
 import uuid
 from games import new_round, COLORS
+from riddles import ICONS
 from languages import LANGUAGES, translate, label
 
 
@@ -135,15 +136,18 @@ class Controller:
                                     badge=sum(self.unread(self.person,p) for p in self.children(house)))
                 tiles[5] = tile('Home','Home')
             elif self.mode == 'games':
-                heading, hint = f'Let’s play, {name}', 'Choose colors, letters, or numbers. Every game has a Home button.'
+                heading, hint = f'Let’s play, {name}', 'Choose colors, letters, numbers, or riddles. Every game has a Home button.'
                 tiles[0] = tile('Colors','Palette',color='#f0cb86')
                 tiles[1] = tile('Letters',symbol='ABC')
                 tiles[2] = tile('Numbers',symbol='123')
+                tiles[3] = tile('Riddles','HelpCircle',color='#b7d8c7')
+                if self.mailbox.latest_reward(self.person):tiles[4] = tile('My prize','Star')
                 tiles[5] = tile('Home','Home')
             elif self.mode == 'game':
                 heading, hint = self.round['prompt'], 'Tap an answer. Repeat says the question again. Home returns to your space.'
                 for i,choice in enumerate(self.round['choices']):
                     tiles[i] = (tile(choice.capitalize(),color=COLORS[choice]) if self.round['kind']=='colors'
+                                else tile(choice,ICONS[choice],color=['#c7dfed','#f6d39d','#d4c5e8','#b7d8c7'][i]) if self.round['kind']=='riddles'
                                 else tile(symbol=str(choice),color=['#c7dfed','#f6d39d','#d4c5e8','#b7d8c7'][i],dots=choice if self.round['kind']=='numbers' else None))
                     if i in self.wrong_keys:tiles[i]['disabled']=True
                     if self.game_correct:
@@ -154,8 +158,12 @@ class Controller:
                 if self.game_correct:
                     heading, hint = 'You found it!', 'The next round starts automatically. Home chooses something else.'
             elif self.mode == 'game_win':
-                heading, hint = 'Five stars!', 'You finished your adventure. Play again, or choose something new.'
+                heading, hint = label('Five stars!',self.language), 'Your unique prize is saved. Press Print to print it, or play again.'
+                picture = self.draft.get('image') if self.draft else None
                 tiles = [tile('Wonderful!', 'Star', color='#f0cb86') for _ in range(6)]
+                tiles[0] = tile('Print','Check',color='#85b8a2')
+                tiles[1] = tile('My prize',image=picture)
+                tiles[2] = tiles[3] = tile(disabled=True)
                 tiles[4] = tile('Play again','RotateCcw',color='#85b8a2')
                 tiles[5] = tile('Home','Home')
             elif self.mode == 'people':
@@ -200,7 +208,7 @@ class Controller:
                          tile('Listen', 'Play'), tile('Redo', 'RotateCcw'),
                          tile('Delete', 'Trash2', color='#e89179'), tile('Send', 'Send', color='#85b8a2')]
             elif self.mode == 'preview':
-                source = self.draft if self.return_mode in ('review','print_review','print_done') else self.current
+                source = self.draft if self.return_mode in ('review','print_review','print_done','game_win') else self.current
                 picture = source.get('image')
                 heading, hint = 'Your picture, across all six keys', 'Tap any button to return. This never sends the picture.'
                 tiles = [tile('Return', mosaic=picture, piece=i) for i in range(6)]
@@ -288,7 +296,7 @@ class Controller:
 
     def feedback_delay(self):
         text=translate('You earned a star!',self.language)
-        return max(2.4,self.media.cue_duration(text)+.7) if hasattr(self.media,'cue_duration') else 2.4
+        return max(2.4,self.media.cue_duration(text)+1.6) if hasattr(self.media,'cue_duration') else 2.4
 
     def advance_round(self, revision):
         with self.lock:
@@ -296,16 +304,18 @@ class Controller:
                 self.start_game(self.round['kind'])
 
     def start_game(self, kind):
-        if self.mode != 'game':self.game_score=0
+        if self.mode != 'game':
+            self.game_score=0
+            self.discard()
         self.wrong_keys=set()
-        previous = self.round['target'] if self.round and self.round['kind']==kind else None
+        previous = self.round.get('target') if self.round and self.round['kind']==kind else None
         self.round = new_round(kind,previous)
         self.game_correct = False
         self.transition('game',self.round['prompt'])
 
     def discard(self):
         # Only unpublished draft media are removed. Sent and received media survive.
-        if self.draft:
+        if self.draft and not self.draft.get('reward'):
             if self.draft.get('image') and hasattr(self.media, 'discard_image'):
                 self.media.discard_image(self.draft['image'])
             for field in ('audio', 'image'):
@@ -369,7 +379,7 @@ class Controller:
                 self.transition('people',f'Who in {self.houses[self.house]["name"]}?')
         elif self.mode == 'personal':
             if key==0:
-                self.transition('games','Let’s play! Choose colors, letters, or numbers.')
+                self.transition('games','Let’s play! Choose colors, letters, numbers, or riddles.')
             elif key==1:
                 self.transition('languages','Choose your language.')
             elif key in (3,4):
@@ -400,8 +410,14 @@ class Controller:
             elif key == 5:
                 self.hub()
         elif self.mode == 'games':
-            if key in (0,1,2):
-                self.start_game(['colors','letters','numbers'][key])
+            if key in (0,1,2,3):
+                self.start_game(['colors','letters','numbers','riddles'][key])
+            elif key == 4:
+                reward=self.mailbox.latest_reward(self.person)
+                if reward:
+                    self.draft=reward
+                    self.round={'kind':reward['game']}
+                    self.transition('game_win')
             elif key == 5:
                 self.hub()
         elif self.mode == 'game':
@@ -410,22 +426,34 @@ class Controller:
             elif key == 4:
                 if not self.game_correct:
                     self.speak(self.round['prompt'])
-            elif key < 4 and not self.game_correct:
+            elif key < 4 and not self.game_correct and key not in self.wrong_keys:
                 if self.round['choices'][key] == self.round['target']:
                     self.game_correct = True
                     self.game_score += 1
                     if self.game_score >= 5:
-                        self.transition('game_win','Five stars! Amazing exploring. Tap play again for a new adventure.')
+                        self.transition('game_win')
+                        try:
+                            self.draft=self.mailbox.award(self.person,self.people[self.person]['name'],self.round['kind'],self.language)
+                        except Exception:
+                            self.fail('Your prize could not be saved. Please ask a grown-up for help.')
+                            return
+                        self.media.cue_sequence([translate('Five stars! You earned a special prize. Press the green button to print it.',self.language)],star=True)
                     else:
-                        self.transition('game','You earned a star!')
+                        self.transition('game')
+                        self.media.cue_sequence([translate('You earned a star!',self.language)],star=True)
                         self.round_timer=threading.Timer(self.feedback_delay(),self.advance_round,args=(self.revision,))
                         self.round_timer.daemon=True
                         self.round_timer.start()
                 else:
                     self.wrong_keys.add(key)
-                    self.transition('game','Let us try another one. Listen carefully.')
+                    self.transition('game')
+                    self.media.cue_sequence([translate('Try again. Here is the same question.',self.language),translate(self.round['prompt'],self.language)])
         elif self.mode == 'game_win':
-            if key == 4:self.start_game(self.round['kind'])
+            if key == 0:self.print_draft()
+            elif key == 1:
+                self.return_mode='game_win'
+                self.transition('preview')
+            elif key == 4:self.start_game(self.round['kind'])
             elif key == 5:self.hub()
         elif self.mode == 'people':
             people = self.children(self.house)
@@ -641,7 +669,7 @@ class Controller:
 
     def print_draft(self):
         draft=self.draft
-        if self.station != 'portugal':
+        if self.station != 'portugal' and not getattr(self.media,'local_printer',False):
             self.fail('Only the Portugal PaperDrop Epson is configured for printing.')
             self.failed_mode='printing'
             return

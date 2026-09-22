@@ -15,6 +15,7 @@ class FakeMedia:
         self.draw_gate=threading.Event()
         self.play_gate=threading.Event()
         self.play_gate.set()
+        self.sequences=[]
         self.draw_calls=0
         self.record_calls=0
         self.fail_record=False
@@ -22,6 +23,7 @@ class FakeMedia:
         self.fail_print=False
     def start_guidance(self,text):return None
     def cue(self,text):pass
+    def cue_sequence(self,texts,star=False):self.sequences.append((texts,star))
     def stop_audio(self):pass
     def start_recording(self,path):
         self.record_calls+=1
@@ -287,6 +289,60 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(self.c.game_score,5)
         self.tap(4);self.assertEqual(self.c.mode,'game')
         self.assertEqual(self.c.game_score,0)
+
+    def test_wrong_answer_repeats_exact_translated_question_and_no_star(self):
+        self.tap(0);self.c.language='fr';self.tap(0);self.tap(3)
+        from languages import translate
+        before=self.c.round.copy()
+        wrong=next(i for i,x in enumerate(before['choices']) if x!=before['target'])
+        self.tap(wrong)
+        self.assertEqual(self.c.round,before)
+        self.assertEqual(self.media.sequences[-1], ([translate('Try again. Here is the same question.','fr'),translate(before['prompt'],'fr')],False))
+        self.assertEqual(self.c.game_score,0)
+        count=len(self.media.sequences)
+        self.tap(wrong)
+        self.assertEqual(len(self.media.sequences),count)
+        self.tap(before['choices'].index(before['target']))
+        self.assertTrue(self.media.sequences[-1][1])
+
+    def win(self):
+        for n in range(5):
+            self.tap(self.c.round['choices'].index(self.c.round['target']))
+            if n<4:self.c.advance_round(self.c.revision)
+        self.assertEqual(self.c.mode,'game_win')
+
+    def test_prize_unique_saved_previewed_and_only_printed_on_request(self):
+        self.tap(0);self.tap(0);self.tap(3);self.win()
+        first=self.c.draft.copy()
+        self.assertTrue(self.media.sequences[-1][1])
+        self.assertEqual(sum(star for _,star in self.media.sequences),5)
+        self.assertEqual(self.media.print_calls,0)
+        self.assertTrue(Path(first['image']).exists())
+        self.tap(1);self.assertEqual(self.c.mode,'preview')
+        self.assertEqual(self.c.snapshot()['picture'],first['image'])
+        self.tap(0);self.assertEqual(self.c.mode,'game_win')
+        self.tap(0);self.wait('print_done')
+        self.assertEqual(self.media.print_calls,1)
+        self.tap(5)
+        self.assertTrue(Path(first['image']).exists())
+        self.tap(0);self.tap(0);self.tap(4)
+        self.assertEqual(self.c.draft,first)
+        self.tap(4);self.win()
+        second=self.c.draft.copy()
+        self.assertEqual(second['number'],first['number']+1)
+        self.assertNotEqual(Path(first['image']).read_bytes(),Path(second['image']).read_bytes())
+        reopened=Mailbox(self.temp.name)
+        self.assertEqual(reopened.latest_reward('alma'),second)
+        self.assertIsNone(reopened.latest_reward('theodore'))
+        reopened.close()
+
+    def test_reward_print_failure_keeps_same_card_on_retry(self):
+        self.tap(0);self.tap(0);self.tap(3);self.win()
+        prize=self.c.draft.copy();self.media.fail_print=True
+        self.tap(0);self.wait('error')
+        self.assertEqual(self.c.draft,prize)
+        self.media.fail_print=False;self.tap(3);self.wait('print_done')
+        self.assertEqual(self.box.latest_reward('alma'),prize)
 
     def test_language_choice_is_per_child_and_survives_reopen(self):
         cues=[]
