@@ -1,10 +1,13 @@
 """macOS bench audio and PaperDrop's existing OpenAI drawing pipeline."""
 import audioop
 import base64
+from contextlib import ExitStack
 import hashlib
+import json
 import logging
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import threading
@@ -13,6 +16,18 @@ import wave
 
 
 ROOT = Path(__file__).resolve().parent
+SPOKEN_NAMES = {'theodore': {'Théodore'}, 'elise': {'Élise'}}
+
+
+def named_cousins(prompt):
+    family = json.loads((ROOT / 'family.json').read_text())
+    matches = []
+    for child in family['children']:
+        names = {child['name'], child['id']} | SPOKEN_NAMES.get(child['id'], set())
+        if any(re.search(r'(?<!\w)' + re.escape(name) + r'(?!\w)', prompt, re.IGNORECASE)
+               for name in names):
+            matches.append(child)
+    return matches
 
 
 def client():
@@ -183,14 +198,28 @@ class Media:
             raise RuntimeError('Please try a different picture')
         progress('Drawing your picture…')
         # Keep the same model and thermal-art contract as recordedVoice.ts.
-        result = ai.images.generate(
-            model=os.environ.get('PAPERDROP_IMAGE_MODEL', 'gpt-image-2.5-flare'),
-            prompt=f"Create the child's requested artwork: {prompt}. Honor the requested format: a comic, map, puzzle, card, poster or illustration. "
-                   'Family-friendly monochrome artwork on white paper, readable at 576 dots wide. '
-                   'Use confident contours, clear focal points, generous spacing, small black accents and sparse hatching where useful. '
-                   'Avoid dense dark backgrounds, muddy gray washes and tiny details. Use coloring-page style only if requested. '
-                   'Preserve requested subjects and captions; do not invent greetings or personal details.',
-            n=1, size='1024x1024', quality=os.environ.get('PAPERDROP_IMAGE_QUALITY', 'medium'), output_format='png', background='opaque')
+        image_prompt = (f"Create the child's requested artwork: {prompt}. Honor the requested format: a comic, map, puzzle, card, poster or illustration. "
+                        'Family-friendly monochrome artwork on white paper, readable at 576 dots wide. '
+                        'Use confident contours, clear focal points, generous spacing, small black accents and sparse hatching where useful. '
+                        'Avoid dense dark backgrounds, muddy gray washes and tiny details. Use coloring-page style only if requested. '
+                        'Preserve requested subjects and captions; do not invent greetings or personal details.')
+        settings = dict(model=os.environ.get('PAPERDROP_IMAGE_MODEL', 'gpt-image-2.5-flare'),
+                        n=1, size='1024x1024', quality=os.environ.get('PAPERDROP_IMAGE_QUALITY', 'medium'),
+                        output_format='png', background='opaque')
+        matches = named_cousins(prompt)
+        if matches:
+            with ExitStack() as files:
+                portraits = [files.enter_context(open(ROOT / 'assets' / 'portraits' / child['portrait'], 'rb'))
+                             for child in matches]
+                references = ' '.join(f'Image {index} is {child["name"]}.'
+                                      for index, child in enumerate(matches, 1))
+                result = ai.images.edit(
+                    image=portraits,
+                    prompt=f'{references} Use these portraits as identity references. Keep each named child\'s '
+                           f'recognizable face and age while drawing the requested scene. {image_prompt}',
+                    **settings)
+        else:
+            result = ai.images.generate(prompt=image_prompt, **settings)
         if not result.data or not result.data[0].b64_json:
             raise RuntimeError('No picture returned')
         from PIL import Image

@@ -50,6 +50,8 @@ is an optional larger image viewer and a grown-up station switcher.
 
 All names and houses are in `family.json`. All eight cousins have illustrated transparent PNG portraits
 under `assets/portraits/`. Original portraits are retained alongside the cutouts.
+When a child names one or more cousins in a drawing request, image generation
+uses their portraits as face references, including on the Pi's backend route.
 Location artwork lives under `assets/locations/`. The renderer preserves portrait
 alpha when placing faces over location art and uses a dark display behind face keys.
 

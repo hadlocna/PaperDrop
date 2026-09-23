@@ -11,12 +11,14 @@ class FakeSocket extends EventEmitter {
 }
 require('ws');
 require.cache[require.resolve('ws')].exports = FakeSocket;
-let generated = 0;
+let generated = 0, edits = 0;
 require('openai');
-require.cache[require.resolve('openai')].exports = class FakeAI {
+class FakeAI {
     moderations = { create: async () => ({results:[{flagged:false}]}) };
-    images = { generate: async () => { generated++; return {data:[{b64_json:'dGVzdA=='}]}; } };
-};
+    images = { generate: async () => { generated++; return {data:[{b64_json:'dGVzdA=='}]}; }, edit: async () => { generated++; edits++; return {data:[{b64_json:'dGVzdA=='}]}; } };
+}
+FakeAI.toFile=async value=>value;
+require.cache[require.resolve('openai')].exports = FakeAI;
 const { prisma } = require('../dist/lib/prisma');
 const { deviceConnections } = require('../dist/websocket/session');
 const { handleVoice, closeVoice } = require('../dist/services/realtimeVoice');
@@ -88,8 +90,10 @@ test('new explicit confirmation generates only the reviewed prompt once', async 
     emit({type:'input_audio_buffer.speech_started',item_id:'yes'});
     emit({type:'conversation.item.input_audio_transcription.completed',item_id:'yes',transcript:'Yes, please.'});
     emit({type:'response.function_call_arguments.done',name:'create_picture',call_id:'approved',arguments:'{"prompt":"A lizard with Theodore underneath"}'});
-    await new Promise(resolve=>setImmediate(resolve));
+    for(let attempt=0;attempt<100 && !replies.some(e=>e.type==='new_message');attempt++)
+        await new Promise(resolve=>setTimeout(resolve,5));
     assert.equal(generated,1);
+    assert.equal(edits,1);
     assert.equal(replies.filter(e=>e.type==='new_message').length,1);
     closeVoice('approved');
 });

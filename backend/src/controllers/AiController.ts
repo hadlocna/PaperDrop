@@ -1,7 +1,8 @@
 import { Request, Response } from 'express';
 import OpenAI from 'openai';
 
-import { IMAGE_MODEL, DESIGN_SYSTEM_PROMPT, imagePrompt } from '../services/thermalArtwork';
+import { DESIGN_SYSTEM_PROMPT, imagePrompt } from '../services/thermalArtwork';
+import { generateCousinPicture } from '../services/cousinImages';
 
 export class AiController {
     static async generateDesign(req: Request, res: Response) {
@@ -51,15 +52,7 @@ export class AiController {
 
 
             // 2. Generate thermal artwork with GPT Image 2.5 Flare.
-            const imageResponse = await openai.images.generate({
-                model: IMAGE_MODEL,
-                prompt: imagePrompt(prompt, designSpecs),
-                n: 1,
-                size: "1024x1024",
-                quality: "medium",
-                output_format: "png",
-                background: "opaque"
-            });
+            const imageResponse = await generateCousinPicture(openai, prompt, imagePrompt(prompt, designSpecs));
 
             if (!imageResponse.data || !imageResponse.data[0]) {
                 console.error('[AI] No image data in response:', JSON.stringify(imageResponse));
