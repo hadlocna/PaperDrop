@@ -40,6 +40,8 @@ class Bench:
             self.media = PiMedia(self.root)
         else:
             self.media = Media(self.root)
+        if pi:
+            self.media.attach_mailbox(self.mailbox, self.family)
         self.controller = Controller(self.family,self.mailbox,self.media)
         self.renderer = Renderer(self.family)
         self.stop = threading.Event()

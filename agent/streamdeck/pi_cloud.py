@@ -75,10 +75,11 @@ class Cloud:
                     while not self.stop.is_set():
                         if time.monotonic()-heartbeat > 20:
                             self.send({'type': 'heartbeat', 'firmware_version': os.environ.get('PAPERDROP_FIRMWARE_VERSION', 'streamdeck-pi-demo'), 'metrics': {}})
+                            self.send({'type': 'mail_sync'})
                             heartbeat = time.monotonic()
                             for ident, delivery in list(self.deliveries.items()):
-                                if delivery.get('status') not in ('printed','failed','not_found'):
-                                    self.send({'type':'postcard_status','id':ident})
+                                if delivery.get('status') not in ('printed','read','failed','not_found'):
+                                    self.send({'type': 'mail_status' if delivery.get('type') == 'mail_result' else 'postcard_status', 'id':ident})
                         try:
                             event = json.loads(ws.recv(timeout=1))
                         except TimeoutError:
@@ -131,7 +132,17 @@ class Cloud:
             self.send({'ok': False, 'type': 'speaker_result', 'request_id': event.get('request_id'), 'error': 'Speaker command failed. Please try again.'})
 
     def event(self, event):
-        if event.get('type') == 'postcard_result':
+        if event.get('type') == 'cousin_mail':
+            message = event.get('message', {})
+            ident = message.get('id', '')
+            import re
+            if re.fullmatch('[a-f0-9]{64}', ident):
+                from cousin_mail import atomic_write
+                folder = self.root / 'incoming-mail'
+                folder.mkdir(exist_ok=True)
+                atomic_write(folder / (ident + '.json'), json.dumps(message).encode())
+            return
+        if event.get('type') in ('postcard_result', 'mail_result'):
             ident = event.get('id','')
             if len(ident)==32 and all(c in '0123456789abcdef' for c in ident):
                 with self.lock:
@@ -229,6 +240,43 @@ class Cloud:
                     return result
                 self.delivery_event.clear()
         raise RuntimeError('Delivery not confirmed. Retry checks this same postcard; it does not create a duplicate.')
+
+    def mail_receipt(self, ident, status):
+        from cousin_mail import atomic_write
+        value = {'type': 'mail_receipt', 'id': ident, 'status': status}
+        path = self.ack_dir / (ident + '.json')
+        atomic_write(path, json.dumps(value).encode())
+        try:
+            self.send(value)
+            path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    def send_mail(self, draft):
+        ident = draft['id']
+        if not self.connected.wait(8):
+            raise RuntimeError('PaperDrop backend is unavailable. Retry when online.')
+        with self.lock:
+            existing = self.deliveries.get(ident)
+            if existing and not existing.get('error') and existing.get('status') not in ('not_found',):
+                return existing
+            self.deliveries.pop(ident, None)
+            self.delivery_event.clear()
+        path = draft['audio' if draft['kind'] == 'voice' else 'image']
+        self.send({'type': 'mail_send', 'id': ident, 'house': draft['house'], 'sender': draft['sender'],
+                   'recipient': draft['recipient'], 'kind': draft['kind'],
+                   'media': base64.b64encode(Path(path).read_bytes()).decode()})
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            self.delivery_event.wait(1)
+            with self.lock:
+                result = self.deliveries.get(ident)
+                if result:
+                    if result.get('error'):
+                        raise RuntimeError(result['error'])
+                    return result
+                self.delivery_event.clear()
+        raise RuntimeError('Delivery not confirmed. Retry reuses this message ID.')
 
     def close(self):
         self.stop.set()

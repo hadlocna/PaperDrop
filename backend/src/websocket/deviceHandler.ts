@@ -1,3 +1,4 @@
+import { handleCousinMail } from '../services/cousinMail';
 import { WebSocket, WebSocketServer } from 'ws';
 import { IncomingMessage } from 'http';
 import url from 'url';
@@ -175,7 +176,8 @@ export const setupWebSocket = () => {
                 const pendingMessages = await prisma.message.findMany({
                     where: {
                         deviceId: deviceId,
-                        status: 'queued'
+                        status: 'queued',
+                        contentType: { not: 'cousin_mail' }
                     },
                     include: {
                         sender: {
@@ -223,6 +225,10 @@ export const setupWebSocket = () => {
 };
 
 const handleDeviceMessage = async (deviceId: string, message: any) => {
+    if (['mail_send', 'mail_sync', 'mail_status', 'mail_receipt'].includes(message.type)) {
+        await handleCousinMail(deviceId, message);
+        return;
+    }
     if (['postcard_send', 'postcard_status'].includes(message.type)) {
         await handleHousePostcard(deviceId, message);
         return;

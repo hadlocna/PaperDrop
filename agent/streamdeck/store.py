@@ -1,4 +1,4 @@
-"""Local bench transport. No remote delivery or print is implied by a receipt."""
+"""Persistent per-child mailbox; cloud delivery and print receipts are separate."""
 import json
 import sqlite3
 import threading
@@ -68,6 +68,9 @@ class Mailbox:
     def mark_seen(self, message):
         with self.lock, self.db:
             self.db.execute('UPDATE mail SET seen=1 WHERE id=?', (message['id'],))
+
+        if getattr(self, 'on_read', None):
+            self.on_read(message)
 
     def close(self):
         self.db.close()

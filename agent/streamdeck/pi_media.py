@@ -17,6 +17,7 @@ class PrintOutcomeUnknown(RuntimeError):
 
 
 class PiMedia(Media):
+    _printer_lock = threading.Lock()
     local_printer = True
     def __init__(self, root):
         super().__init__(root)
@@ -50,6 +51,8 @@ class PiMedia(Media):
         return self.cloud.draw(audio, target, progress)
 
     def close(self):
+        if hasattr(self, 'receiver'):
+            self.receiver.close()
         self.shutdown.set()
         super().close()
         self.cloud.close()
@@ -179,6 +182,17 @@ class PiMedia(Media):
                 proc.kill()
                 proc.wait()
 
+    def attach_mailbox(self, mailbox, family):
+        from cousin_mail import Receiver
+        self.receiver = Receiver(self.root, mailbox, family, self, self.cloud)
+        mailbox.on_read = lambda message: self.cloud.mail_receipt(message['id'], 'read') if message.get('remote') and message['kind'] == 'voice' else None
+
+    def send_mail(self, draft, family):
+        people = {p['id']: p for p in family['children']}
+        if draft['sender'] not in people or people[draft['sender']]['house'] != family['station']:
+            raise RuntimeError('Choose your own face before sending mail')
+        return self.cloud.send_mail(dict(draft, house=people[draft['recipient']]['house']))
+
     def send_drawing(self, draft, family):
         from PIL import Image, ImageDraw, ImageFont
         if draft['sender'] != family['station']:
@@ -207,6 +221,12 @@ class PiMedia(Media):
             return dict(self.cloud.deliveries.get(ident,{}))
 
     def print_image(self, path, ident):
+        from contextlib import nullcontext
+        from update_guard import acquire
+        with self._printer_lock, (acquire() if os.environ.get("PAPERDROP_FIRMWARE_VERSION") else nullcontext()):
+            return self._print_image(path, ident)
+
+    def _print_image(self, path, ident):
         from PIL import Image
         from escpos.printer import Usb
         receipts = self.root / 'print-receipts'
