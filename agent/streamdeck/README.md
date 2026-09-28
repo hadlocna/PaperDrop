@@ -1,3 +1,25 @@
+# Cousin mail — managed firmware 2.1.0
+
+The managed interface now sends both voice notes and pictures through the authenticated
+family mail service. Choose your own face (or choose it when prompted), then a house
+and cousin. Review the recording/picture and press Send. Offline receiving houses
+queue mail in the backend. A send receipt is not proof of physical playback or paper.
+
+Tap your face to see unread badges and sender portraits. The voice/picture button
+opens an inbox with Play/Preview, Reply and Next; older messages remain accessible.
+Voice notes never auto-play. A note is read only after playback completes.
+Incoming pictures print automatically with the recipient and sending child's names.
+USB print receipts suppress duplicate jobs; uncertain prints require inspection.
+Mailbox and media live outside firmware releases and survive upgrades/restarts.
+
+This protocol requires the managed Stream Deck runtime at both houses, the correct
+`/etc/paperdrop/station`, and the current backend. Legacy 1.0.0 devices do not subscribe
+to managed updates and cannot receive the new mail envelopes. They need the managed
+image installed and their speaker/microphone/face buttons checked. The historical
+bench/demo notes below describe older behavior and are retained for context.
+
+---
+
 ## Current Pi controls
 
 Tap a cousin’s face → globe to choose English, Français, Deutsch, Italiano, or Português (Portugal). The Pi remembers each child’s preference. Games and all spoken guidance follow that choice, with cached AI-generated Marin speech. A correct game answer earns a star and automatically starts the next round after the feedback finishes; Home cancels it.

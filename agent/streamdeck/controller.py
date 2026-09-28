@@ -174,6 +174,11 @@ class Controller:
                 tiles[3] = tile('Back', 'ArrowLeft')
                 tiles[4] = self.person_tile(self.person, disabled=True, selected=True) if self.person else tile(disabled=True)
                 tiles[5] = tile('Home', 'Home')
+            elif self.mode == 'sender':
+                heading, hint = 'Who is sending?', 'Choose your face so your cousin knows who sent the mail.'
+                for i, person in enumerate(self.children(self.station)):
+                    tiles[i] = self.person_tile(person)
+                tiles[5] = tile('Home', 'Home')
             elif self.mode == 'compose':
                 heading, hint = f'For {target}', 'Tap Talk for a voice note or Draw for a picture. Wait for red, speak, then tap Done. You can also hold and release.'
                 tiles = [self.person_tile(self.recipient, disabled=True), tile('Talk', 'Mic', color='#85b8a2'),
@@ -218,7 +223,7 @@ class Controller:
                 heading = f'For {name}, from {self.sender_name(sender)}'
                 hint = f'{self.mail_index+1} of {len(self.mail)} · Play or preview, then reply when you want.'
                 tiles = [self.sender_tile(sender, disabled=True), tile('Preview' if picture else 'Listen', 'ZoomIn' if picture else 'Play', image=picture),
-                         tile('Listen', 'Play'), tile('Reply', 'Mic', color='#85b8a2'),
+                         tile('Listen', 'Play', disabled=not self.current.get('audio')), tile('Reply', 'Mic', color='#85b8a2'),
                          tile('Next', 'ChevronRight', disabled=len(self.mail)<2), tile('Home', 'Home')]
             elif self.mode == 'print_review':
                 heading, hint = 'Ready to print?', 'Look at your picture, then press the green Print button. Nothing has printed yet.'
@@ -237,13 +242,13 @@ class Controller:
                 if self.delivery:
                     receipt = self.media.delivery_status(self.delivery['id']) or self.delivery
                     status = receipt.get('status')
-                    heading = {'printed':'Printed at '+self.houses[self.house]['name'], 'printing':'Printing for '+target, 'queued':'Queued for '+target, 'sent':'Sent to '+self.houses[self.house]['name'], 'dispatching':'Checking delivery', 'failed':'The other printer needs help'}.get(status,'Checking delivery')
-                    hint = 'To: '+target+' · From: '+self.houses[self.station]['name']
+                    heading = {'received':'Mail received by '+target, 'read':'Played by '+target, 'printed':'Printed at '+self.houses[self.house]['name'], 'printing':'Printing for '+target, 'queued':'Queued for '+target, 'sent':'Sent to '+self.houses[self.house]['name'], 'dispatching':'Checking delivery', 'failed':'The other printer needs help'}.get(status,'Checking delivery')
+                    hint = 'To: '+target+' · From: '+self.sender_name(self.person or self.station)
                     if status=='queued':hint += ' · Waiting for their PaperDrop to reconnect.'
-                    elif status=='sent':hint += ' · Waiting for the printer to confirm.'
+                    elif status=='sent':hint += ' · Waiting for their PaperDrop to confirm.'
                     elif status=='printed':hint += ' · Their device confirmed printing.'
                 tiles[0] = self.person_tile(self.recipient, disabled=True)
-                delivery_label = {'queued':'Queued','sent':'Sent','printing':'Printing','printed':'Printed','dispatching':'Checking','failed':'Needs help'}.get(status,'Checking') if self.delivery else 'Saved'
+                delivery_label = {'queued':'Queued','sent':'Sent','printing':'Printing','printed':'Printed','received':'Received','read':'Played','dispatching':'Checking','failed':'Needs help'}.get(status,'Checking') if self.delivery else 'Saved'
                 icon = 'Check' if delivery_label in ('Saved','Printed') else ('AlertCircle' if delivery_label=='Needs help' else 'Send')
                 tiles[1] = tile(delivery_label, icon, color='#f0cb86' if delivery_label in ('Queued','Checking') else '#85b8a2', disabled=True)
                 tiles[5] = tile('Home', 'Home')
@@ -283,7 +288,8 @@ class Controller:
 
     def latest(self, kind):
         messages = [m for m in self.mailbox.inbox(self.person) if m['kind']==kind] if self.person else []
-        return messages[-1] if messages else None
+        unread = [m for m in messages if not m['seen']]
+        return (unread or messages)[-1] if messages else None
 
     def hub(self):
         if not self.person:
@@ -386,14 +392,14 @@ class Controller:
                 message = self.latest('voice' if key==3 else 'drawing')
                 if message:
                     self.current=message
-                    self.mail=[message]
+                    self.mail = [m for m in reversed(self.mailbox.inbox(self.person)) if m['kind'] == message['kind']]
+                    self.mail.sort(key=lambda m: m['seen'])
                     self.mail_index=0
+                    self.current=self.mail[0]
                     if key==3:
-                        self.play(message,'personal')
+                        self.transition('incoming')
                     else:
-                        self.mailbox.mark_seen(message)
-                        self.return_mode='personal'
-                        self.transition('preview', 'Here is your picture. Tap any button to go back.')
+                        self.transition('incoming')
             elif key == 5:
                 self.home()
         elif self.mode == 'languages':
@@ -465,6 +471,13 @@ class Controller:
                     self.compose()
             elif key in (3,5):
                 self.home()
+        elif self.mode == 'sender':
+            people = self.children(self.station)
+            if key < len(people):
+                self.person = people[key]
+                self.compose()
+            elif key == 5:
+                self.home()
         elif self.mode == 'compose':
             if key == 3:
                 self.open_mail(self.recipient)
@@ -493,7 +506,7 @@ class Controller:
             if key == 1 and self.current.get('image'):
                 self.return_mode = 'incoming'
                 self.transition('preview', 'Tap any button to go back.')
-            elif key in (1,2):
+            elif key in (1,2) and self.current.get('audio'):
                 self.play(self.current, 'incoming')
             elif key == 3:
                 sender = self.current['sender']
@@ -543,6 +556,9 @@ class Controller:
                 self.home()
 
     def compose(self):
+        if hasattr(self.media, 'send_mail') and not self.person:
+            self.transition('sender')
+            return
         self.note = ''
         self.transition('compose', f'For {self.people[self.recipient]["name"]}. Tap the microphone to talk, or the picture to draw. Tap again when you are done.')
 
@@ -559,7 +575,7 @@ class Controller:
     def start_recording(self, key, kind, local_print=False):
         self.discard()
         ident = uuid.uuid4().hex
-        self.draft = dict(id=ident, sender=self.station, recipient=self.recipient, kind=kind,
+        self.draft = dict(id=ident, sender=self.person or self.station, recipient=self.recipient, kind=kind,
                           audio=str(self.mailbox.root / (ident+'.wav')),local_print=local_print)
         self.record_key = key
         self.record_started = time.monotonic()
@@ -697,15 +713,15 @@ class Controller:
 
     def send(self):
         draft = copy.deepcopy(self.draft)
-        draft['sender'] = self.station
+        draft['sender'] = self.person or self.station
         self.transition('sending')
-        remote = draft['kind']=='drawing' and hasattr(self.media,'send_drawing')
+        remote = hasattr(self.media, 'send_mail') or (draft['kind']=='drawing' and hasattr(self.media,'send_drawing'))
         def success(receipt):
             self.draft = None  # published media now belongs to the mailbox
             self.delivery = dict(receipt,id=draft['id']) if remote else None
-            self.transition('sent', 'Your picture is on its way.' if remote else 'Your practice voice note is saved.')
+            self.transition('sent')
         def deliver():
-            receipt=self.media.send_drawing(draft,self.family) if remote else self.mailbox.send(draft)
+            receipt = self.media.send_mail(draft,self.family) if hasattr(self.media, 'send_mail') else (self.media.send_drawing(draft,self.family) if remote else self.mailbox.send(draft))
             if remote:self.mailbox.send(dict(draft,delivery=receipt))
             return receipt
         self.background(deliver, success)

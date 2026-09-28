@@ -131,6 +131,20 @@ class ControllerTests(unittest.TestCase):
         self.c.record_started -= 1
         self.c.press(key,False)
 
+    def test_remote_voice_selects_child_and_uses_cloud_transport(self):
+        sent=[]
+        self.media.send_mail=lambda draft,family: sent.append(dict(draft)) or {'status':'queued','type':'mail_result'}
+        self.media.delivery_status=lambda ident: {}
+        self.tap(3);self.tap(0)
+        self.assertEqual(self.c.mode,'sender')
+        self.tap(1)
+        self.assertEqual(self.c.person,'theodore')
+        self.record();self.wait('review');self.tap(5);self.wait('sent')
+        self.assertEqual(len(sent),1)
+        self.assertEqual((sent[0]['sender'],sent[0]['recipient'],sent[0]['kind']),('theodore','andy','voice'))
+        self.assertIn('Queued',self.c.snapshot()['heading'])
+        self.assertIn('Theodore',self.c.snapshot()['hint'])
+
     def test_every_child_reachable_and_house_sends_without_identity_screen(self):
         self.tap(3);self.tap(0)
         self.assertEqual(self.c.mode,'compose')
@@ -158,10 +172,11 @@ class ControllerTests(unittest.TestCase):
         self.c.switch_station('ohio')
         self.assertEqual(self.c.snapshot()['tiles'][0]['badge'],1)
         self.assertEqual(self.c.snapshot()['tiles'][1]['badge'],0)
-        self.tap(0);self.tap(3)
-        self.wait('personal')
+        self.tap(0);self.tap(3);self.tap(1)
+        self.wait('incoming')
+        self.tap(5)
         self.assertEqual(len(self.box.inbox('andy',unread=True)),0)
-        self.assertEqual(self.c.snapshot()['tiles'][3]['house'],'portugal')
+        self.assertEqual(self.c.snapshot()['tiles'][3]['person'],'alma')
 
     def test_generation_mashing_cannot_send_or_change_recipient(self):
         self.compose();self.record(2);self.wait('generating')
@@ -237,14 +252,16 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(tiles[2]['label'],'Draw & Print')
         self.assertEqual(tiles[3]['person'],'andy')
         self.assertEqual(tiles[4]['person'],'rue')
-        self.tap(4)
+        self.tap(4);self.tap(1)
         self.assertEqual(self.c.mode,'preview')
-        self.tap(0)
+        self.tap(0);self.tap(5)
         self.assertEqual(self.c.mode,'personal')
-        self.media.play_gate.clear();self.tap(3);self.wait('playing')
+        self.media.play_gate.clear();self.tap(3);self.tap(1);self.wait('playing')
         self.assertEqual(self.c.snapshot()['tiles'][0]['person'],'andy')
-        self.media.play_gate.set();self.wait('personal')
-        self.assertEqual(self.c.latest('voice')['seen'],True)
+        self.media.play_gate.set();self.wait('incoming')
+        self.assertEqual(len(self.box.inbox('alma', unread=True)),1)
+        self.tap(4);self.tap(1);self.wait('incoming')
+        self.assertEqual(len(self.box.inbox('alma', unread=True)),0)
 
     def test_games_correct_retry_repeat_and_home(self):
         self.tap(1)
