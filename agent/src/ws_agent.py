@@ -559,34 +559,16 @@ async def handle_print_job(websocket, message_data):
             except UnidentifiedImageError as e:
                 raise Exception(f"Invalid image format: {e}")
 
-            # Keep image input stable for the ESC/POS image routine.
-            img = img.convert('RGB')
-            
-            # Resize to printer width (576px for 80mm at 203 DPI)
-            # This ensures WYSIWYG consistency with the frontend canvas
-            PRINTER_WIDTH = 576
-            if img.width != PRINTER_WIDTH:
-                aspect_ratio = img.height / img.width
-                new_height = int(PRINTER_WIDTH * aspect_ratio)
-                img = img.resize((PRINTER_WIDTH, new_height), Image.Resampling.LANCZOS)
-                logger.info(f"Resized image to {PRINTER_WIDTH}x{new_height}")
+            from print_layout import fit_width, FRAGMENT_HEIGHT
+            img = fit_width(img).convert('1')
 
-            # Prevent very tall images from overloading the printer image command path.
-            MAX_HEIGHT = 2400
-            if img.height > MAX_HEIGHT:
-                img = img.resize((PRINTER_WIDTH, MAX_HEIGHT), Image.Resampling.LANCZOS)
-                logger.warning(f"Image too tall. Resized to {PRINTER_WIDTH}x{MAX_HEIGHT}")
-
-            # Convert to 1-bit early; avoids several image-encoding crash paths.
-            img = img.convert('1')
-            
             # Apply watermark
             watermark_text = f"Sent by {sender_name}"
             img = add_watermark(img, watermark_text)
             
             logger.info(f"Printing image: {img.size}")
             # ESC/POS image printing
-            p.image(img, impl='bitImageRaster')
+            p.image(img, impl='bitImageRaster', fragment_height=FRAGMENT_HEIGHT)
             p.cut()
 
         # Update status to printed

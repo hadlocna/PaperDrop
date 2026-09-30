@@ -30,6 +30,7 @@ interface CanvasElement {
     y: number;
     width?: number; // For images
     rotation?: number;
+    aspectRatio?: number;
     fontSize?: number;
     fontFamily?: string;
     originalContent?: string; // untouched source image, so filters can be swapped
@@ -62,7 +63,7 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
     const [aiProgress, setAiProgress] = useState(0);
     const [aiEtaSeconds, setAiEtaSeconds] = useState(0);
 
-    // Width of thermal printer is 576px (80mm at 203 DPI)
+    // Printable width is 576 dots (72mm on 80mm paper)
     const logicalWidth = 576;
     const [isDrawing, setIsDrawing] = useState(false);
     const [qrContent, setQrContent] = useState('');
@@ -77,6 +78,17 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
     const elementsRef = useRef<CanvasElement[]>(elements);
     elementsRef.current = elements;
 
+
+    // Images keep their proportions; paper grows instead of clipping their bottom.
+    const contentHeight = Math.ceil(elements.reduce((bottom, el) => {
+        if (el.type !== 'image' || !el.aspectRatio) return bottom;
+        const width = el.width || 200;
+        const height = width / el.aspectRatio;
+        const angle = (el.rotation || 0) * Math.PI / 180;
+        const rotatedHeight = Math.abs(height * Math.cos(angle)) + Math.abs(width * Math.sin(angle));
+        return Math.max(bottom, el.y + height / 2 + rotatedHeight / 2 + 8);
+    }, 0));
+    const paperHeight = Math.max(canvasHeight, contentHeight);
 
     const selectedElement = elements.find(el => el.id === selectedId);
 
@@ -117,9 +129,9 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                 id: crypto.randomUUID(),
                 type: 'image',
                 content: image,
-                x: 28, // Centered roughly (576-520)/2 = 28
-                y: elements.length > 0 ? 100 : 50, // Slight offset if not first
-                width: 520, // Max width with padding
+                x: 0,
+                y: elements.length > 0 ? 100 : 8,
+                width: 576,
                 rotation: 0
             };
 
@@ -206,9 +218,9 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                     type: 'image',
                     content: source,
                     originalContent: source,
-                    x: 50,
-                    y: 50,
-                    width: 200, // Default width
+                    x: 0,
+                    y: 8,
+                    width: 576, // Fill the printable width
                     rotation: 0
                 };
                 setElements(prev => [...prev, newElement]);
@@ -278,6 +290,7 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
             if (!canvasRef.current) return '';
 
             const canvasElement = canvasRef.current;
+            if (paperHeight > 16000) throw new Error('This print exceeds two metres. Split it into shorter images.');
 
             // 2. Find the outer container with Tailwind scale classes and temporarily remove them
             // The canvas itself is 576px with no transform, but the viewport wrapper has responsive scaling
@@ -361,6 +374,7 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
             return outputCanvas.toDataURL('image/png');
         } catch (err) {
             console.error("Capture failed:", err);
+            alert(err instanceof Error ? err.message : "Could not prepare this print. Please try again.");
             return '';
         }
     };
@@ -743,6 +757,12 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                                     ))}
                                 </div>
 
+                                <button type="button" className="px-3 py-1 rounded-md text-xs font-bold bg-gray-100 whitespace-nowrap"
+                                    onClick={() => {
+                                        const fitted = { ...selectedElement, x: 0, width: 576, rotation: 0 };
+                                        updateElement(fitted.id, fitted);
+                                        if (fitted.filter && fitted.filter !== 'none') applyFilterTo(fitted, fitted.filter);
+                                    }}>Full width</button>
                                 {isFilterProcessing && (
                                     <Loader2 size={16} className="animate-spin text-charcoal-500" />
                                 )}
@@ -895,8 +915,8 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                     <div
                         className="relative bg-white shadow-xl border border-gray-200 transition-all duration-300"
                         style={{
-                            width: `${logicalWidth}px`, // 576px = 80mm printer width at 203 DPI
-                            minHeight: `${canvasHeight}px`
+                            width: `${logicalWidth}px`, // 576 dots = 72mm printable width
+                            minHeight: `${paperHeight}px`
                         }}
                         onClick={(e) => e.stopPropagation()}
                     >
@@ -924,7 +944,7 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                                 className="bg-white relative cursor-text mx-auto"
                                 style={{
                                     width: `${logicalWidth}px`,
-                                    minHeight: `${canvasHeight}px`
+                                    minHeight: `${paperHeight}px`
                                 }}
                                 onClick={(e) => {
                                     if (e.target === e.currentTarget && !previewImage) {
@@ -942,7 +962,7 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                                         onUpdate={(vals) => updateElement(el.id, vals)}
                                         onResizeEnd={() => handleResizeEnd(el.id)}
                                         canvasWidth={logicalWidth}
-                                        canvasHeight={canvasHeight}
+                                        canvasHeight={paperHeight}
                                     />
                                 ))}
 
@@ -964,8 +984,17 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
             {/* Footer Actions - Add Paper */}
             {!previewImage && (
                 <div className="w-full bg-white border-t border-gray-200 p-4 shrink-0 z-50 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] pb-[calc(1rem+env(safe-area-inset-bottom))]">
+                    <label className="flex items-center gap-2 mb-3 text-sm">
+                        Paper length (mm)
+                        <input aria-label="Paper length in millimetres" type="number" min={Math.max(50, Math.ceil(contentHeight / 8))} max={2000}
+                            value={Math.ceil(paperHeight / 8)} step={50}
+                            onChange={e => { const mm = Number(e.target.value); if (Number.isFinite(mm)) setCanvasHeight(Math.max(contentHeight, Math.min(16000, Math.max(400, mm * 8)))); }}
+                            className="w-24 border rounded px-2 py-1" />
+                        <span>Grows to fit your images · up to 2 m</span>
+                    </label>
                     <button
-                        onClick={() => setCanvasHeight(h => h + 400)}
+                        onClick={() => setCanvasHeight(Math.min(16000, paperHeight + 400))}
+                        disabled={paperHeight >= 16000}
                         className="w-full bg-gray-100 hover:bg-gray-200 text-charcoal-800 py-3 rounded-xl text-base font-bold transition flex items-center justify-center gap-2 active:scale-[0.98]"
                     >
                         <span className="text-xl leading-none font-light block pb-0.5">+</span>
@@ -1158,6 +1187,10 @@ function DraggableElement({
                         {element.type === 'image' ? (
                             <div className={`relative transition-all duration-200 ${isSelected ? 'outline outline-2 outline-coral-400' : 'group-hover:outline group-hover:outline-2 group-hover:outline-coral-400'}`}>
                                 <img
+                                    onLoad={(e) => {
+                                        const ratio = e.currentTarget.naturalWidth / e.currentTarget.naturalHeight;
+                                        if (ratio > 0 && ratio !== element.aspectRatio) onUpdate({ aspectRatio: ratio });
+                                    }}
                                     src={element.content}
                                     alt="Element"
                                     crossOrigin="anonymous"

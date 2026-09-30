@@ -241,15 +241,15 @@ class PiMedia(Media):
         printer = Usb(0x04b8, 0x0e28, profile='TM-T20II', auto_detach_kernel_driver=True)
         try:
             with Image.open(path) as source:
-                img = source.convert('RGB')
-                img = img.resize((576, min(2400, round(img.height * 576 / img.width))), Image.Resampling.LANCZOS).convert('1')
+                from print_layout import fit_width, FRAGMENT_HEIGHT
+                img = fit_width(source).convert('1')
             # Persist before the first byte is sent; interrupted jobs cannot auto-reprint.
             with receipt.open('x') as out:
                 json.dump({'id': ident, 'status': 'uncertain'}, out)
                 out.flush()
                 os.fsync(out.fileno())
             try:
-                printer.image(img, impl='bitImageRaster')
+                printer.image(img, impl='bitImageRaster', fragment_height=FRAGMENT_HEIGHT)
                 printer.cut()
             except Exception as exc:
                 raise PrintOutcomeUnknown() from exc

@@ -67,6 +67,18 @@ class PiTests(unittest.TestCase):
             self.assertEqual(module.Usb.call_count,1);self.assertEqual(printer.image.call_count,1)
         self.assertEqual(json.loads((self.root/'print-receipts/drawing.json').read_text())['status'],'uncertain')
         media.cloud.status.assert_not_called()
+    def test_long_print_reaches_usb_without_squashing_and_cuts_once(self):
+        import sys, types
+        from PIL import Image
+        media, image, printer, module = self.media_fixture()
+        Image.new('RGB', (288, 2000), 'black').save(image)
+        with patch.dict(sys.modules, {'escpos': types.ModuleType('escpos'), 'escpos.printer': module}):
+            media.print_image(image, 'long')
+        args, kwargs = printer.image.call_args
+        self.assertEqual(args[0].size, (576, 4000))
+        self.assertEqual(kwargs['fragment_height'], 960)
+        printer.cut.assert_called_once()
+
     def test_successful_print_is_idempotent_and_updates_backend(self):
         import sys,types
         media,image,printer,module=self.media_fixture()
