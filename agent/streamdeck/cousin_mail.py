@@ -85,8 +85,8 @@ class Receiver:
                 with Image.open(io.BytesIO(content)) as original:
                     if original.width * original.height > 16000000:
                         raise ValueError('Picture too large')
-                    art = original.convert('RGB')
-                    art.thumbnail((576, 2200))
+                    from print_layout import fit_width, MAX_PRINT_HEIGHT
+                    art = fit_width(original, max_height=MAX_PRINT_HEIGHT - 112)
                 canvas = Image.new('RGB', (576, art.height + 112), 'white')
                 canvas.paste(art, ((576-art.width)//2, 100))
                 draw = ImageDraw.Draw(canvas)

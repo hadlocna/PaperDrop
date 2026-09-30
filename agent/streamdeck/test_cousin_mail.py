@@ -61,6 +61,17 @@ class CousinMailTests(unittest.TestCase):
         self.receiver.cloud.mail_receipt.assert_called_with('a'*64,'printed')
         self.assertEqual(self.box.inbox('alma')[0]['kind'],'drawing')
 
+    def test_tall_mail_uses_full_width_and_retains_bottom(self):
+        out = io.BytesIO()
+        Image.new('RGB', (288, 2000), 'black').save(out, format='PNG')
+        msg = {**self.message('drawing'), 'media': base64.b64encode(out.getvalue()).decode()}
+        with patch('cousin_mail.ImageFont.truetype', return_value=ImageFont.load_default()):
+            self.receiver.receive(msg)
+        path = self.receiver.media.print_image.call_args.args[0]
+        with Image.open(path) as image:
+            self.assertEqual(image.size, (576, 4112))
+            self.assertEqual(image.getpixel((575, 4099)), (0, 0, 0))
+
     def test_wrong_house_and_path_escape_cannot_enter_mailbox(self):
         for changes in ({'recipient':'lore'}, {'id':'../outside'}):
             with self.assertRaises(ValueError):self.receiver.receive({**self.message(),**changes})

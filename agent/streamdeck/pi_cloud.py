@@ -209,7 +209,8 @@ class Cloud:
             if req.get('error'):
                 raise RuntimeError(req['error'])
             with Image.open(io.BytesIO(base64.b64decode(req['content'], validate=True))) as img:
-                img.convert('RGB').save(target)
+                from print_layout import fit_width
+                fit_width(img, trim_white=True).save(target)
             Path(target).with_suffix('.cloud.json').write_text(json.dumps({'message_id': req['message_id']}))
             logging.info('cloud_drawing_ready elapsed=%.2f', time.monotonic()-started)
             return req.get('prompt', '')
