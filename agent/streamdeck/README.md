@@ -1,3 +1,17 @@
+## Printer-ready confirmation — 2.1.1
+
+When Ohio or Düsseldorf first reports a real ESC/POS online status and paper loaded,
+the backend queues one PaperDrop confirmation image for the Lisbon Stream Deck printer.
+It identifies the house and firmware. Internet connectivity alone never triggers it.
+Readiness probes are bounded, fail closed on missing/invalid responses, and do not
+interrupt managed image printing. Near-end paper is accepted; empty paper is not.
+
+The confirmation is once per cousin station for this activation, persists across
+backend/device restarts, and queues while Lisbon is offline. Received confirmations
+use the existing durable print receipts; an uncertain USB job is not automatically
+reprinted. This confirms reported printer readiness, not human-observed paper output
+or speaker operation. Legacy 1.0.0 stations need managed firmware before reporting.
+
 # Cousin mail — managed firmware 2.1.0
 
 The managed interface now sends both voice notes and pictures through the authenticated

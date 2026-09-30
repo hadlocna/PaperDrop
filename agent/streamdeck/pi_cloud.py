@@ -27,6 +27,7 @@ class Cloud:
         self.connected = threading.Event()
         self.stop = threading.Event()
         self.ws = None
+        self.printer_ready_ack = False
         self.request = None
         self.deliveries = {}
         self.delivery_dir = self.root / 'deliveries'
@@ -76,6 +77,7 @@ class Cloud:
                         if time.monotonic()-heartbeat > 20:
                             self.send({'type': 'heartbeat', 'firmware_version': os.environ.get('PAPERDROP_FIRMWARE_VERSION', 'streamdeck-pi-demo'), 'metrics': {}})
                             self.send({'type': 'mail_sync'})
+                            self.send({'type': 'printer_notice_sync'})
                             heartbeat = time.monotonic()
                             for ident, delivery in list(self.deliveries.items()):
                                 if delivery.get('status') not in ('printed','read','failed','not_found'):
@@ -132,13 +134,16 @@ class Cloud:
             self.send({'ok': False, 'type': 'speaker_result', 'request_id': event.get('request_id'), 'error': 'Speaker command failed. Please try again.'})
 
     def event(self, event):
-        if event.get('type') == 'cousin_mail':
+        if event.get('type') == 'printer_ready_ack':
+            self.printer_ready_ack = True
+            return
+        if event.get('type') in ('cousin_mail', 'printer_notice'):
             message = event.get('message', {})
             ident = message.get('id', '')
             import re
             if re.fullmatch('[a-f0-9]{64}', ident):
                 from cousin_mail import atomic_write
-                folder = self.root / 'incoming-mail'
+                folder = self.root / ('printer-notices' if event['type'] == 'printer_notice' else 'incoming-mail')
                 folder.mkdir(exist_ok=True)
                 atomic_write(folder / (ident + '.json'), json.dumps(message).encode())
             return
@@ -241,9 +246,9 @@ class Cloud:
                 self.delivery_event.clear()
         raise RuntimeError('Delivery not confirmed. Retry checks this same postcard; it does not create a duplicate.')
 
-    def mail_receipt(self, ident, status):
+    def mail_receipt(self, ident, status, notice=False):
         from cousin_mail import atomic_write
-        value = {'type': 'mail_receipt', 'id': ident, 'status': status}
+        value = {'type': 'printer_notice_receipt' if notice else 'mail_receipt', 'id': ident, 'status': status}
         path = self.ack_dir / (ident + '.json')
         atomic_write(path, json.dumps(value).encode())
         try:

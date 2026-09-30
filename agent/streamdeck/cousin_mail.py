@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import threading
+import time
 import wave
 from PIL import Image, ImageDraw, ImageFont
 
@@ -27,14 +28,30 @@ class Receiver:
         self.stop = threading.Event()
         self.pending = self.root / 'incoming-mail'
         self.pending.mkdir(exist_ok=True)
+        self.notices = self.root / 'printer-notices'
+        self.notices.mkdir(exist_ok=True)
+        self.next_probe = 0
         self.thread = threading.Thread(target=self.run, daemon=True)
         self.thread.start()
 
     def run(self):
         while not self.stop.wait(1):
-            for path in sorted(self.pending.glob('*.json')):
+            if time.monotonic() >= self.next_probe:
+                self.next_probe = time.monotonic() + 30
+                if self.cloud.connected.is_set() and not self.cloud.printer_ready_ack:
+                    from printer_readiness import printer_ready
+                    if printer_ready():
+                        try:
+                            self.cloud.send({'type': 'printer_ready', 'ready': True,
+                                             'firmware': os.environ.get('PAPERDROP_FIRMWARE_VERSION', 'unknown')})
+                        except Exception:
+                            pass
+            for path in sorted(self.pending.glob('*.json')) + sorted(self.notices.glob('*.json')):
                 try:
-                    self.receive(json.loads(path.read_text()))
+                    if path.parent == self.notices:
+                        self.receive_notice(json.loads(path.read_text()))
+                    else:
+                        self.receive(json.loads(path.read_text()))
                     path.unlink(missing_ok=True)
                 except Exception:
                     # Keep media for recovery; never lose a delivery on printer failure.
@@ -96,6 +113,46 @@ class Receiver:
                 raise
             self.cloud.mail_receipt(ident, 'printed')
 
+    def receive_notice(self, notice):
+        ident = notice['id']
+        if not re.fullmatch('[a-f0-9]{64}', ident) or self.family['station'] != 'portugal':
+            raise ValueError('Invalid readiness notice')
+        house = next(h for h in self.family['houses'] if h['id'] == notice['house'] and h['id'] != 'portugal')
+        target = self.root / (ident + '-ready.png')
+        if not target.exists():
+            render_notice(target, house['name'], notice['firmware'])
+        try:
+            self.media.print_image(target, ident)
+        except Exception as exc:
+            from pi_media import PrintOutcomeUnknown
+            if isinstance(exc, PrintOutcomeUnknown):
+                self.cloud.mail_receipt(ident, 'failed', notice=True)
+                return
+            raise
+        self.cloud.mail_receipt(ident, 'printed', notice=True)
+
     def close(self):
         self.stop.set()
         self.thread.join(timeout=3)
+
+
+def render_notice(target, house, firmware):
+    canvas = Image.new('RGB', (576, 530), 'white')
+    draw = ImageDraw.Draw(canvas)
+    font_path = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
+    large = ImageFont.truetype(font_path, 42)
+    regular = ImageFont.truetype(font_path, 25)
+    draw.rounded_rectangle((22, 20, 554, 507), radius=25, outline='black', width=4)
+    def line(text, y, font):
+        box = draw.textbbox((0, 0), text, font=font)
+        draw.text(((576 - box[2] + box[0]) / 2, y), text, font=font, fill='black')
+    line('PaperDrop', 45, large)
+    draw.ellipse((238, 117, 338, 217), outline='black', width=5)
+    draw.line([(258, 166), (280, 188), (318, 145)], fill='black', width=7)
+    line(house, 238, large)
+    line('Printer is ready', 300, regular)
+    line('Online + paper loaded', 346, regular)
+    line('Firmware ' + str(firmware)[:30], 412, regular)
+    out = io.BytesIO()
+    canvas.save(out, format='PNG')
+    atomic_write(target, out.getvalue())

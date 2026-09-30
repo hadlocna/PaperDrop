@@ -1,3 +1,4 @@
+import { handlePrinterReadiness } from '../services/printerReadiness';
 import { handleCousinMail } from '../services/cousinMail';
 import { WebSocket, WebSocketServer } from 'ws';
 import { IncomingMessage } from 'http';
@@ -177,7 +178,7 @@ export const setupWebSocket = () => {
                     where: {
                         deviceId: deviceId,
                         status: 'queued',
-                        contentType: { not: 'cousin_mail' }
+                        contentType: { notIn: ['cousin_mail', 'printer_notice'] }
                     },
                     include: {
                         sender: {
@@ -225,6 +226,10 @@ export const setupWebSocket = () => {
 };
 
 const handleDeviceMessage = async (deviceId: string, message: any) => {
+    if (['printer_ready', 'printer_notice_sync', 'printer_notice_receipt'].includes(message.type)) {
+        await handlePrinterReadiness(deviceId, message);
+        return;
+    }
     if (['mail_send', 'mail_sync', 'mail_status', 'mail_receipt'].includes(message.type)) {
         await handleCousinMail(deviceId, message);
         return;

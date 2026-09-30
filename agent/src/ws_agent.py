@@ -646,8 +646,10 @@ async def connect_to_backend():
                 voice = VoiceAssistant(websocket)
                 await voice.start()
 
+                ready_notice_ack = False
                 # Start background listener
                 async def listen():
+                    nonlocal ready_notice_ack
                     try:
                         async for message in websocket:
                             try:
@@ -657,6 +659,8 @@ async def connect_to_backend():
                                             (data.get('message') or {}).get('id') if isinstance(data.get('message'), dict) else None)
                                 if data.get('type') == 'ping':
                                     await websocket.send(json.dumps({'type': 'pong'}))
+                                elif data.get('type') == 'printer_ready_ack':
+                                    ready_notice_ack = True
                                 elif data.get('type') == 'new_message':
                                     await handle_print_job(websocket, data)
                                 elif data.get('type') == 'test_print':
@@ -718,6 +722,10 @@ async def connect_to_backend():
                                 'firmware_version': config.firmware_version,
                                 'metrics': metrics
                             }))
+                            if not ready_notice_ack:
+                                from printer_readiness import printer_ready
+                                if printer_ready():
+                                    await websocket.send(json.dumps({'type': 'printer_ready', 'ready': True, 'firmware': config.firmware_version}))
                             logger.info("Heartbeat sent")
                         except Exception as e:
                             logger.error(f"Failed to send heartbeat: {e}")
