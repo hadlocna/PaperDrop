@@ -17,7 +17,7 @@ class PrintOutcomeUnknown(RuntimeError):
 
 
 class PiMedia(Media):
-    _printer_lock = threading.Lock()
+    from printer_readiness import PRINTER_LOCK as _printer_lock
     local_printer = True
     def __init__(self, root):
         super().__init__(root)
