@@ -1,3 +1,4 @@
+import { CaptureStatus } from './publicNetwork';
 type RelayDevice = {
     code: string;
     status?: string;
@@ -6,6 +7,7 @@ type RelayDevice = {
     wifiSignal?: number | null;
     firmwareVersion?: string | null;
     publicNetwork?: unknown;
+    publicNetworkDiagnostic?: { localCapture?: { status: CaptureStatus; observedAt: string } | null };
 };
 
 const relayBaseUrl = () => process.env.DEVICE_RELAY_URL?.replace(/\/$/, '');
@@ -68,7 +70,16 @@ export const fetchRelayDeviceStatuses = async (): Promise<Map<string, RelayDevic
         if (!response.ok) return new Map();
 
         const devices = await response.json() as RelayDevice[];
-        return new Map(devices.map((device) => [device.code, device]));
+        return new Map(devices.map((device) => {
+            const capture = device.publicNetworkDiagnostic?.localCapture;
+            const allowed = ['observed', 'missing_peer', 'untrusted_non_public_peer', 'trusted_proxy_without_public_client'];
+            const age = capture ? Date.now() - Date.parse(capture.observedAt) : NaN;
+            if (device.publicNetworkDiagnostic) device.publicNetworkDiagnostic = {
+                localCapture: capture && allowed.includes(capture.status) && age >= 0 && age < 15 * 60 * 1000
+                    ? { status: capture.status, observedAt: new Date(capture.observedAt).toISOString() } : null
+            };
+            return [device.code, device];
+        }));
     } catch (error) {
         console.warn('Device relay status fetch failed:', error);
         return new Map();

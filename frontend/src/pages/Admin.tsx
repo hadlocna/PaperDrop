@@ -13,6 +13,7 @@ interface Device {
     name: string;
     mac?: string;
     createdAt?: string;
+    publicNetworkDiagnostic?: { access: string; heartbeatSource: string; localCapture: { status: string; observedAt: string } | null; relayDiagnosticAvailable: boolean; relayCapture: { status: string; observedAt: string } | null } | null;
     publicNetwork?: { address: string; observedAt: string; source: 'socket' | 'trusted_proxy' } | null;
     lastSeen: string;
     wifiSignal?: number;
@@ -979,6 +980,7 @@ export function Admin() {
                                                         <div>Public connection IP: <span className="font-mono">{device.publicNetwork?.address || 'Not observed'}</span></div>
                                                         {device.publicNetwork && <div>Observed {new Date(device.publicNetwork.observedAt).toLocaleString()} ({device.publicNetwork.source === 'socket' ? 'server connection' : 'trusted proxy'})</div>}
                                                         <div>Latest sample expires after 15 minutes. IP location can reflect a VPN or network gateway; it does not prove device identity.</div>
+                                                        {device.publicNetworkDiagnostic && <div>Capture status: {device.publicNetworkDiagnostic.access === 'private_admin_required' ? 'Private admin credential required. ' : ''}{device.publicNetworkDiagnostic.heartbeatSource === 'relay' ? (device.publicNetworkDiagnostic.relayDiagnosticAvailable ? 'Heartbeat via diagnostic relay. ' : 'Heartbeat via relay without diagnostic support. ') : 'Heartbeat from local record. '}{device.publicNetworkDiagnostic.localCapture?.status === 'untrusted_non_public_peer' ? 'Proxy peer requires verification.' : device.publicNetworkDiagnostic.localCapture?.status === 'observed' ? 'Connection sample captured.' : !device.publicNetworkDiagnostic.localCapture ? 'No recent connection capture on this server.' : 'No verified public client address.'}</div>}
                                                         <div>MAC: <span className="font-mono">{device.mac || 'Not reported'}</span></div>
                                                         {device.createdAt && <div>Record created {new Date(device.createdAt).toLocaleString()}</div>}
                                                     </div>

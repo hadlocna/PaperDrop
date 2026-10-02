@@ -5,6 +5,8 @@ import { BlockList, isIP } from 'net';
 export const IP_DIAGNOSTIC_DEVICE = 'PD-E0FC0D45';
 export const IP_DIAGNOSTIC_TTL_MS = 15 * 60 * 1000;
 export type PublicNetwork = { address: string; observedAt: string; source: 'socket' | 'trusted_proxy' };
+export type CaptureStatus = 'observed' | 'missing_peer' | 'untrusted_non_public_peer' | 'trusted_proxy_without_public_client';
+let capture: { status: CaptureStatus; observedAt: string } | null = null;
 let latest: PublicNetwork | null = null;
 let expiry: NodeJS.Timeout | undefined;
 const reserved = new BlockList();
@@ -55,10 +57,11 @@ export const observePublicNetwork = (deviceCode: string, req: IncomingMessage, n
     if (expiry) clearTimeout(expiry);
     const observation = observedPublicAddress(req);
     latest = observation ? { ...observation, observedAt: new Date(now).toISOString() } : null;
-    if (latest) {
-        expiry = setTimeout(() => { latest = null; expiry = undefined; }, IP_DIAGNOSTIC_TTL_MS);
-        expiry.unref();
-    }
+    const peer = normalizeAddress(req.socket.remoteAddress);
+    const trusted = (process.env.PAPERDROP_IP_TRUSTED_PROXIES || '').split(',').map(normalizeAddress);
+    capture = { status: observation ? 'observed' : !peer ? 'missing_peer' : trusted.includes(peer) ? 'trusted_proxy_without_public_client' : 'untrusted_non_public_peer', observedAt: new Date(now).toISOString() };
+    expiry = setTimeout(() => { latest = null; capture = null; expiry = undefined; }, IP_DIAGNOSTIC_TTL_MS);
+    expiry.unref();
 };
 export const validatePublicNetwork = (value: unknown, now = Date.now()): PublicNetwork | null => {
     if (!value || typeof value !== 'object') return null;
@@ -75,4 +78,12 @@ export const publicNetworkForAdmin = (deviceCode: string, relayObservation?: unk
     if (!local) latest = null;
     const relay = validatePublicNetwork(relayObservation, now);
     return relay && (!local || relay.observedAt > local.observedAt) ? relay : local;
+};
+
+// Non-secret capture state: never includes the peer address, forwarding header, or credential.
+export const publicNetworkCaptureForAdmin = (deviceCode: string, now = Date.now()) => {
+    if (deviceCode !== IP_DIAGNOSTIC_DEVICE || !capture) return null;
+    const age = now - Date.parse(capture.observedAt);
+    if (age < 0 || age >= IP_DIAGNOSTIC_TTL_MS) { capture = null; return null; }
+    return { ...capture };
 };

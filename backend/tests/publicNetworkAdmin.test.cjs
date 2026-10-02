@@ -23,10 +23,16 @@ test('admin IP response requires configured private authentication and is scoped
   const response=await fetch(endpoint,{headers:{'x-admin-password':process.env.ADMIN_PASSWORD}});
   assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'no-store');
   const data=await response.json();assert.equal(data[0].publicNetwork.address,'8.8.8.8');assert.equal(data[1].publicNetwork,null);
+  assert.equal(data[0].publicNetworkDiagnostic.access,'private_admin_configured');
+  assert.equal(data[0].publicNetworkDiagnostic.heartbeatSource,'local_database');
+  assert.equal(data[0].publicNetworkDiagnostic.localCapture.status,'observed');
+  assert.equal(data[1].publicNetworkDiagnostic,null);
   assert.ok(data[0].createdAt);assert.equal(data[0].mac,null);assert.ok(!JSON.stringify(data).includes('must-not-leak'));
   process.env.ADMIN_PASSWORD='weak-test-password';
   const weak=await fetch(endpoint,{headers:{'x-admin-password':process.env.ADMIN_PASSWORD}});
-  assert.equal(weak.status,200);assert.equal((await weak.json())[0].publicNetwork,null);
+  assert.equal(weak.status,200);const weakData=await weak.json();assert.equal(weakData[0].publicNetwork,null);
+  assert.equal(weakData[0].publicNetworkDiagnostic.access,'private_admin_required');
+  assert.ok(!JSON.stringify(weakData).includes('8.8.8.8'));
  } finally {
   if(previousPassword===undefined) delete process.env.ADMIN_PASSWORD; else process.env.ADMIN_PASSWORD=previousPassword;
   await new Promise(resolve=>server.close(resolve));

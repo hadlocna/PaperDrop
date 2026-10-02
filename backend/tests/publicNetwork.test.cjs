@@ -33,3 +33,20 @@ test('relay observations must be fresh, public, valid and authorized for this co
  assert.equal(publicNetworkForAdmin('PD-883bfd8f',sample,now),null);
  for(const changed of [{address:'10.0.0.1'},{source:'device_reported'},{observedAt:'invalid'},{observedAt:new Date(now+1).toISOString()},{observedAt:new Date(now-IP_DIAGNOSTIC_TTL_MS).toISOString()}]) assert.equal(validatePublicNetwork({...sample,...changed},now),null);
 });
+
+test('capture trace identifies private untrusted peer without returning its IP or headers', () => {
+ const { publicNetworkCaptureForAdmin } = require('../dist/lib/publicNetwork');
+ const previous=process.env.PAPERDROP_IP_TRUSTED_PROXIES;
+ try {
+  delete process.env.PAPERDROP_IP_TRUSTED_PROXIES;
+  const now=Date.now();observePublicNetwork('PD-E0FC0D45',req('10.0.0.2','8.8.8.8'),now);
+  const capture=publicNetworkCaptureForAdmin('PD-E0FC0D45',now);
+  assert.deepEqual(capture,{status:'untrusted_non_public_peer',observedAt:new Date(now).toISOString()});
+  assert.ok(!JSON.stringify(capture).includes('10.0.0.2'));assert.ok(!JSON.stringify(capture).includes('8.8.8.8'));
+  assert.equal(publicNetworkCaptureForAdmin('PD-780420ea',now),null);
+  assert.equal(publicNetworkCaptureForAdmin('PD-E0FC0D45',now+IP_DIAGNOSTIC_TTL_MS),null);
+  process.env.PAPERDROP_IP_TRUSTED_PROXIES='10.0.0.2';
+  observePublicNetwork('PD-E0FC0D45',req('10.0.0.2'),now);
+  assert.equal(publicNetworkCaptureForAdmin('PD-E0FC0D45',now).status,'trusted_proxy_without_public_client');
+ } finally {if(previous===undefined) delete process.env.PAPERDROP_IP_TRUSTED_PROXIES;else process.env.PAPERDROP_IP_TRUSTED_PROXIES=previous;}
+});

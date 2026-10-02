@@ -1,4 +1,4 @@
-import { publicNetworkForAdmin } from '../lib/publicNetwork';
+import { IP_DIAGNOSTIC_DEVICE, publicNetworkCaptureForAdmin, publicNetworkForAdmin } from '../lib/publicNetwork';
 import express from 'express';
 import imageUpload from './imageUpload';
 import multer from 'multer';
@@ -98,6 +98,13 @@ router.get('/devices', async (req, res) => {
                 // Keep sensitive diagnostics unavailable behind the legacy default password.
                 publicNetwork: (process.env.ADMIN_PASSWORD?.length || 0) >= 20
                     ? publicNetworkForAdmin(d.deviceCode, relayDevice?.publicNetwork) : null,
+                publicNetworkDiagnostic: d.deviceCode === IP_DIAGNOSTIC_DEVICE ? {
+                    access: (process.env.ADMIN_PASSWORD?.length || 0) >= 20 ? 'private_admin_configured' : 'private_admin_required',
+                    heartbeatSource: relayDevice ? 'relay' : 'local_database',
+                    localCapture: publicNetworkCaptureForAdmin(d.deviceCode),
+                    relayDiagnosticAvailable: Boolean(relayDevice && Object.prototype.hasOwnProperty.call(relayDevice, 'publicNetworkDiagnostic')),
+                    relayCapture: relayDevice?.publicNetworkDiagnostic?.localCapture || null
+                } : null,
                 lastSeen,
                 wifiSignal: relayDevice?.wifiSignal ?? d.wifiSignal,
                 firmwareVersion: relayDevice?.firmwareVersion ?? d.firmwareVersion,
