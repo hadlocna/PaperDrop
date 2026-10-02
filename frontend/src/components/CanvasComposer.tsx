@@ -51,6 +51,7 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
     const [elements, setElements] = useState<CanvasElement[]>([]);
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [paperHeight, setPaperHeight] = useState(MIN_PAPER_HEIGHT);
+    const [minimumPaperHeight, setMinimumPaperHeight] = useState(MIN_PAPER_HEIGHT);
     const [previewPaperHeight, setPreviewPaperHeight] = useState<number | null>(null);
     const canvasRef = useRef<HTMLDivElement>(null);
     const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -90,7 +91,7 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
         let active = true;
         let frame = 0;
         const measure = () => {
-            if (active) setPaperHeight(measurePrintableHeight(canvas, logicalWidth));
+            if (active) setPaperHeight(Math.max(minimumPaperHeight, measurePrintableHeight(canvas, logicalWidth)));
         };
         const schedule = () => { if (!active) return; cancelAnimationFrame(frame); frame = requestAnimationFrame(measure); };
         const resize = new ResizeObserver(schedule);
@@ -103,7 +104,7 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
         document.fonts.addEventListener('loadingdone', schedule);
         measure();
         return () => { active = false; cancelAnimationFrame(frame); resize.disconnect(); mutation.disconnect(); window.removeEventListener('resize', schedule); document.fonts.removeEventListener('loadingdone', schedule); };
-    }, [elements, previewImage]);
+    }, [elements, previewImage, minimumPaperHeight]);
 
     const selectedElement = elements.find(el => el.id === selectedId);
 
@@ -113,6 +114,7 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
         setElements([]);
         setPreviewImage(null);
         setPaperHeight(MIN_PAPER_HEIGHT);
+        setMinimumPaperHeight(MIN_PAPER_HEIGHT);
         setPreviewPaperHeight(null);
         setSelectedId(null);
         setShowClearConfirm(false);
@@ -395,6 +397,7 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
             setElements([]);
             setPreviewImage(null);
             setPaperHeight(MIN_PAPER_HEIGHT);
+            setMinimumPaperHeight(MIN_PAPER_HEIGHT);
             setPreviewPaperHeight(null);
             setSelectedId(null);
         }
@@ -992,10 +995,17 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
             </div>
 
             <div className="w-full bg-white border-t border-gray-200 p-4 shrink-0 z-50 pb-[calc(1rem+env(safe-area-inset-bottom))]">
-                <output aria-label="Paper length in millimetres" aria-live="polite" className="block text-sm">
-                    Paper length: approximately {paperLengthMillimetres(previewImage ? previewPaperHeight ?? paperHeight : paperHeight)} mm
+                {!previewImage && <button
+                    onClick={() => setMinimumPaperHeight(previous => Math.min(MAX_PAPER_HEIGHT, Math.max(previous, paperHeight) + 400))}
+                    disabled={paperHeight >= MAX_PAPER_HEIGHT}
+                    className="w-full bg-gray-100 hover:bg-gray-200 text-charcoal-800 py-3 rounded-xl text-base font-bold transition flex items-center justify-center gap-2 active:scale-[0.98]"
+                >
+                    <span className="text-xl leading-none font-light block pb-0.5">+</span>
+                    Add Paper
+                </button>}
+                <output aria-label="Paper length in millimetres" aria-live="polite" className="block text-xs text-gray-500 mt-2 text-center">
+                    Approximately {paperLengthMillimetres(previewImage ? previewPaperHeight ?? paperHeight : paperHeight)} mm
                 </output>
-                <p className="text-xs text-gray-500 mt-1">Calculated automatically from the printable content.</p>
                 {paperHeight > MAX_PAPER_HEIGHT && <p role="alert" className="text-sm text-red-600">This print exceeds two metres. Split it into shorter images.</p>}
             </div>
         </div>
