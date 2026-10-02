@@ -1,5 +1,5 @@
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import Draggable from 'react-draggable';
 import { toCanvas } from 'html-to-image';
 import {
@@ -19,6 +19,8 @@ import {
     QrCode
 } from 'lucide-react';
 import { client as api } from '../api/client';
+import { requestMagicDesign, magicDesignError } from '../utils/magicDesign';
+import { MAX_PAPER_HEIGHT, MIN_PAPER_HEIGHT, measurePrintableHeight, paperLengthMillimetres } from '../utils/paperLength';
 import { DITHER_STYLES, DitherStyle, processImageForPrint } from '../utils/dithering';
 
 
@@ -48,7 +50,8 @@ interface CanvasComposerProps {
 export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerProps) {
     const [elements, setElements] = useState<CanvasElement[]>([]);
     const [previewImage, setPreviewImage] = useState<string | null>(null);
-    const [canvasHeight, setCanvasHeight] = useState(550);
+    const [paperHeight, setPaperHeight] = useState(MIN_PAPER_HEIGHT);
+    const [previewPaperHeight, setPreviewPaperHeight] = useState<number | null>(null);
     const canvasRef = useRef<HTMLDivElement>(null);
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -59,6 +62,7 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
     const [showDrawingModal, setShowDrawingModal] = useState(false);
     const [showQrModal, setShowQrModal] = useState(false);
     const [aiPrompt, setAiPrompt] = useState('');
+    const [aiError, setAiError] = useState('');
     const [isGenerating, setIsGenerating] = useState(false);
     const [aiProgress, setAiProgress] = useState(0);
     const [aiEtaSeconds, setAiEtaSeconds] = useState(0);
@@ -79,16 +83,27 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
     elementsRef.current = elements;
 
 
-    // Images keep their proportions; paper grows instead of clipping their bottom.
-    const contentHeight = Math.ceil(elements.reduce((bottom, el) => {
-        if (el.type !== 'image' || !el.aspectRatio) return bottom;
-        const width = el.width || 200;
-        const height = width / el.aspectRatio;
-        const angle = (el.rotation || 0) * Math.PI / 180;
-        const rotatedHeight = Math.abs(height * Math.cos(angle)) + Math.abs(width * Math.sin(angle));
-        return Math.max(bottom, el.y + height / 2 + rotatedHeight / 2 + 8);
-    }, 0));
-    const paperHeight = Math.max(canvasHeight, contentHeight);
+    // Measure printable nodes at their actual rendered size, excluding editor controls.
+    useLayoutEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas || previewImage) return;
+        let active = true;
+        let frame = 0;
+        const measure = () => {
+            if (active) setPaperHeight(measurePrintableHeight(canvas, logicalWidth));
+        };
+        const schedule = () => { if (!active) return; cancelAnimationFrame(frame); frame = requestAnimationFrame(measure); };
+        const resize = new ResizeObserver(schedule);
+        resize.observe(canvas);
+        canvas.querySelectorAll('[data-print-content]').forEach(node => resize.observe(node));
+        const mutation = new MutationObserver(schedule);
+        mutation.observe(canvas, { subtree: true, attributes: true, characterData: true, childList: true });
+        window.addEventListener('resize', schedule);
+        document.fonts.ready.then(schedule);
+        document.fonts.addEventListener('loadingdone', schedule);
+        measure();
+        return () => { active = false; cancelAnimationFrame(frame); resize.disconnect(); mutation.disconnect(); window.removeEventListener('resize', schedule); document.fonts.removeEventListener('loadingdone', schedule); };
+    }, [elements, previewImage]);
 
     const selectedElement = elements.find(el => el.id === selectedId);
 
@@ -97,7 +112,8 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
     const confirmClear = () => {
         setElements([]);
         setPreviewImage(null);
-        setCanvasHeight(550);
+        setPaperHeight(MIN_PAPER_HEIGHT);
+        setPreviewPaperHeight(null);
         setSelectedId(null);
         setShowClearConfirm(false);
     };
@@ -105,21 +121,10 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
     const handleAiGenerate = async () => {
         if (!aiPrompt.trim()) return;
         setIsGenerating(true);
+        setAiError('');
         setAiProgress(0);
         try {
-            let image;
-
-            // Mock Mode for testing without API usage
-            if (aiPrompt.toLowerCase().includes('mock') || aiPrompt.toLowerCase().includes('test')) {
-                // Return a random placeholder from Unsplash or similar to simulate AI
-                await new Promise(r => setTimeout(r, 1500)); // Fake delay
-                image = `https://placehold.co/1024x1024/png?text=Mock+AI+Image`;
-            } else {
-                const res = await api.post('/ai/generate', {
-                    prompt: aiPrompt
-                });
-                image = res.data.image;
-            }
+            const { image, aspectRatio } = await requestMagicDesign(api, aiPrompt);
 
             // 1. Position image below top margin or existing items if needed
             // For now, we'll just add it to the stack so the user can move it
@@ -129,6 +134,7 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                 id: crypto.randomUUID(),
                 type: 'image',
                 content: image,
+                aspectRatio,
                 x: 0,
                 y: elements.length > 0 ? 100 : 8,
                 width: 576,
@@ -139,8 +145,7 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
             setShowAiModal(false);
             setAiPrompt('');
         } catch (error) {
-            console.error(error);
-            alert('Failed to generate design. Please try again.');
+            setAiError(magicDesignError(error));
         } finally {
             setIsGenerating(false);
         }
@@ -290,7 +295,7 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
             if (!canvasRef.current) return '';
 
             const canvasElement = canvasRef.current;
-            if (paperHeight > 16000) throw new Error('This print exceeds two metres. Split it into shorter images.');
+            if (measurePrintableHeight(canvasElement, logicalWidth) > MAX_PAPER_HEIGHT) throw new Error('This print exceeds two metres. Split it into shorter images.');
 
             // 2. Find the outer container with Tailwind scale classes and temporarily remove them
             // The canvas itself is 576px with no transform, but the viewport wrapper has responsive scaling
@@ -389,7 +394,8 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
             // Reset Canvas for next message
             setElements([]);
             setPreviewImage(null);
-            setCanvasHeight(550);
+            setPaperHeight(MIN_PAPER_HEIGHT);
+            setPreviewPaperHeight(null);
             setSelectedId(null);
         }
     };
@@ -562,7 +568,9 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                             </p>
                             <textarea
                                 value={aiPrompt}
-                                onChange={(e) => setAiPrompt(e.target.value)}
+                                maxLength={3000}
+                                aria-label="Magic image request"
+                                onChange={(e) => { setAiPrompt(e.target.value); setAiError(''); }}
                                 className="w-full h-24 p-3 border border-gray-200 rounded-xl mb-4 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-purple-500 outline-none resize-none transition"
                                 placeholder="A loving note..."
                             />
@@ -583,6 +591,7 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                                     </>
                                 )}
                             </button>
+                            {aiError && <p role="alert" className="mt-3 text-sm text-red-600">{aiError}</p>}
                             {isGenerating && (
                                 <div className="mt-4 space-y-2">
                                     <div className="w-full h-2 rounded-full bg-gray-100 overflow-hidden">
@@ -934,6 +943,7 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                                 <img
                                     src={previewImage}
                                     alt="Preview"
+                                    onLoad={event => setPreviewPaperHeight(Math.ceil(event.currentTarget.naturalHeight * logicalWidth / event.currentTarget.naturalWidth))}
                                     className="w-full object-contain border border-gray-200 shadow-sm"
                                     style={{ imageRendering: 'pixelated' }}
                                 />
@@ -981,27 +991,13 @@ export function CanvasComposer({ onSend, onSchedule, sending }: CanvasComposerPr
                 </div>
             </div>
 
-            {/* Footer Actions - Add Paper */}
-            {!previewImage && (
-                <div className="w-full bg-white border-t border-gray-200 p-4 shrink-0 z-50 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] pb-[calc(1rem+env(safe-area-inset-bottom))]">
-                    <label className="flex items-center gap-2 mb-3 text-sm">
-                        Paper length (mm)
-                        <input aria-label="Paper length in millimetres" type="number" min={Math.max(50, Math.ceil(contentHeight / 8))} max={2000}
-                            value={Math.ceil(paperHeight / 8)} step={50}
-                            onChange={e => { const mm = Number(e.target.value); if (Number.isFinite(mm)) setCanvasHeight(Math.max(contentHeight, Math.min(16000, Math.max(400, mm * 8)))); }}
-                            className="w-24 border rounded px-2 py-1" />
-                        <span>Grows to fit your images · up to 2 m</span>
-                    </label>
-                    <button
-                        onClick={() => setCanvasHeight(Math.min(16000, paperHeight + 400))}
-                        disabled={paperHeight >= 16000}
-                        className="w-full bg-gray-100 hover:bg-gray-200 text-charcoal-800 py-3 rounded-xl text-base font-bold transition flex items-center justify-center gap-2 active:scale-[0.98]"
-                    >
-                        <span className="text-xl leading-none font-light block pb-0.5">+</span>
-                        Add Paper
-                    </button>
-                </div>
-            )}
+            <div className="w-full bg-white border-t border-gray-200 p-4 shrink-0 z-50 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+                <output aria-label="Paper length in millimetres" aria-live="polite" className="block text-sm">
+                    Paper length: approximately {paperLengthMillimetres(previewImage ? previewPaperHeight ?? paperHeight : paperHeight)} mm
+                </output>
+                <p className="text-xs text-gray-500 mt-1">Calculated automatically from the printable content.</p>
+                {paperHeight > MAX_PAPER_HEIGHT && <p role="alert" className="text-sm text-red-600">This print exceeds two metres. Split it into shorter images.</p>}
+            </div>
         </div>
     );
 }
@@ -1042,6 +1038,8 @@ function DraggableElement({
             inputRef.current.setSelectionRange(inputRef.current.value.length, inputRef.current.value.length);
         }
     }, [isEditing]);
+
+    useEffect(() => { if (!isSelected) setIsEditing(false); }, [isSelected]);
 
     const handleRotation = (e: any) => {
         e.stopPropagation();
@@ -1182,11 +1180,19 @@ function DraggableElement({
                         transformOrigin: 'center center'
                     }}
                 >
+                    {element.type === 'text' && isEditing && (
+                        <div data-print-content aria-hidden="true" className="absolute top-0 left-0 invisible p-2 border-2 border-transparent no-print"
+                            style={{ width: 'max-content', maxWidth: '500px', lineHeight: 1.2, fontSize: element.fontSize || 32,
+                                fontFamily: element.fontFamily || 'handwriting', whiteSpace: 'pre-wrap', wordBreak: 'break-word', textAlign: 'center' }}>
+                            {element.content}
+                        </div>
+                    )}
                     {/* Element Content */}
                     <div className={`relative ${isEditing ? 'z-50' : 'z-auto'}`}>
                         {element.type === 'image' ? (
                             <div className={`relative transition-all duration-200 ${isSelected ? 'outline outline-2 outline-coral-400' : 'group-hover:outline group-hover:outline-2 group-hover:outline-coral-400'}`}>
                                 <img
+                                    data-print-content
                                     onLoad={(e) => {
                                         const ratio = e.currentTarget.naturalWidth / e.currentTarget.naturalHeight;
                                         if (ratio > 0 && ratio !== element.aspectRatio) onUpdate({ aspectRatio: ratio });
@@ -1200,7 +1206,7 @@ function DraggableElement({
 
                                 {/* Resize Handle (Bottom Right) */}
                                 <div
-                                    className={`no-drag absolute -bottom-4 -right-4 w-10 h-10 bg-white border border-charcoal-300 rounded-full shadow cursor-nwse-resize flex items-center justify-center transition-all z-50 ${isSelected ? 'opacity-100 scale-100' : 'opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100'}`}
+                                    className={`no-print no-drag absolute -bottom-4 -right-4 w-10 h-10 bg-white border border-charcoal-300 rounded-full shadow cursor-nwse-resize flex items-center justify-center transition-all z-50 ${isSelected ? 'opacity-100 scale-100' : 'opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100'}`}
                                     onMouseDown={handleResize}
                                     onTouchStart={handleResize}
                                     title="Resize"
@@ -1228,6 +1234,7 @@ function DraggableElement({
                             ) : (
                                 <div
                                     data-type="text"
+                                    data-print-content
                                     className={`p-2 border-2 rounded select-none transition-all ${isSelected ? 'border-coral-400 bg-coral-50/20' : 'border-transparent hover:border-gray-300'}`}
                                     style={{
                                         color: '#000000', // Explicit black for capture
@@ -1246,7 +1253,7 @@ function DraggableElement({
                         )}
 
                         {/* Controls Container (Visible when selected or hovered) */}
-                        <div className={`absolute top-0 left-0 w-full h-full pointer-events-none ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
+                        <div className={`no-print absolute top-0 left-0 w-full h-full pointer-events-none ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
                             {/* Remove Control */}
                             <button
                                 onClick={(e) => {
