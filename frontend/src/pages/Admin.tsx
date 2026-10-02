@@ -12,6 +12,8 @@ interface Device {
     status: string;
     name: string;
     mac?: string;
+    createdAt?: string;
+    publicNetwork?: { address: string; observedAt: string; source: 'socket' | 'trusted_proxy' } | null;
     lastSeen: string;
     wifiSignal?: number;
     firmwareVersion?: string;
@@ -972,6 +974,15 @@ export function Admin() {
                                                     )}
                                                 </div>
                                                 <div className="text-xs text-gray-500 font-mono">{device.code}</div>
+                                                {device.code === 'PD-E0FC0D45' && (
+                                                    <div className="mt-2 text-xs text-slate-600 max-w-xs">
+                                                        <div>Public connection IP: <span className="font-mono">{device.publicNetwork?.address || 'Not observed'}</span></div>
+                                                        {device.publicNetwork && <div>Observed {new Date(device.publicNetwork.observedAt).toLocaleString()} ({device.publicNetwork.source === 'socket' ? 'server connection' : 'trusted proxy'})</div>}
+                                                        <div>Latest sample expires after 15 minutes. IP location can reflect a VPN or network gateway; it does not prove device identity.</div>
+                                                        <div>MAC: <span className="font-mono">{device.mac || 'Not reported'}</span></div>
+                                                        {device.createdAt && <div>Record created {new Date(device.createdAt).toLocaleString()}</div>}
+                                                    </div>
+                                                )}
                                             </td>
                                             <td className="p-4">
                                                 <div className={`flex items-center gap-1 font-mono text-sm ${getSignalColor(device.wifiSignal)}`}>

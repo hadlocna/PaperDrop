@@ -5,6 +5,7 @@ type RelayDevice = {
     lastHeartbeat?: string | null;
     wifiSignal?: number | null;
     firmwareVersion?: string | null;
+    publicNetwork?: unknown;
 };
 
 const relayBaseUrl = () => process.env.DEVICE_RELAY_URL?.replace(/\/$/, '');

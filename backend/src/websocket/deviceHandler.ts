@@ -1,3 +1,4 @@
+import { observePublicNetwork } from '../lib/publicNetwork';
 import { handlePrinterReadiness } from '../services/printerReadiness';
 import { handleCousinMail } from '../services/cousinMail';
 import { WebSocket, WebSocketServer } from 'ws';
@@ -49,6 +50,7 @@ export const setupWebSocket = () => {
             try {
                 const data = JSON.parse(message.toString());
                 if (deviceId) {
+                    if (deviceCode && ['device_hello', 'heartbeat'].includes(data.type)) observePublicNetwork(deviceCode, req);
                     await handleDeviceMessage(deviceId, data);
                 } else {
                     console.log(`[${deviceCode || 'unknown'}] Buffering message received before verification: ${data.type}`);
@@ -137,6 +139,7 @@ export const setupWebSocket = () => {
             }
 
             deviceId = device.id;
+            observePublicNetwork(device.deviceCode, req);
             console.log(`[WS] Device verified: ${deviceCode} (${deviceId})`);
 
             const oldWs = deviceConnections.get(deviceId);

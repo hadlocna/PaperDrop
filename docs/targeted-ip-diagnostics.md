@@ -1,0 +1,13 @@
+# Targeted public connection IP diagnostic
+
+This change observes only `PD-E0FC0D45`. It does not identify that unit as Alessandro's printer. Matching hardware evidence is still required.
+
+The device WebSocket server samples its connection peer after authentication and on existing hello/heartbeat messages. No device firmware, external IP service, geolocation service, enrollment, print, global stable manifest, or rollout is changed. A single latest public-IP sample lives in server memory, expires after 15 minutes, and is overwritten on each observation. It is not written to the database or new logs. A restart clears it. The authenticated admin list forwards a fresh sample from the existing authenticated relay if that relay runs this code. Normal owner/public APIs do not expose it. Admin responses are `no-store`.
+
+Sensitive IP diagnostics fail closed unless the server already has an `ADMIN_PASSWORD` of at least 20 characters configured. The configured password takes precedence for admin authentication. Legacy default admin access is preserved when no password is configured, but receives no public-IP sample. This patch does not create or rotate credentials. Configuring a new credential is a separate user action if no suitable existing credential exists.
+
+Behind a reverse proxy, the default is **not observed** rather than trusting arbitrary forwarding headers. `PAPERDROP_IP_TRUSTED_PROXIES` may contain comma-separated exact IP addresses of independently verified existing reverse proxies. No proxy is trusted by default. The parser walks `X-Forwarded-For` right to left from the verified immediate peer and stops at the first untrusted hop. Private/shared-NAT/documentation/multicast addresses and malformed/oversized chains are rejected. Proxy configuration must be verified before enabling it; this patch changes no infrastructure settings.
+
+The admin shows the IP, source, observation time, reported MAC (or not reported), and database record creation time. Creation time is when the server record was created, not a hardware manufacturing date. IP geolocation can reflect a VPN, carrier, or network gateway; it cannot establish physical location or person/device identity. No country is inferred automatically.
+
+Publishing this code to main does not establish that the server is running it, that the relay runs it, or that any device received firmware. Verify the deployed revision, existing authentication, proxy chain, and a fresh sample in the authenticated admin. Do not publish a global firmware manifest or deploy other units for this diagnostic.

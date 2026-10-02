@@ -1,3 +1,4 @@
+import { publicNetworkForAdmin } from '../lib/publicNetwork';
 import express from 'express';
 import imageUpload from './imageUpload';
 import multer from 'multer';
@@ -55,7 +56,8 @@ const router = express.Router();
 // Middleware to check password
 const checkAdminAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const password = req.headers['x-admin-password'] || req.query.password;
-    if (password !== 'nathan') {
+    const expectedPassword = process.env.ADMIN_PASSWORD || 'nathan';
+    if (typeof password !== 'string' || password !== expectedPassword) {
         return res.status(401).json({ error: 'Unauthorized' });
     }
     next();
@@ -66,6 +68,7 @@ router.use('/images', imageUpload);
 
 // List all devices
 router.get('/devices', async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
     try {
         const relayStatuses = await fetchRelayDeviceStatuses();
         const devices = await prisma.device.findMany({
@@ -91,6 +94,10 @@ router.get('/devices', async (req, res) => {
                 status: isOnline || relayIsOnline(relayDevice) ? 'online' : 'offline',
                 name: d.friendlyName,
                 mac: d.macAddress,
+                createdAt: d.createdAt,
+                // Keep sensitive diagnostics unavailable behind the legacy default password.
+                publicNetwork: (process.env.ADMIN_PASSWORD?.length || 0) >= 20
+                    ? publicNetworkForAdmin(d.deviceCode, relayDevice?.publicNetwork) : null,
                 lastSeen,
                 wifiSignal: relayDevice?.wifiSignal ?? d.wifiSignal,
                 firmwareVersion: relayDevice?.firmwareVersion ?? d.firmwareVersion,
