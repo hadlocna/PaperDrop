@@ -22,7 +22,7 @@ class PiMedia(Media):
     def __init__(self, root):
         super().__init__(root)
         from pi_cloud import Cloud
-        self.cloud = Cloud(self.root)
+        self.cloud = Cloud(self.root, self)
         self.shutdown = threading.Event()
         threading.Thread(target=self.reconnect_speaker, daemon=True).start()
 

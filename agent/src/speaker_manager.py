@@ -50,6 +50,7 @@ def save_settings(value):
     try:
         with os.fdopen(fd, 'w') as handle:
             json.dump(value, handle)
+        os.chmod(name, 0o600)
         os.replace(name, SETTINGS)
     finally:
         if os.path.exists(name):
@@ -84,6 +85,22 @@ class Speakers:
 
     def properties(self, obj):
         return self.dbus.Interface(obj, PROPS).GetAll(DEVICE)
+
+    def connect_device(self, obj, address=None, timeout=15):
+        if self.properties(obj).get('Connected'):
+            return
+        interface = self.dbus.Interface(obj, DEVICE)
+        try:
+            interface.Connect(timeout=timeout)
+        except self.dbus.exceptions.DBusException as error:
+            if error.get_dbus_name() == 'org.bluez.Error.AlreadyConnected':
+                return
+            if address:
+                result = subprocess.run(['bluetoothctl', '--timeout', str(timeout), 'connect', address],
+                                        capture_output=True, text=True, timeout=timeout + 5)
+                if result.returncode == 0:
+                    return
+            raise
 
     def volume_pcm(self):
         address = validate_address(load_settings().get('address'))
@@ -181,8 +198,7 @@ class Speakers:
             if not props.get('Bonded', props.get('Paired')):
                 raise RuntimeError('Pairing failed. Put the speaker in pairing mode, disconnect it from other devices, and try again.')
         self.dbus.Interface(obj, PROPS).Set(DEVICE, 'Trusted', self.dbus.Boolean(True))
-        if not self.properties(obj).get('Connected'):
-            self.dbus.Interface(obj, DEVICE).ConnectProfile(AUDIO_SINK, timeout=15)
+        self.connect_device(obj, address, timeout=15)
         self.prepare_playback(obj)
         if not self.properties(obj).get('Connected'):
             raise RuntimeError('Speaker did not connect. Check its power and pairing mode.')
@@ -211,27 +227,13 @@ class Speakers:
         saved = load_settings()
         if saved.get('autoConnect') and saved.get('address'):
             obj = self.target(saved['address'])
-            if not self.properties(obj).get('Connected'):
-                self.dbus.Interface(obj, DEVICE).ConnectProfile(AUDIO_SINK, timeout=12)
-                self.restore_volume()
+            self.connect_device(obj, saved['address'], timeout=12)
+            self.restore_volume()
         return {'ok': True}
 
     def prepare_playback(self, obj):
-        # Hands-free mode can mute music on combination speakerphones.
-        interface = self.dbus.Interface(obj, DEVICE)
-        uuids = {str(u).lower() for u in self.properties(obj).get('UUIDs', [])}
-        for profile in (HANDS_FREE, HEADSET):
-            if profile in uuids:
-                try:
-                    interface.DisconnectProfile(profile, timeout=5)
-                except self.dbus.exceptions.DBusException as error:
-                    if error.get_dbus_name() not in ('org.bluez.Error.NotConnected', 'org.bluez.Error.DoesNotExist'):
-                        raise
-        try:
-            interface.ConnectProfile(AUDIO_SINK, timeout=12)
-        except self.dbus.exceptions.DBusException as error:
-            if error.get_dbus_name() != 'org.bluez.Error.AlreadyConnected':
-                raise
+        props = self.properties(obj)
+        self.connect_device(obj, str(props.get('Address', '')), timeout=12)
 
     def test(self):
         address = validate_address(load_settings().get('address'))
@@ -269,11 +271,7 @@ class Speakers:
         profile = HANDS_FREE if HANDS_FREE in uuids else HEADSET if HEADSET in uuids else None
         if not profile:
             raise RuntimeError('This speaker does not expose a Bluetooth microphone.')
-        try:
-            self.dbus.Interface(obj, DEVICE).ConnectProfile(profile, timeout=12)
-        except self.dbus.exceptions.DBusException as error:
-            if error.get_dbus_name() != 'org.bluez.Error.AlreadyConnected':
-                raise
+        self.connect_device(obj, address, timeout=12)
         # BlueZ Connected precedes HFP codec negotiation. Wait for an actual PCM rate.
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:

@@ -1,6 +1,9 @@
 import sys
+import shutil
 import tempfile
 import unittest
+import uuid
+import os
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -23,10 +26,16 @@ class SpeakerTests(unittest.TestCase):
         self.assertTrue(speakers.is_audio_device({'Class': 0x240404}))
 
     def test_settings_persist_without_world_readable_permissions(self):
-        with tempfile.TemporaryDirectory() as directory, patch.object(speakers, 'SETTINGS', Path(directory) / 'speaker.json'):
-            speakers.save_settings({'address': 'AA:BB:CC:DD:EE:FF', 'autoConnect': False})
-            self.assertFalse(speakers.load_settings()['autoConnect'])
-            self.assertEqual(speakers.SETTINGS.stat().st_mode & 0o777, 0o600)
+        directory = Path(tempfile.gettempdir()) / ('paperdrop-speaker-test-' + uuid.uuid4().hex)
+        directory.mkdir()
+        try:
+            with patch.object(speakers, 'SETTINGS', directory / 'speaker.json'):
+                speakers.save_settings({'address': 'AA:BB:CC:DD:EE:FF', 'autoConnect': False})
+                self.assertFalse(speakers.load_settings()['autoConnect'])
+                if os.name == 'posix':
+                    self.assertEqual(speakers.SETTINGS.stat().st_mode & 0o777, 0o600)
+        finally:
+            shutil.rmtree(directory, ignore_errors=True)
 
     def test_discovery_stops_when_status_fails(self):
         manager = speakers.Speakers.__new__(speakers.Speakers)
@@ -56,15 +65,32 @@ class SpeakerTests(unittest.TestCase):
                 manager.microphone_test()
         run.assert_not_called()
 
-    def test_music_playback_disconnects_hands_free_before_a2dp(self):
+    def test_music_playback_uses_generic_connect_instead_of_profile_switching(self):
         manager = speakers.Speakers.__new__(speakers.Speakers)
-        manager.properties = Mock(return_value={'UUIDs': [speakers.HANDS_FREE, speakers.AUDIO_SINK]})
+        manager.properties = Mock(return_value={'UUIDs': [speakers.HANDS_FREE, speakers.AUDIO_SINK],
+                                                'Address': 'AA:BB:CC:DD:EE:FF',
+                                                'Connected': False})
         manager.dbus = Mock()
         interface = manager.dbus.Interface.return_value
         manager.prepare_playback(object())
-        self.assertEqual([call[0] for call in interface.method_calls], ['DisconnectProfile', 'ConnectProfile'])
-        interface.DisconnectProfile.assert_called_once_with(speakers.HANDS_FREE, timeout=5)
-        interface.ConnectProfile.assert_called_once_with(speakers.AUDIO_SINK, timeout=12)
+        interface.Connect.assert_called_once_with(timeout=12)
+        interface.DisconnectProfile.assert_not_called()
+        interface.ConnectProfile.assert_not_called()
+
+    def test_generic_connect_falls_back_to_bluetoothctl(self):
+        manager = speakers.Speakers.__new__(speakers.Speakers)
+        manager.properties = Mock(return_value={'Connected': False})
+        manager.dbus = Mock()
+        manager.dbus.exceptions.DBusException = Exception
+        interface = manager.dbus.Interface.return_value
+        error = Exception('Invalid arguments')
+        error.get_dbus_name = Mock(return_value='org.bluez.Error.InvalidArguments')
+        interface.Connect.side_effect = error
+        with patch.object(speakers.subprocess, 'run') as run:
+            run.return_value.returncode = 0
+            manager.connect_device(object(), 'AA:BB:CC:DD:EE:FF', timeout=12)
+        run.assert_called_once()
+        self.assertEqual(run.call_args.args[0][-2:], ['connect', 'AA:BB:CC:DD:EE:FF'])
 
     def test_pairable_setting_restored_if_pairing_times_out(self):
         manager = speakers.Speakers.__new__(speakers.Speakers)

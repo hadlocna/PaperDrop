@@ -28,8 +28,12 @@ agent.log
 
 # OS Images
 *.img
+*.img.xz
 raspios*
 releases/
+
+# Per-device diagnostics contain private keys and personalized images
+/.paperdrop-debug-ssh/
 
 # Generated release images, voice caches and private device state
 /artifacts/
