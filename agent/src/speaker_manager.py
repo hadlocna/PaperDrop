@@ -82,9 +82,36 @@ def normalize_for_a2dp(source, target):
         packed = struct.pack('<h', max(-32768, min(32767, int(sample))))
         data.extend(packed)
         data.extend(packed)
+    # Some A2DP speakers need a small lead-in before they start rendering audio.
+    lead_in = b'\0' * int(44100 * 0.4 * 4)
+    tail = b'\0' * int(44100 * 0.15 * 4)
     with wave.open(str(target), 'wb') as out:
         out.setparams((2, 2, 44100, 0, 'NONE', 'not compressed'))
-        out.writeframes(data)
+        out.writeframes(lead_in + data + tail)
+
+
+def audio_signal_stats(source):
+    with wave.open(str(source), 'rb') as wav:
+        channels, width = wav.getnchannels(), wav.getsampwidth()
+        data = wav.readframes(wav.getnframes())
+    if width != 2:
+        raise RuntimeError('Unsupported microphone audio sample width.')
+    if channels not in (1, 2):
+        raise RuntimeError('Unsupported microphone audio channels.')
+    samples = []
+    step = 2 * channels
+    for index in range(0, len(data), step):
+        left = struct.unpack_from('<h', data, index)[0]
+        if channels == 2 and index + 3 < len(data):
+            right = struct.unpack_from('<h', data, index + 2)[0]
+            samples.append((left + right) // 2)
+        else:
+            samples.append(left)
+    if not samples:
+        return {'rms': 0, 'peak': 0}
+    rms = math.sqrt(sum(sample * sample for sample in samples) / len(samples))
+    peak = max(abs(sample) for sample in samples)
+    return {'rms': rms, 'peak': peak}
 
 
 def load_settings():
@@ -360,6 +387,9 @@ class Speakers:
                                          '-d', '5', str(filename)], capture_output=True, text=True, timeout=12)
                 if result.returncode:
                     raise RuntimeError('The PaperDrop microphone could not record. Check the USB microphone and try again.')
+                stats = audio_signal_stats(filename)
+                if stats['peak'] < 120 or stats['rms'] < 20:
+                    raise RuntimeError('The microphone recorded only silence or a very low signal. Speak close to the PaperDrop microphone and try again.')
                 normalize_for_a2dp(filename, playback)
                 result = subprocess.run(['aplay', '-q', '-D', f'bluealsa:DEV={address},PROFILE=a2dp', str(playback)], capture_output=True, text=True, timeout=12)
                 if result.returncode:

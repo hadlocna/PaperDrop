@@ -102,10 +102,21 @@ This is a concise, shareable log of the troubleshooting performed on Ale's Paper
 - Still open:
   - Stream Deck voice drawing reaches recording and generation, but the deployed backend returns `Voice listening is unavailable.`;
   - the backend fix for button-initiated recorded drawing is in branch `ale-troubleshooting`, but must be built and deployed to the server before the Pi can use it;
+  - app microphone test reports success, but user hears only a short burst instead of the recorded voice, so capture level and Bluetooth playback formatting still need direct validation;
   - local backend build/test could not be run in this Windows workspace because `npm` failed fetching Prisma with `UNABLE_TO_VERIFY_LEAF_SIGNATURE`.
+- Additional microphone-test fix drafted:
+  - A2DP microphone-test playback now adds the same short silence lead-in and tail used by Stream Deck media playback, because some Bluetooth speakers wake late and clip the beginning of short recordings.
+  - Microphone-test recording now checks RMS/peak levels after capture and reports a clearer failure if ALSA produced only silence or a very low signal.
+  - A direct Pi-side microphone probe was added at `scripts/paperdrop_mic_check.py`; it records a WAV, reports RMS/peak levels, saves the raw and normalized files under `/tmp`, and can play the normalized WAV through the selected Bluetooth speaker.
+- Additional microphone access finding:
+  - The KTMicro USB microphone is present in `/proc/asound/cards` and `lsusb`.
+  - The SSH debug user `paperdrop` is not in the Linux `audio` group, while `/dev/snd/*` is owned by `root:audio`.
+  - Therefore direct interactive `arecord` over SSH fails without `sudo`, even though the PaperDrop runtime can still access audio when run with service privileges.
+  - For manual interactive validation, run the diagnostic with `sudo python3 /tmp/paperdrop_mic_check.py --seconds 5` or add the debug user to the `audio` group and start a new login session.
 - Manual follow-up:
   - after backend deployment, retry Stream Deck voice drawing without enabling wake-phrase listening;
-  - verify the app microphone test is audible enough in the room, since the Pi can confirm command success but not human audibility.
+  - verify the app microphone test is audible enough in the room, since the Pi can confirm command success but not human audibility;
+  - if playback is still only a burst, retrieve `/tmp/paperdrop-mic-check.wav` from the Pi and inspect whether the recording itself contains speech.
 
 ## Next Diagnostic Steps
 

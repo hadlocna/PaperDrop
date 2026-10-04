@@ -4,6 +4,7 @@ import tempfile
 import unittest
 import uuid
 import os
+import wave
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -67,7 +68,7 @@ class SpeakerTests(unittest.TestCase):
                 import wave
                 with wave.open(args[-1], 'wb') as wav:
                     wav.setparams((1, 2, 24000, 0, 'NONE', 'not compressed'))
-                    wav.writeframes(b'\0\0' * 24000)
+                    wav.writeframes(b'\xe8\x03' * 24000)
             result = Mock()
             result.returncode = 0
             return result
@@ -80,6 +81,45 @@ class SpeakerTests(unittest.TestCase):
         self.assertIn('PaperDrop USB microphone', result['message'])
         self.assertEqual(run.call_args_list[0].args[0][3], 'plughw:CARD=Microphone,DEV=0')
         self.assertIn('bluealsa:DEV=AA:BB:CC:DD:EE:FF,PROFILE=a2dp', run.call_args_list[1].args[0])
+
+    def test_a2dp_normalization_adds_silence_padding(self):
+        directory = Path.cwd()
+        source = directory / ('paperdrop-a2dp-source-' + uuid.uuid4().hex + '.wav')
+        target = directory / ('paperdrop-a2dp-target-' + uuid.uuid4().hex + '.wav')
+        try:
+            with wave.open(str(source), 'wb') as wav:
+                wav.setparams((1, 2, 24000, 0, 'NONE', 'not compressed'))
+                wav.writeframes(b'\x01\0' * 24000)
+            speakers.normalize_for_a2dp(source, target)
+            with wave.open(str(target), 'rb') as wav:
+                self.assertEqual((wav.getnchannels(), wav.getsampwidth(), wav.getframerate()), (2, 2, 44100))
+                data = wav.readframes(wav.getnframes())
+        finally:
+            source.unlink(missing_ok=True)
+            target.unlink(missing_ok=True)
+        lead_in_bytes = int(44100 * 0.4 * 4)
+        tail_bytes = int(44100 * 0.15 * 4)
+        self.assertEqual(data[:lead_in_bytes], b'\0' * lead_in_bytes)
+        self.assertEqual(data[-tail_bytes:], b'\0' * tail_bytes)
+        self.assertNotEqual(data[lead_in_bytes:lead_in_bytes + 4], b'\0\0\0\0')
+
+    def test_audio_signal_stats_detects_silence_and_signal(self):
+        directory = Path.cwd()
+        silent = directory / ('paperdrop-silent-' + uuid.uuid4().hex + '.wav')
+        voiced = directory / ('paperdrop-voiced-' + uuid.uuid4().hex + '.wav')
+        try:
+            with wave.open(str(silent), 'wb') as wav:
+                wav.setparams((1, 2, 24000, 0, 'NONE', 'not compressed'))
+                wav.writeframes(b'\0\0' * 24000)
+            with wave.open(str(voiced), 'wb') as wav:
+                wav.setparams((1, 2, 24000, 0, 'NONE', 'not compressed'))
+                wav.writeframes(b'\xe8\x03' * 24000)
+            self.assertEqual(speakers.audio_signal_stats(silent), {'rms': 0, 'peak': 0})
+            self.assertGreater(speakers.audio_signal_stats(voiced)['rms'], 900)
+            self.assertEqual(speakers.audio_signal_stats(voiced)['peak'], 1000)
+        finally:
+            silent.unlink(missing_ok=True)
+            voiced.unlink(missing_ok=True)
 
     def test_music_playback_uses_generic_connect_instead_of_profile_switching(self):
         manager = speakers.Speakers.__new__(speakers.Speakers)
