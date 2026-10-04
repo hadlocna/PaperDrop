@@ -41,6 +41,17 @@ class PiTests(unittest.TestCase):
             self.assertEqual(wav.getnchannels(),2)
             self.assertAlmostEqual(wav.getnframes()/44100,1.55,places=3)
 
+    def test_capture_pcm_prefers_detected_usb_microphone_card(self):
+        media=PiMedia.__new__(PiMedia)
+        cards = ' 0 [Microphone     ]: USB-Audio - USB Microphone\n 1 [vc4hdmi0       ]: vc4-hdmi - vc4-hdmi-0\n'
+        with patch.dict('os.environ', {}, clear=True), patch('pi_media.Path.read_text', return_value=cards):
+            self.assertEqual(media.capture_pcm(), 'plughw:CARD=Microphone,DEV=0')
+
+    def test_capture_pcm_honors_environment_override(self):
+        media=PiMedia.__new__(PiMedia)
+        with patch.dict('os.environ', {'PAPERDROP_CAPTURE_PCM': 'plughw:CARD=Custom,DEV=0'}):
+            self.assertEqual(media.capture_pcm(), 'plughw:CARD=Custom,DEV=0')
+
     def test_cloud_requires_session_and_message_match(self):
         cloud=self.cloud()
         cloud.event({'type':'voice_print_pending','session_id':'current','message_id':'wanted'})

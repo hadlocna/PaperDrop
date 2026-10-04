@@ -82,6 +82,7 @@ This is a concise, shareable log of the troubleshooting performed on Ale's Paper
 - Stream Deck/auto mode was updated so ordinary app-sent image messages can print through the guarded Pi printer path instead of only being staged as pending cloud mail.
 - Stream Deck speaker command handling was expanded to include the same app actions as the ordinary printer agent, including `microphone_test` and `play`.
 - Bluetooth speaker connection logic was changed to prefer generic BlueZ device connect behavior, with a `bluetoothctl connect` fallback, instead of relying on profile-specific `ConnectProfile`/`DisconnectProfile` calls that triggered `org.bluez.Error.InvalidArguments`.
+- Stream Deck microphone capture was changed to auto-detect the actual ALSA USB microphone card. On Ale's Pi the card is `Microphone`, while the previous default expected `Device`.
 - Local focused tests cover the new Stream Deck print/log/speaker command behavior and the safer Bluetooth connect behavior.
 
 ## Next Diagnostic Steps

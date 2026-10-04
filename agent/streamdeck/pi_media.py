@@ -133,6 +133,19 @@ class PiMedia(Media):
                 proc.kill()
                 proc.wait()
 
+    def capture_pcm(self):
+        configured = os.environ.get('PAPERDROP_CAPTURE_PCM')
+        if configured:
+            return configured
+        try:
+            cards = Path('/proc/asound/cards').read_text(errors='ignore')
+        except OSError:
+            cards = ''
+        for card in ('Microphone', 'Device'):
+            if f'[{card}' in cards:
+                return f'plughw:CARD={card},DEV=0'
+        return 'default'
+
     def start_recording(self, path):
         self.stop_audio()
         self.record_ready = threading.Event()
@@ -141,7 +154,7 @@ class PiMedia(Media):
         self.capture_done = threading.Event()
         with self.audio_lock:
             self.recording = proc = subprocess.Popen([
-                'arecord', '-q', '-D', os.environ.get('PAPERDROP_CAPTURE_PCM', 'plughw:CARD=Device,DEV=0'),
+                'arecord', '-q', '-D', self.capture_pcm(),
                 '-t', 'raw', '-f', 'S16_LE', '-c', '1', '-r', '24000', '-d', '15'
             ], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         def capture():
