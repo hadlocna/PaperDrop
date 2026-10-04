@@ -56,14 +56,30 @@ class SpeakerTests(unittest.TestCase):
             manager.reconnect()
         manager.target.assert_not_called()
 
-    def test_microphone_not_captured_without_supported_profile(self):
+    def test_microphone_falls_back_to_usb_capture_without_supported_profile(self):
         manager = speakers.Speakers.__new__(speakers.Speakers)
         manager.target = Mock()
         manager.properties = Mock(return_value={'UUIDs': [speakers.AUDIO_SINK]})
-        with patch.object(speakers, 'load_settings', return_value={'address': 'AA:BB:CC:DD:EE:FF'}), patch.object(speakers.subprocess, 'run') as run:
-            with self.assertRaisesRegex(RuntimeError, 'does not expose'):
-                manager.microphone_test()
-        run.assert_not_called()
+        manager.prepare_playback = Mock()
+        manager.status = Mock(return_value={'ok': True})
+        def fake_run(args, **kwargs):
+            if args[0] == 'arecord':
+                import wave
+                with wave.open(args[-1], 'wb') as wav:
+                    wav.setparams((1, 2, 24000, 0, 'NONE', 'not compressed'))
+                    wav.writeframes(b'\0\0' * 24000)
+            result = Mock()
+            result.returncode = 0
+            return result
+        with patch.object(speakers, 'load_settings', return_value={'address': 'AA:BB:CC:DD:EE:FF'}), \
+             patch.object(speakers, 'capture_pcm', return_value='plughw:CARD=Microphone,DEV=0'), \
+             patch.object(speakers.tempfile, 'TemporaryDirectory') as temporary, \
+             patch.object(speakers.subprocess, 'run', side_effect=fake_run) as run:
+            temporary.return_value.__enter__.return_value = str(Path(tempfile.gettempdir()))
+            result = manager.microphone_test()
+        self.assertIn('PaperDrop USB microphone', result['message'])
+        self.assertEqual(run.call_args_list[0].args[0][3], 'plughw:CARD=Microphone,DEV=0')
+        self.assertIn('bluealsa:DEV=AA:BB:CC:DD:EE:FF,PROFILE=a2dp', run.call_args_list[1].args[0])
 
     def test_music_playback_uses_generic_connect_instead_of_profile_switching(self):
         manager = speakers.Speakers.__new__(speakers.Speakers)

@@ -22,6 +22,12 @@ from websockets.sync.client import connect
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
 
+class CloudRequestError(RuntimeError):
+    @property
+    def public_message(self):
+        return str(self)
+
+
 class Cloud:
     def __init__(self, root, printer=None):
         self.root = Path(root)
@@ -248,7 +254,7 @@ class Cloud:
 
     def draw(self, audio, target, progress):
         if not self.connected.wait(8):
-            raise RuntimeError('PaperDrop backend is unavailable')
+            raise CloudRequestError('PaperDrop backend is unavailable')
         req = dict(session=uuid.uuid4().hex, ready=threading.Event(), done=threading.Event(), progress=progress)
         with self.lock:
             if self.request:
@@ -259,14 +265,14 @@ class Cloud:
             progress('Listening to your idea…')
             self.send({'type': 'voice_start', 'mode': 'recorded', 'quality': 'low', 'session_id': req['session']})
             if not req['ready'].wait(20):
-                raise RuntimeError('Backend did not become ready')
+                raise CloudRequestError('Backend did not become ready')
             if req.get('error'):
-                raise RuntimeError(req['error'])
+                raise CloudRequestError(req['error'])
             self.send({'type': 'voice_request', 'session_id': req['session'], 'audio': base64.b64encode(Path(audio).read_bytes()).decode()})
             if not req['done'].wait(155):
-                raise RuntimeError('Drawing timed out')
+                raise CloudRequestError('Drawing timed out')
             if req.get('error'):
-                raise RuntimeError(req['error'])
+                raise CloudRequestError(req['error'])
             with Image.open(io.BytesIO(base64.b64decode(req['content'], validate=True))) as img:
                 from print_layout import fit_width
                 fit_width(img, trim_white=True).save(target)

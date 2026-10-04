@@ -624,7 +624,7 @@ class Controller:
                     if self.job==token and not self.closed:
                         success(result)
             except Exception as exc:
-                logging.warning('operation_failed type=%s', type(exc).__name__)
+                logging.warning('operation_failed type=%s message=%s', type(exc).__name__, exc)
                 with self.lock:
                     if self.job==token and not self.closed:
                         self.fail(getattr(exc, 'public_message', None) or ('The printer is unavailable. Your picture is saved; Retry sends this same picture.' if self.mode=='printing' else 'That did not work. Try again, or delete this postcard.'))
