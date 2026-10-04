@@ -27,6 +27,7 @@ export function recordedPrintStatus(deviceId: string, messageId: string, status:
 export async function handleRecordedVoice(deviceId: string, event: any) {
     if (event.type === 'voice_start') {
         if (sessions.has(deviceId)) return;
+        const buttonRecorded = event.mode === 'recorded';
         const s: Session = { id: event.session_id, busy: false, quality: event.quality === 'low' ? 'low' : 'medium', abort: new AbortController(), timer: setTimeout(() => {
             send(deviceId, s, { type: 'voice_error', error: 'Drawing request timed out. Please try again.' });
             closeRecordedVoice(deviceId);
@@ -38,7 +39,8 @@ export async function handleRecordedVoice(deviceId: string, event: any) {
         try {
             const device = await prisma.device.findUnique({ where: { id: deviceId } });
             if (sessions.get(deviceId) !== s) return;
-            if (!device?.ownerId || JSON.parse(device.config || '{}').voiceEnabled !== true || !process.env.OPENAI_API_KEY) throw Error('Voice listening is not enabled.');
+            const config = JSON.parse(device?.config || '{}');
+            if (!device?.ownerId || !process.env.OPENAI_API_KEY || (!buttonRecorded && config.voiceEnabled !== true)) throw Error('Voice listening is not enabled.');
             s.ownerId = device.ownerId;
             send(deviceId, s, { type: 'voice_ready', mode: 'recorded' });
         } catch { send(deviceId, s, {type:'voice_error', error:'Voice listening is unavailable.'}); closeRecordedVoice(deviceId); }
@@ -66,7 +68,7 @@ export async function handleRecordedVoice(deviceId: string, event: any) {
         const content=image.data?.[0]?.b64_json;
         if (!content) throw Error('Image generation failed');
         const current=await prisma.device.findUnique({where:{id:deviceId}});
-        if (sessions.get(deviceId)!==s || JSON.parse(current?.config || '{}').voiceEnabled!==true) return;
+        if (sessions.get(deviceId)!==s) return;
         const message=await prisma.message.create({data:{deviceId,senderId:s.ownerId,contentType:'image',content,status:'sent',sentAt:new Date()}});
         if (sessions.get(deviceId)!==s) {
             await prisma.message.update({where:{id:message.id},data:{status:'failed',errorMessage:'Voice request cancelled before delivery'}});

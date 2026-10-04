@@ -83,7 +83,29 @@ This is a concise, shareable log of the troubleshooting performed on Ale's Paper
 - Stream Deck speaker command handling was expanded to include the same app actions as the ordinary printer agent, including `microphone_test` and `play`.
 - Bluetooth speaker connection logic was changed to prefer generic BlueZ device connect behavior, with a `bluetoothctl connect` fallback, instead of relying on profile-specific `ConnectProfile`/`DisconnectProfile` calls that triggered `org.bluez.Error.InvalidArguments`.
 - Stream Deck microphone capture was changed to auto-detect the actual ALSA USB microphone card. On Ale's Pi the card is `Microphone`, while the previous default expected `Device`.
+- The app microphone test was changed to fall back to the PaperDrop USB microphone when Bluetooth HFP microphone capture is unavailable, then play the recording through the selected Bluetooth speaker.
+- Microphone-test errors in the settings UI were moved beside the microphone-test button instead of appearing near the top of the speaker section.
+- Stream Deck drawing failures now preserve and log the backend error message instead of only showing a generic failure.
+- Backend recorded voice handling was updated so Stream Deck button-initiated recorded drawing can proceed even when wake-phrase listening is off. Wake-phrase/live voice remains gated by `voiceEnabled`.
 - Local focused tests cover the new Stream Deck print/log/speaker command behavior and the safer Bluetooth connect behavior.
+
+## Current Status After Remote Testing
+
+- Confirmed fixed on Ale's Pi:
+  - auto mode selects Stream Deck mode when the Stream Deck is attached;
+  - ordinary app messages print in Stream Deck mode;
+  - app Agent/System/Wi-Fi log downloads work;
+  - Epson printer, Stream Deck Mini, SoundCore speaker, and USB microphone are detected;
+  - SoundCore scan/connect/status/test sound works;
+  - PaperDrop USB microphone recording works;
+  - app microphone test returns success using the PaperDrop USB microphone fallback.
+- Still open:
+  - Stream Deck voice drawing reaches recording and generation, but the deployed backend returns `Voice listening is unavailable.`;
+  - the backend fix for button-initiated recorded drawing is in branch `ale-troubleshooting`, but must be built and deployed to the server before the Pi can use it;
+  - local backend build/test could not be run in this Windows workspace because `npm` failed fetching Prisma with `UNABLE_TO_VERIFY_LEAF_SIGNATURE`.
+- Manual follow-up:
+  - after backend deployment, retry Stream Deck voice drawing without enabling wake-phrase listening;
+  - verify the app microphone test is audible enough in the room, since the Pi can confirm command success but not human audibility.
 
 ## Next Diagnostic Steps
 
