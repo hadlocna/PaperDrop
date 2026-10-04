@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Layout } from '../components/Layout';
 import { API_BASE_URL, WS_BASE_URL } from '../api/baseUrl';
+import { uploadFirmware } from '../api/uploadFirmware';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
@@ -280,6 +281,7 @@ export function Admin() {
     const [users, setUsers] = useState<User[]>([]);
     const [feedbacks, setFeedbacks] = useState<Feedback[]>([]);
     const [deployStatus, setDeployStatus] = useState('');
+    const [isUploadingFirmware, setIsUploadingFirmware] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [attentionOnly, setAttentionOnly] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
@@ -720,20 +722,18 @@ export function Admin() {
                                 e.preventDefault();
                                 const form = e.target as HTMLFormElement;
                                 const formData = new FormData(form);
+                                setIsUploadingFirmware(true);
+                                setDeployStatus('Preparing firmware upload…');
                                 try {
-                                    const res = await fetch(`${API_BASE_URL}/api/admin/firmware/upload`, {
-                                        method: 'POST',
-                                        headers: { 'x-admin-password': password },
-                                        body: formData
-                                    });
-                                    if (res.ok) {
-                                        form.reset();
-                                        loadFirmware(password);
-                                        setDeployStatus('Firmware uploaded!');
-                                        setTimeout(() => setDeployStatus(''), 3000);
-                                    }
+                                    await uploadFirmware(API_BASE_URL, password, formData, percent => setDeployStatus(`Uploading firmware… ${percent}%`));
+                                    form.reset();
+                                    loadFirmware(password);
+                                    setDeployStatus('Firmware uploaded!');
+                                    setTimeout(() => setDeployStatus(''), 3000);
                                 } catch (err) {
-                                    setDeployStatus('Upload failed');
+                                    setDeployStatus(err instanceof Error ? err.message : 'Upload failed');
+                                } finally {
+                                    setIsUploadingFirmware(false);
                                 }
                             }} className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                 <input
@@ -758,9 +758,10 @@ export function Admin() {
                                 />
                                 <button
                                     type="submit"
-                                    className="bg-slate-800 hover:bg-slate-700 text-white px-6 py-3 rounded-xl font-medium"
+                                    disabled={isUploadingFirmware}
+                                    className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white px-6 py-3 rounded-xl font-medium"
                                 >
-                                    Upload
+                                    {isUploadingFirmware ? 'Uploading…' : 'Upload'}
                                 </button>
                             </form>
                         </div>
