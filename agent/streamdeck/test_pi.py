@@ -52,6 +52,43 @@ class PiTests(unittest.TestCase):
         with patch.dict('os.environ', {'PAPERDROP_CAPTURE_PCM': 'plughw:CARD=Custom,DEV=0'}):
             self.assertEqual(media.capture_pcm(), 'plughw:CARD=Custom,DEV=0')
 
+    def media_with_finished_recording(self, path):
+        class Proc:
+            returncode = 0
+            def poll(self): return 0
+            def wait(self, timeout=None): return 0
+            def send_signal(self, signal): pass
+            def kill(self): pass
+        media=PiMedia.__new__(PiMedia)
+        media.audio_lock=threading.RLock()
+        media.recording=Proc()
+        media.capture_done=threading.Event();media.capture_done.set()
+        media.record_error=None
+        return media
+
+    def test_finish_recording_reports_quiet_signal(self):
+        import wave
+        path=self.root/'quiet.wav'
+        with wave.open(str(path),'wb') as out:
+            out.setparams((1,2,24000,0,'NONE','not compressed'))
+            out.writeframes(b'\0\0'*24000)
+        media=self.media_with_finished_recording(path)
+        with self.assertRaises(Exception) as error:
+            media.finish_recording(path)
+        self.assertIn('quiet', str(error.exception))
+        self.assertEqual(getattr(error.exception, 'public_message', ''), 'I could not hear enough audio. Please speak close to the PaperDrop microphone and try again.')
+
+    def test_finish_recording_logs_signal_and_returns_duration(self):
+        import wave
+        path=self.root/'voice.wav'
+        with wave.open(str(path),'wb') as out:
+            out.setparams((1,2,24000,0,'NONE','not compressed'))
+            out.writeframes(b'\xe8\x03'*24000)
+        media=self.media_with_finished_recording(path)
+        with self.assertLogs(level='INFO') as logs:
+            self.assertEqual(media.finish_recording(path), 1.0)
+        self.assertTrue(any('mic_recording_finished' in line and 'rms=' in line and 'peak=' in line for line in logs.output))
+
     def test_cloud_requires_session_and_message_match(self):
         cloud=self.cloud()
         cloud.event({'type':'voice_print_pending','session_id':'current','message_id':'wanted'})

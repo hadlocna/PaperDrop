@@ -1,6 +1,7 @@
 """Pi-owned microphone, speaker, AI requests and guarded USB printing."""
 import audioop
 import json
+import logging
 import os
 from pathlib import Path
 import signal
@@ -14,6 +15,10 @@ from media import Media
 
 class PrintOutcomeUnknown(RuntimeError):
     public_message = 'The print result is uncertain. Check the paper before making a new drawing. This picture will not be sent twice.'
+
+
+class RecordingTooQuiet(RuntimeError):
+    public_message = 'I could not hear enough audio. Please speak close to the PaperDrop microphone and try again.'
 
 
 class PiMedia(Media):
@@ -187,8 +192,13 @@ class PiMedia(Media):
             with wave.open(str(path)) as wav:
                 duration = wav.getnframes() / wav.getframerate()
                 frames = wav.readframes(wav.getnframes())
-            if duration < .6 or audioop.rms(frames, 2) < 45:
-                raise RuntimeError('Recording was too short or silent')
+            rms = audioop.rms(frames, 2) if frames else 0
+            peak = audioop.max(frames, 2) if frames else 0
+            logging.info('mic_recording_finished duration=%.2f rms=%s peak=%s bytes=%s', duration, rms, peak, len(frames))
+            if duration < .6:
+                raise RecordingTooQuiet('Recording was too short.')
+            if rms < 45 or peak < 120:
+                raise RecordingTooQuiet('Recording was too quiet or silent.')
             return round(duration, 2)
         finally:
             if proc.poll() is None:

@@ -43,7 +43,10 @@ export async function handleRecordedVoice(deviceId: string, event: any) {
             if (!device?.ownerId || !process.env.OPENAI_API_KEY || (!buttonRecorded && config.voiceEnabled !== true)) throw Error('Voice listening is not enabled.');
             s.ownerId = device.ownerId;
             send(deviceId, s, { type: 'voice_ready', mode: 'recorded' });
-        } catch { send(deviceId, s, {type:'voice_error', error:'Voice listening is unavailable.'}); closeRecordedVoice(deviceId); }
+        } catch (error) {
+            console.error('[RecordedVoice] start failed:', error instanceof Error ? error.message : error);
+            send(deviceId, s, {type:'voice_error', error:'Voice listening is unavailable.'}); closeRecordedVoice(deviceId);
+        }
         return;
     }
     const s = sessions.get(deviceId);
@@ -78,7 +81,8 @@ export async function handleRecordedVoice(deviceId: string, event: any) {
         send(deviceId,s,{type:'voice_print_pending',message_id:message.id});
         send(deviceId,s,{type:'new_message',message:{...message,senderName:'PaperDrop'}});
         // Pencil sound continues until this exact job reports printed or failed.
-    } catch {
+    } catch (error) {
+        console.error('[RecordedVoice] request failed:', error instanceof Error ? error.message : error);
         if (sessions.get(deviceId)===s) {
             send(deviceId,s,{type:'voice_error',error:'I could not make that picture. Please try again.'});
             closeRecordedVoice(deviceId);

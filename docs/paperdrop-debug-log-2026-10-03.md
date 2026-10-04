@@ -113,6 +113,15 @@ This is a concise, shareable log of the troubleshooting performed on Ale's Paper
   - The SSH debug user `paperdrop` is not in the Linux `audio` group, while `/dev/snd/*` is owned by `root:audio`.
   - Therefore direct interactive `arecord` over SSH fails without `sudo`, even though the PaperDrop runtime can still access audio when run with service privileges.
   - For manual interactive validation, run the diagnostic with `sudo python3 /tmp/paperdrop_mic_check.py --seconds 5` or add the debug user to the `audio` group and start a new login session.
+  - The direct diagnostic recording/playback was later confirmed to work, which proves the USB microphone, ALSA capture path, Bluetooth speaker, and BlueALSA playback path are basically functional.
+- Additional Stream Deck drawing diagnostics drafted:
+  - Stream Deck Pi recording now logs `mic_recording_finished` with duration, RMS, peak, and byte count after every captured prompt.
+  - Too-short or too-quiet Stream Deck recordings now raise an error with a user-facing message instead of a generic failure.
+  - Recording startup failures now preserve the concrete exception message in the Stream Deck error hint and log `recording_start_failed`.
+  - Backend recorded drawing now logs start/request failures on the server side, so a server operator can distinguish configuration, transcription, moderation, image generation, and database/delivery failures.
+- Deployment note:
+  - The live Pi is running managed release `2.1.2-20260930-b8a344f46c56` as `root` from `/opt/paperdrop/releases/...`.
+  - The SSH debug user cannot read or update that release tree without `sudo`, so code fixes in this branch must be deployed through the normal update pipeline or installed with a privileged hotfix/restart on the Pi.
 - Manual follow-up:
   - after backend deployment, retry Stream Deck voice drawing without enabling wake-phrase listening;
   - verify the app microphone test is audible enough in the room, since the Pi can confirm command success but not human audibility;
