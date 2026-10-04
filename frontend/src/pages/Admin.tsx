@@ -71,8 +71,8 @@ function AssignModal({ device, users, onAssign, onClose }: { device: Device, use
 
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 animate-in fade-in duration-200">
-            <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+            <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-2rem)] animate-in zoom-in-95 duration-200">
+                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 shrink-0">
                     <div>
                         <h3 className="text-xl font-bold text-slate-800 tracking-tight">Assign Printer</h3>
                         <p className="text-sm text-slate-500 font-medium">{device.name} ({device.code})</p>
@@ -82,7 +82,7 @@ function AssignModal({ device, users, onAssign, onClose }: { device: Device, use
                     </button>
                 </div>
 
-                <div className="p-8 space-y-6">
+                <div className="p-8 space-y-6 min-h-0 overflow-y-auto">
                     <div>
                         <label className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 block">User Email</label>
                         <input
@@ -133,7 +133,7 @@ function AssignModal({ device, users, onAssign, onClose }: { device: Device, use
                     )}
                 </div>
 
-                <div className="p-4 bg-slate-50 flex justify-center">
+                <div className="p-4 bg-slate-50 flex justify-center shrink-0">
                     <button onClick={onClose} className="text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors">
                         Cancel and Go Back
                     </button>
@@ -185,17 +185,17 @@ function FeedbackDetailModal({ feedback, onUpdate, onClose, password }: { feedba
 
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-            <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-2rem)]">
                 {/* Header */}
-                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                    <div className="flex items-center gap-3">
+                <div className="p-4 sm:p-6 border-b border-slate-100 flex flex-wrap gap-4 justify-between items-center bg-slate-50/50 shrink-0">
+                    <div className="flex items-center gap-3 min-w-0">
                         <div className={`w-3 h-3 rounded-full ${feedback.status === 'resolved' ? 'bg-green-500' : 'bg-amber-500'}`} />
-                        <div>
+                        <div className="min-w-0">
                             <h3 className="text-xl font-bold text-slate-800">{feedback.userName}</h3>
-                            <p className="text-sm text-slate-500 font-medium">{feedback.userEmail}</p>
+                            <p className="text-sm text-slate-500 font-medium truncate">{feedback.userEmail}</p>
                         </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 shrink-0">
                         <button
                             onClick={toggleStatus}
                             className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${feedback.status === 'resolved' ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-green-600 text-white shadow-lg shadow-green-600/20'}`}
@@ -209,7 +209,7 @@ function FeedbackDetailModal({ feedback, onUpdate, onClose, password }: { feedba
                 </div>
 
                 {/* Conversation Body */}
-                <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/30">
+                <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6 bg-slate-50/30">
                     {/* Original Message */}
                     <div className="flex flex-col items-start max-w-[85%]">
                         <div className="bg-white border border-slate-100 rounded-2xl rounded-tl-none p-4 shadow-sm">
@@ -245,7 +245,7 @@ function FeedbackDetailModal({ feedback, onUpdate, onClose, password }: { feedba
                 </div>
 
                 {/* Footer / Reply Area */}
-                <div className="p-6 bg-white border-t border-slate-100">
+                <div className="p-6 bg-white border-t border-slate-100 shrink-0">
                     <div className="flex gap-4">
                         <textarea
                             autoFocus
@@ -597,7 +597,7 @@ export function Admin() {
 
     if (!isAuthenticated) {
         return (
-            <Layout>
+            <Layout scrollable>
                 <div className="max-w-md mx-auto mt-20 p-8 bg-white rounded-2xl shadow-xl">
                     <h1 className="text-2xl font-bold mb-6 text-center">Admin Access</h1>
                     <form onSubmit={handleLogin}>
@@ -626,7 +626,7 @@ export function Admin() {
     };
 
     return (
-        <Layout>
+        <Layout scrollable>
             <div className="max-w-6xl mx-auto mt-6 sm:mt-10 p-4 sm:p-6">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 mb-8">
                     <div className="flex flex-col xs:flex-row items-start xs:items-center gap-4 w-full sm:w-auto">
@@ -845,8 +845,8 @@ export function Admin() {
                     </div>
                 )}
                 {activeTab === 'feedback' && (
-                    <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm flex flex-col h-[70vh]">
-                        <div className="overflow-y-auto w-full">
+                    <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm flex flex-col sm:h-[70vh]">
+                        <div className="flex-1 min-h-0 overflow-auto w-full">
                             <table className="w-full text-left">
                                 <thead className="bg-slate-50 border-b border-slate-100">
                                     <tr>
@@ -1056,8 +1056,8 @@ export function Admin() {
             {
                 selectedDevice && (
                     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                        <div className="bg-slate-900 w-full max-w-4xl rounded-2xl overflow-hidden shadow-2xl border border-slate-700 flex flex-col h-[600px]">
-                            <div className="bg-slate-800 p-4 flex justify-between items-center border-b border-slate-700">
+                        <div className="bg-slate-900 w-full max-w-4xl rounded-2xl overflow-hidden shadow-2xl border border-slate-700 flex flex-col h-[600px] max-h-[calc(100dvh-2rem)]">
+                            <div className="bg-slate-800 p-4 flex justify-between items-center border-b border-slate-700 shrink-0">
                                 <div className="flex items-center gap-2">
                                     <TerminalIcon className="text-green-400" size={20} />
                                     <span className="text-white font-mono font-bold">root@{selectedDevice.code} ~</span>
@@ -1069,7 +1069,7 @@ export function Admin() {
                                     <Power size={20} />
                                 </button>
                             </div>
-                            <div className="flex-1 p-4 bg-[#1e1e1e] overflow-hidden">
+                            <div className="flex-1 min-h-0 p-4 bg-[#1e1e1e] overflow-hidden">
                                 <div ref={termRef} className="h-full w-full" />
                             </div>
                         </div>
