@@ -608,11 +608,12 @@ class Controller:
                     timer = threading.Timer(15, timeout)
                     timer.daemon = True
                     timer.start()
-            except Exception:
+            except Exception as exc:
+                logging.warning('recording_start_failed type=%s message=%s', type(exc).__name__, exc)
                 with self.lock:
                     if self.mode == 'arming' and self.draft and self.draft['id'] == token:
                         self.media.stop_audio()
-                        self.fail('Oops. Please try again.')
+                        self.fail(getattr(exc, 'public_message', None) or str(exc) or 'The microphone did not become ready. Please try again.')
         threading.Thread(target=ready, daemon=True).start()
 
     def background(self, operation, success):
@@ -624,7 +625,7 @@ class Controller:
                     if self.job==token and not self.closed:
                         success(result)
             except Exception as exc:
-                logging.warning('operation_failed type=%s', type(exc).__name__)
+                logging.warning('operation_failed type=%s message=%s', type(exc).__name__, exc)
                 with self.lock:
                     if self.job==token and not self.closed:
                         self.fail(getattr(exc, 'public_message', None) or ('The printer is unavailable. Your picture is saved; Retry sends this same picture.' if self.mode=='printing' else 'That did not work. Try again, or delete this postcard.'))
