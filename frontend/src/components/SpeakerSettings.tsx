@@ -24,6 +24,7 @@ export function SpeakerSettings({ deviceId }: { deviceId: string }) {
     const [state, setState] = useState<SpeakerState | null>(null);
     const [busy, setBusy] = useState<string | null>(null);
     const [error, setError] = useState('');
+    const [errorAction, setErrorAction] = useState('');
     const [message, setMessage] = useState('');
     const [volume, setVolume] = useState(50);
     useEffect(() => { if (typeof state?.volume === 'number') setVolume(state.volume); }, [state]);
@@ -41,6 +42,7 @@ export function SpeakerSettings({ deviceId }: { deviceId: string }) {
     const run = async (action: string, address?: string, volume?: number) => {
         setBusy(action);
         setError('');
+        setErrorAction('');
         setMessage('');
         try {
             const res = await api.post(`/devices/${deviceId}/speaker`, { action, address, volume }, { timeout: 65000 });
@@ -48,11 +50,13 @@ export function SpeakerSettings({ deviceId }: { deviceId: string }) {
             setMessage(res.data.message || (action === 'scan' ? 'Scan finished.' : action === 'connect' ? 'Speaker connected and saved.' : ''));
         } catch (err: any) {
             setError(err.response?.data?.error || 'Unable to reach PaperDrop. Check its power and Wi-Fi.');
+            setErrorAction(action);
         } finally {
             setBusy(null);
         }
     };
     const selected = state?.devices.find(speaker => speaker.selected);
+    const globalError = error && !['test', 'microphone_test', 'volume'].includes(errorAction);
 
     return <section className="space-y-3" aria-label="Speaker and microphone">
         <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2"><Bluetooth size={17} /> Speaker & microphone</h3>
@@ -65,7 +69,7 @@ export function SpeakerSettings({ deviceId }: { deviceId: string }) {
             <button disabled={!!busy} onClick={() => run('status')} className="px-3 py-2 border rounded-xl text-sm disabled:opacity-50">Refresh</button>
         </div>
         {busy && <p role="status" className="text-sm text-gray-500">{busy === 'microphone_test' ? 'Speak now: recording for 5 seconds, then playing it back…' : busy === 'connect' ? 'Pairing and connecting… This can take up to a minute.' : busy === 'test' ? 'Playing test sound…' : busy === 'scan' ? 'Looking for speakers for 10 seconds…' : 'Checking speaker…'}</p>}
-        {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+        {globalError && <p role="alert" className="text-sm text-red-700">{error}</p>}
         {message && <p role="status" className="text-sm text-emerald-700">{message}</p>}
         {state?.devices.length === 0 && !busy && <p className="text-sm text-gray-500">No speakers found yet. Enable pairing mode and scan again.</p>}
         <ul className="space-y-2">
@@ -82,11 +86,15 @@ export function SpeakerSettings({ deviceId }: { deviceId: string }) {
                     <button disabled={!!busy || !selected.connected || volume === state.volume} onClick={() => run('volume', undefined, volume)} className="px-3 py-2 border rounded-xl text-sm disabled:opacity-50">{busy === 'volume' ? 'Saving…' : 'Save volume'}</button>
                     <button disabled={!!busy || !selected.connected} onClick={() => run('volume', undefined, 0)} className="px-3 py-2 border rounded-xl text-sm disabled:opacity-50">Mute</button>
                 </div>
+                {error && errorAction === 'volume' && <p role="alert" className="text-sm text-red-700">{error}</p>}
             </div>}
             {selected.connected && !state?.volumeSupported && <p className="text-xs text-gray-500">Volume control is unavailable. Update PaperDrop, then refresh.</p>}
             <button disabled={!!busy || !selected.connected} onClick={() => run('test')} className="flex items-center gap-2 text-sm font-medium text-coral-600 disabled:opacity-50"><Volume2 size={17} /> Play test sound</button>
+            {error && errorAction === 'test' && <p role="alert" className="text-sm text-red-700">{error}</p>}
             <p className="text-sm text-gray-500 flex items-center gap-2"><Mic size={17} />{selected.microphoneSupported ? 'Bluetooth microphone supported. Available for voice conversations.' : 'This speaker does not advertise a Bluetooth microphone.'}</p>
-            {selected.microphoneSupported && <><p className="text-xs text-gray-500">Microphone test records 5 seconds, plays it on the speaker, then deletes it. Nothing is uploaded. Wake-phrase listening is controlled separately below.</p><button disabled={!!busy || !selected.connected} onClick={() => run('microphone_test')} className="px-3 py-2 border rounded-xl text-sm disabled:opacity-50">Test microphone (5 seconds)</button></>}
+            <p className="text-xs text-gray-500">Microphone test uses the Bluetooth microphone when available, otherwise the PaperDrop USB microphone. It records 5 seconds, plays it on the speaker, then deletes it. Nothing is uploaded. Wake-phrase listening is controlled separately below.</p>
+            <button disabled={!!busy || !selected.connected} onClick={() => run('microphone_test')} className="px-3 py-2 border rounded-xl text-sm disabled:opacity-50">Test microphone (5 seconds)</button>
+            {error && errorAction === 'microphone_test' && <p role="alert" className="text-sm text-red-700">{error}</p>}
         </div>}
         <VoiceSettings deviceId={deviceId} />
     </section>;

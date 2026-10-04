@@ -1,6 +1,7 @@
 """Pi-owned microphone, speaker, AI requests and guarded USB printing."""
 import audioop
 import json
+import logging
 import os
 from pathlib import Path
 import signal
@@ -16,13 +17,17 @@ class PrintOutcomeUnknown(RuntimeError):
     public_message = 'The print result is uncertain. Check the paper before making a new drawing. This picture will not be sent twice.'
 
 
+class RecordingTooQuiet(RuntimeError):
+    public_message = 'I could not hear enough audio. Please speak close to the PaperDrop microphone and try again.'
+
+
 class PiMedia(Media):
     from printer_readiness import PRINTER_LOCK as _printer_lock
     local_printer = True
     def __init__(self, root):
         super().__init__(root)
         from pi_cloud import Cloud
-        self.cloud = Cloud(self.root)
+        self.cloud = Cloud(self.root, self)
         self.shutdown = threading.Event()
         threading.Thread(target=self.reconnect_speaker, daemon=True).start()
 
@@ -133,6 +138,19 @@ class PiMedia(Media):
                 proc.kill()
                 proc.wait()
 
+    def capture_pcm(self):
+        configured = os.environ.get('PAPERDROP_CAPTURE_PCM')
+        if configured:
+            return configured
+        try:
+            cards = Path('/proc/asound/cards').read_text(errors='ignore')
+        except OSError:
+            cards = ''
+        for card in ('Microphone', 'Device'):
+            if f'[{card}' in cards:
+                return f'plughw:CARD={card},DEV=0'
+        return 'default'
+
     def start_recording(self, path):
         self.stop_audio()
         self.record_ready = threading.Event()
@@ -141,7 +159,7 @@ class PiMedia(Media):
         self.capture_done = threading.Event()
         with self.audio_lock:
             self.recording = proc = subprocess.Popen([
-                'arecord', '-q', '-D', os.environ.get('PAPERDROP_CAPTURE_PCM', 'plughw:CARD=Device,DEV=0'),
+                'arecord', '-q', '-D', self.capture_pcm(),
                 '-t', 'raw', '-f', 'S16_LE', '-c', '1', '-r', '24000', '-d', '15'
             ], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         def capture():
@@ -174,8 +192,13 @@ class PiMedia(Media):
             with wave.open(str(path)) as wav:
                 duration = wav.getnframes() / wav.getframerate()
                 frames = wav.readframes(wav.getnframes())
-            if duration < .6 or audioop.rms(frames, 2) < 45:
-                raise RuntimeError('Recording was too short or silent')
+            rms = audioop.rms(frames, 2) if frames else 0
+            peak = audioop.max(frames, 2) if frames else 0
+            logging.info('mic_recording_finished duration=%.2f rms=%s peak=%s bytes=%s', duration, rms, peak, len(frames))
+            if duration < .6:
+                raise RecordingTooQuiet('Recording was too short.')
+            if rms < 45 or peak < 120:
+                raise RecordingTooQuiet('Recording was too quiet or silent.')
             return round(duration, 2)
         finally:
             if proc.poll() is None:

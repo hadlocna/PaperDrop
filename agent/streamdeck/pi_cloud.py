@@ -1,7 +1,8 @@
-"""Reuse the existing authenticated recorded-voice backend; hold images for review.
+"""Reuse the existing authenticated recorded-voice backend.
 
 No OpenAI credential or API client is used on the device. The backend's ordinary
-new_message is staged locally, never interpreted as permission to print.
+new_message images are printed through the same guarded Pi printer path used by
+the button UI.
 """
 import base64
 import os
@@ -18,10 +19,19 @@ from urllib.parse import urlencode
 from PIL import Image
 from websockets.sync.client import connect
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
+
+
+class CloudRequestError(RuntimeError):
+    @property
+    def public_message(self):
+        return str(self)
+
 
 class Cloud:
-    def __init__(self, root):
+    def __init__(self, root, printer=None):
         self.root = Path(root)
+        self.printer = printer
         self.lock = threading.RLock()
         self.speaker_lock = threading.Lock()
         self.connected = threading.Event()
@@ -101,6 +111,8 @@ class Cloud:
                                 path.unlink(missing_ok=True)
                         elif kind == 'speaker':
                             threading.Thread(target=self.speaker_command, args=(event,), daemon=True).start()
+                        elif kind == 'fetch_logs':
+                            self.fetch_logs(event)
                         elif kind == 'update':
                             subprocess.run(['systemctl', 'start', '--no-block', 'paperdrop-update.service'], check=False)
                             self.send({'type': 'update_status', 'request_id': event.get('request_id'), 'status': 'checking_stable'})
@@ -125,13 +137,69 @@ class Cloud:
         from speaker_control import run_speaker
         try:
             action = event.get('action')
-            if action not in ('status', 'scan', 'connect', 'disconnect', 'test', 'volume'):
+            if action not in ('status', 'scan', 'connect', 'disconnect', 'test', 'microphone_test', 'play', 'volume'):
                 raise ValueError('Unsupported action in button mode')
             with self.speaker_lock:
-                result = asyncio.run(run_speaker(action, event.get('address'), volume=event.get('volume')))
+                result = asyncio.run(run_speaker(action, event.get('address'), event.get('audio'), event.get('volume')))
             self.send({**result, 'type': 'speaker_result', 'request_id': event.get('request_id')})
         except Exception:
             self.send({'ok': False, 'type': 'speaker_result', 'request_id': event.get('request_id'), 'error': 'Speaker command failed. Please try again.'})
+
+    def fetch_logs(self, event):
+        request_id = event.get('request_id')
+        log_type = event.get('log_type', 'agent')
+        try:
+            lines = max(1, min(int(event.get('lines', 100)), 2000))
+        except (TypeError, ValueError):
+            lines = 100
+        commands = {
+            'agent': ['journalctl', '-u', 'paperdrop-runtime.service', '-n', str(lines), '--no-pager'],
+            'system': ['journalctl', '-n', str(lines), '--no-pager'],
+            'wifi': ['journalctl', '-u', 'NetworkManager.service', '-u', 'wpa_supplicant.service',
+                     '-u', 'paperdrop-setup.service', '-n', str(lines), '--no-pager'],
+            'provisioning': ['journalctl', '-u', 'paperdrop-enroll.service', '-u', 'paperdrop-setup.service',
+                             '-n', str(lines), '--no-pager'],
+        }
+        command = commands.get(log_type, commands['agent'])
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=15)
+            content = result.stdout
+            if result.stderr:
+                content += '\n[stderr]\n' + result.stderr
+            self.send({'type': 'log_bundle', 'request_id': request_id, 'log_type': log_type,
+                       'content': content[-60000:]})
+        except Exception as exc:
+            self.send({'type': 'error', 'request_id': request_id,
+                       'message': f'Failed to fetch logs: {exc}'})
+
+    def ordinary_message(self, event):
+        message = event.get('message', {})
+        ident = message.get('id') or uuid.uuid4().hex
+        if not self.printer or message.get('contentType') != 'image':
+            inbox = self.root / 'pending-cloud-mail'
+            inbox.mkdir(exist_ok=True)
+            (inbox / (uuid.uuid4().hex + '.json')).write_text(json.dumps(event))
+            return
+        target = self.root / 'app-messages' / (ident + '.png')
+        target.parent.mkdir(exist_ok=True)
+        try:
+            content = message.get('content')
+            if not isinstance(content, str):
+                raise ValueError('image content is missing')
+            if ',' in content:
+                content = content.split(',', 1)[1]
+            raw = base64.b64decode(content, validate=True)
+            with Image.open(io.BytesIO(raw)) as img:
+                img.convert('RGB').save(target)
+            target.with_suffix('.cloud.json').write_text(json.dumps({'message_id': ident}))
+            self.status(ident, 'printing')
+            result = self.printer.print_image(target, ident)
+            if getattr(self.printer, 'cloud', None) is not self and isinstance(result, dict) and result.get('status') == 'printed':
+                self.status(ident, 'printed')
+            logging.info('cloud_message_printed id=%s', ident)
+        except Exception as exc:
+            logging.warning('cloud_message_print_failed id=%s type=%s', ident, type(exc).__name__)
+            self.status(ident, 'failed', str(exc))
 
     def event(self, event):
         if event.get('type') == 'printer_ready_ack':
@@ -161,11 +229,10 @@ class Cloud:
         with self.lock:
             req = self.request
             if not req or event.get('session_id') != req['session']:
-                if event.get('type') == 'new_message':
-                    # Preserve unrelated incoming mail without printing it during the demo.
-                    inbox = self.root / 'pending-cloud-mail'
-                    inbox.mkdir(exist_ok=True)
-                    (inbox / (uuid.uuid4().hex + '.json')).write_text(json.dumps(event))
+                # Delayed drawing results still require the child's review. Only
+                # ordinary app messages, which have no voice session, auto-print.
+                if event.get('type') == 'new_message' and not event.get('session_id'):
+                    threading.Thread(target=self.ordinary_message, args=(event,), daemon=True).start()
                 return
             kind = event.get('type')
             if kind == 'voice_ready':
@@ -189,7 +256,7 @@ class Cloud:
 
     def draw(self, audio, target, progress):
         if not self.connected.wait(8):
-            raise RuntimeError('PaperDrop backend is unavailable')
+            raise CloudRequestError('PaperDrop backend is unavailable')
         req = dict(session=uuid.uuid4().hex, ready=threading.Event(), done=threading.Event(), progress=progress)
         with self.lock:
             if self.request:
@@ -200,14 +267,14 @@ class Cloud:
             progress('Listening to your idea…')
             self.send({'type': 'voice_start', 'mode': 'recorded', 'quality': 'low', 'session_id': req['session']})
             if not req['ready'].wait(20):
-                raise RuntimeError('Backend did not become ready')
+                raise CloudRequestError('Backend did not become ready')
             if req.get('error'):
-                raise RuntimeError(req['error'])
+                raise CloudRequestError(req['error'])
             self.send({'type': 'voice_request', 'session_id': req['session'], 'audio': base64.b64encode(Path(audio).read_bytes()).decode()})
             if not req['done'].wait(155):
-                raise RuntimeError('Drawing timed out')
+                raise CloudRequestError('Drawing timed out')
             if req.get('error'):
-                raise RuntimeError(req['error'])
+                raise CloudRequestError(req['error'])
             with Image.open(io.BytesIO(base64.b64decode(req['content'], validate=True))) as img:
                 from print_layout import fit_width
                 fit_width(img, trim_white=True).save(target)

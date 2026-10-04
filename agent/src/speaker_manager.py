@@ -36,6 +36,84 @@ def is_audio_device(props):
             or (int(props.get('Class', 0)) & 0x1f00) == 0x0400)
 
 
+def capture_pcm():
+    configured = os.environ.get('PAPERDROP_CAPTURE_PCM')
+    if configured:
+        return configured
+    try:
+        cards = Path('/proc/asound/cards').read_text(errors='ignore')
+    except OSError:
+        cards = ''
+    for card in ('Microphone', 'Device'):
+        if f'[{card}' in cards:
+            return f'plughw:CARD={card},DEV=0'
+    return 'default'
+
+
+def normalize_for_a2dp(source, target):
+    with wave.open(str(source), 'rb') as wav:
+        channels, width, rate = wav.getnchannels(), wav.getsampwidth(), wav.getframerate()
+        data = wav.readframes(wav.getnframes())
+    if width != 2:
+        raise RuntimeError('Unsupported microphone audio sample width.')
+    if channels not in (1, 2):
+        raise RuntimeError('Unsupported microphone audio channels.')
+    samples = []
+    step = 2 * channels
+    for index in range(0, len(data), step):
+        left = struct.unpack_from('<h', data, index)[0]
+        if channels == 2 and index + 3 < len(data):
+            right = struct.unpack_from('<h', data, index + 2)[0]
+            samples.append((left + right) // 2)
+        else:
+            samples.append(left)
+    if rate != 44100 and samples:
+        output_length = max(1, round(len(samples) * 44100 / rate))
+        resampled = []
+        for out_index in range(output_length):
+            position = out_index * (len(samples) - 1) / max(1, output_length - 1)
+            low = int(position)
+            high = min(low + 1, len(samples) - 1)
+            fraction = position - low
+            resampled.append(round(samples[low] * (1 - fraction) + samples[high] * fraction))
+        samples = resampled
+    data = bytearray()
+    for sample in samples:
+        packed = struct.pack('<h', max(-32768, min(32767, int(sample))))
+        data.extend(packed)
+        data.extend(packed)
+    # Some A2DP speakers need a small lead-in before they start rendering audio.
+    lead_in = b'\0' * int(44100 * 0.4 * 4)
+    tail = b'\0' * int(44100 * 0.15 * 4)
+    with wave.open(str(target), 'wb') as out:
+        out.setparams((2, 2, 44100, 0, 'NONE', 'not compressed'))
+        out.writeframes(lead_in + data + tail)
+
+
+def audio_signal_stats(source):
+    with wave.open(str(source), 'rb') as wav:
+        channels, width = wav.getnchannels(), wav.getsampwidth()
+        data = wav.readframes(wav.getnframes())
+    if width != 2:
+        raise RuntimeError('Unsupported microphone audio sample width.')
+    if channels not in (1, 2):
+        raise RuntimeError('Unsupported microphone audio channels.')
+    samples = []
+    step = 2 * channels
+    for index in range(0, len(data), step):
+        left = struct.unpack_from('<h', data, index)[0]
+        if channels == 2 and index + 3 < len(data):
+            right = struct.unpack_from('<h', data, index + 2)[0]
+            samples.append((left + right) // 2)
+        else:
+            samples.append(left)
+    if not samples:
+        return {'rms': 0, 'peak': 0}
+    rms = math.sqrt(sum(sample * sample for sample in samples) / len(samples))
+    peak = max(abs(sample) for sample in samples)
+    return {'rms': rms, 'peak': peak}
+
+
 def load_settings():
     try:
         value = json.loads(SETTINGS.read_text())
@@ -50,6 +128,7 @@ def save_settings(value):
     try:
         with os.fdopen(fd, 'w') as handle:
             json.dump(value, handle)
+        os.chmod(name, 0o600)
         os.replace(name, SETTINGS)
     finally:
         if os.path.exists(name):
@@ -84,6 +163,22 @@ class Speakers:
 
     def properties(self, obj):
         return self.dbus.Interface(obj, PROPS).GetAll(DEVICE)
+
+    def connect_device(self, obj, address=None, timeout=15):
+        if self.properties(obj).get('Connected'):
+            return
+        interface = self.dbus.Interface(obj, DEVICE)
+        try:
+            interface.Connect(timeout=timeout)
+        except self.dbus.exceptions.DBusException as error:
+            if error.get_dbus_name() == 'org.bluez.Error.AlreadyConnected':
+                return
+            if address:
+                result = subprocess.run(['bluetoothctl', '--timeout', str(timeout), 'connect', address],
+                                        capture_output=True, text=True, timeout=timeout + 5)
+                if result.returncode == 0:
+                    return
+            raise
 
     def volume_pcm(self):
         address = validate_address(load_settings().get('address'))
@@ -181,8 +276,7 @@ class Speakers:
             if not props.get('Bonded', props.get('Paired')):
                 raise RuntimeError('Pairing failed. Put the speaker in pairing mode, disconnect it from other devices, and try again.')
         self.dbus.Interface(obj, PROPS).Set(DEVICE, 'Trusted', self.dbus.Boolean(True))
-        if not self.properties(obj).get('Connected'):
-            self.dbus.Interface(obj, DEVICE).ConnectProfile(AUDIO_SINK, timeout=15)
+        self.connect_device(obj, address, timeout=15)
         self.prepare_playback(obj)
         if not self.properties(obj).get('Connected'):
             raise RuntimeError('Speaker did not connect. Check its power and pairing mode.')
@@ -211,27 +305,13 @@ class Speakers:
         saved = load_settings()
         if saved.get('autoConnect') and saved.get('address'):
             obj = self.target(saved['address'])
-            if not self.properties(obj).get('Connected'):
-                self.dbus.Interface(obj, DEVICE).ConnectProfile(AUDIO_SINK, timeout=12)
-                self.restore_volume()
+            self.connect_device(obj, saved['address'], timeout=12)
+            self.restore_volume()
         return {'ok': True}
 
     def prepare_playback(self, obj):
-        # Hands-free mode can mute music on combination speakerphones.
-        interface = self.dbus.Interface(obj, DEVICE)
-        uuids = {str(u).lower() for u in self.properties(obj).get('UUIDs', [])}
-        for profile in (HANDS_FREE, HEADSET):
-            if profile in uuids:
-                try:
-                    interface.DisconnectProfile(profile, timeout=5)
-                except self.dbus.exceptions.DBusException as error:
-                    if error.get_dbus_name() not in ('org.bluez.Error.NotConnected', 'org.bluez.Error.DoesNotExist'):
-                        raise
-        try:
-            interface.ConnectProfile(AUDIO_SINK, timeout=12)
-        except self.dbus.exceptions.DBusException as error:
-            if error.get_dbus_name() != 'org.bluez.Error.AlreadyConnected':
-                raise
+        props = self.properties(obj)
+        self.connect_device(obj, str(props.get('Address', '')), timeout=12)
 
     def test(self):
         address = validate_address(load_settings().get('address'))
@@ -269,11 +349,7 @@ class Speakers:
         profile = HANDS_FREE if HANDS_FREE in uuids else HEADSET if HEADSET in uuids else None
         if not profile:
             raise RuntimeError('This speaker does not expose a Bluetooth microphone.')
-        try:
-            self.dbus.Interface(obj, DEVICE).ConnectProfile(profile, timeout=12)
-        except self.dbus.exceptions.DBusException as error:
-            if error.get_dbus_name() != 'org.bluez.Error.AlreadyConnected':
-                raise
+        self.connect_device(obj, address, timeout=12)
         # BlueZ Connected precedes HFP codec negotiation. Wait for an actual PCM rate.
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
@@ -294,24 +370,34 @@ class Speakers:
         obj = self.target(address)
         uuids = [str(u).lower() for u in self.properties(obj).get('UUIDs', [])]
         profile = HANDS_FREE if HANDS_FREE in uuids else HEADSET if HEADSET in uuids else None
-        if not profile:
-            raise RuntimeError('This speaker does not expose a Bluetooth microphone. A microphone-capable headset or speaker is needed.')
-        info = self.microphone_ready()
+        bluetooth_info = None
+        if profile:
+            try:
+                bluetooth_info = self.microphone_ready()
+            except RuntimeError:
+                bluetooth_info = None
         try:
             # Explicit user action only: five seconds, local playback, then delete.
             with tempfile.TemporaryDirectory(prefix='paperdrop-mic-') as directory:
-                filename = str(Path(directory) / 'microphone.wav')
-                pcm = f'bluealsa:DEV={address},PROFILE=sco'
-                result = subprocess.run(['arecord', '-q', '-D', pcm, '-f', 'S16_LE', '-r', str(info['rate']), '-c', '1',
-                                         '-d', '5', filename], capture_output=True, text=True, timeout=12)
+                filename = Path(directory) / 'microphone.wav'
+                playback = Path(directory) / 'microphone-playback.wav'
+                pcm = bluetooth_info['pcm'] if bluetooth_info else capture_pcm()
+                rate = bluetooth_info['rate'] if bluetooth_info else 24000
+                result = subprocess.run(['arecord', '-q', '-D', pcm, '-f', 'S16_LE', '-r', str(rate), '-c', '1',
+                                         '-d', '5', str(filename)], capture_output=True, text=True, timeout=12)
                 if result.returncode:
-                    raise RuntimeError('The Bluetooth microphone could not record. Reconnect the speaker and try again.')
-                result = subprocess.run(['aplay', '-q', '-D', pcm, filename], capture_output=True, text=True, timeout=12)
+                    raise RuntimeError('The PaperDrop microphone could not record. Check the USB microphone and try again.')
+                stats = audio_signal_stats(filename)
+                if stats['peak'] < 120 or stats['rms'] < 20:
+                    raise RuntimeError('The microphone recorded only silence or a very low signal. Speak close to the PaperDrop microphone and try again.')
+                normalize_for_a2dp(filename, playback)
+                result = subprocess.run(['aplay', '-q', '-D', f'bluealsa:DEV={address},PROFILE=a2dp', str(playback)], capture_output=True, text=True, timeout=12)
                 if result.returncode:
                     raise RuntimeError('Microphone recorded, but playback failed. Reconnect the speaker and try again.')
         finally:
             self.prepare_playback(obj)
-        return {**self.status(), 'message': 'Microphone test finished. The recording was played locally and deleted.'}
+        source = 'Bluetooth microphone' if bluetooth_info else 'PaperDrop USB microphone'
+        return {**self.status(), 'message': f'Microphone test finished using the {source}. The recording was played locally and deleted.'}
 
     def play(self):
         address = validate_address(load_settings().get('address'))
