@@ -1,6 +1,7 @@
 import { IP_DIAGNOSTIC_DEVICE, publicNetworkCaptureForAdmin, publicNetworkForAdmin } from '../lib/publicNetwork';
 import express from 'express';
 import imageUpload from './imageUpload';
+import { firmwareUploadRouter } from './firmwareUpload';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -65,6 +66,7 @@ const checkAdminAuth = (req: express.Request, res: express.Response, next: expre
 
 router.use(checkAdminAuth);
 router.use('/images', imageUpload);
+router.use('/firmware-upload', firmwareUploadRouter(uploadDir, prisma));
 
 // List all devices
 router.get('/devices', async (req, res) => {
