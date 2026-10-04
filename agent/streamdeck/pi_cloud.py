@@ -229,7 +229,9 @@ class Cloud:
         with self.lock:
             req = self.request
             if not req or event.get('session_id') != req['session']:
-                if event.get('type') == 'new_message':
+                # Delayed drawing results still require the child's review. Only
+                # ordinary app messages, which have no voice session, auto-print.
+                if event.get('type') == 'new_message' and not event.get('session_id'):
                     threading.Thread(target=self.ordinary_message, args=(event,), daemon=True).start()
                 return
             kind = event.get('type')

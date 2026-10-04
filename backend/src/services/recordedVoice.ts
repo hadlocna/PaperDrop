@@ -4,7 +4,7 @@ import OpenAI, { toFile } from 'openai';
 import { prisma } from '../lib/prisma';
 import { deviceConnections } from '../websocket/session';
 
-type Session = { id: string; ownerId?: string; busy: boolean; quality: 'low' | 'medium'; messageId?: string; timer: NodeJS.Timeout; abort: AbortController };
+type Session = { id: string; ownerId?: string; buttonRecorded: boolean; busy: boolean; quality: 'low' | 'medium'; messageId?: string; timer: NodeJS.Timeout; abort: AbortController };
 const sessions = new Map<string, Session>();
 const starts = new Map<string, number[]>();
 function send(deviceId: string, s: Session, event: any) {
@@ -28,7 +28,7 @@ export async function handleRecordedVoice(deviceId: string, event: any) {
     if (event.type === 'voice_start') {
         if (sessions.has(deviceId)) return;
         const buttonRecorded = event.mode === 'recorded';
-        const s: Session = { id: event.session_id, busy: false, quality: event.quality === 'low' ? 'low' : 'medium', abort: new AbortController(), timer: setTimeout(() => {
+        const s: Session = { id: event.session_id, buttonRecorded, busy: false, quality: event.quality === 'low' ? 'low' : 'medium', abort: new AbortController(), timer: setTimeout(() => {
             send(deviceId, s, { type: 'voice_error', error: 'Drawing request timed out. Please try again.' });
             closeRecordedVoice(deviceId);
         }, 180000) };
@@ -72,6 +72,11 @@ export async function handleRecordedVoice(deviceId: string, event: any) {
         if (!content) throw Error('Image generation failed');
         const current=await prisma.device.findUnique({where:{id:deviceId}});
         if (sessions.get(deviceId)!==s) return;
+        if (current?.ownerId !== s.ownerId || (!s.buttonRecorded && JSON.parse(current?.config || '{}').voiceEnabled !== true)) {
+            send(deviceId, s, {type:'voice_error', error:'Drawing request cancelled. Please try again.'});
+            closeRecordedVoice(deviceId);
+            return;
+        }
         const message=await prisma.message.create({data:{deviceId,senderId:s.ownerId,contentType:'image',content,status:'sent',sentAt:new Date()}});
         if (sessions.get(deviceId)!==s) {
             await prisma.message.update({where:{id:message.id},data:{status:'failed',errorMessage:'Voice request cancelled before delivery'}});

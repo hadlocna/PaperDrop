@@ -41,6 +41,22 @@ test('button recorded drawing does not require wake phrase listening',async()=>{
  assert.ok(events.some(e=>e.type==='new_message'));
  closeRecordedVoice('button-recorded');
 });
+test('wake listening disabled during generation prevents delivery',async()=>{
+ const {events,request}=fixture('disabled-during-generation');
+ await handleRecordedVoice('disabled-during-generation',{type:'voice_start',session_id:'disabled-during-generation'});
+ prisma.device.findUnique=async()=>({ownerId:'owner',config:'{"voiceEnabled":false}'});
+ await handleRecordedVoice('disabled-during-generation',request);
+ assert.ok(!events.some(e=>e.type==='new_message'));
+ assert.ok(events.some(e=>e.type==='voice_end'));
+});
+test('ownership changed during button drawing prevents delivery',async()=>{
+ const {events,request}=fixture('owner-changed');
+ await handleRecordedVoice('owner-changed',{type:'voice_start',session_id:'owner-changed',mode:'recorded'});
+ prisma.device.findUnique=async()=>({ownerId:'another-owner',config:'{"voiceEnabled":false}'});
+ await handleRecordedVoice('owner-changed',request);
+ assert.ok(!events.some(e=>e.type==='new_message'));
+ assert.ok(events.some(e=>e.type==='voice_end'));
+});
 test('cancelled transcription cannot later create or print an image',async()=>{
  const {events,request}=fixture('cancel');await handleRecordedVoice('cancel',{type:'voice_start',session_id:'cancel'});pause=true;
  const job=handleRecordedVoice('cancel',request);await new Promise(r=>setImmediate(r));closeRecordedVoice('cancel');release();await job;

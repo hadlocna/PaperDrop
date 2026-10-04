@@ -98,6 +98,22 @@ class PiTests(unittest.TestCase):
         cloud.event({'type':'new_message','session_id':'current','message':{'id':'wanted','contentType':'image','content':'image'}})
         self.assertTrue(cloud.request['done'].is_set());self.assertEqual(cloud.request['content'],'image')
 
+    def test_delayed_voice_picture_never_becomes_an_automatic_app_print(self):
+        cloud=self.cloud();cloud.ordinary_message=MagicMock()
+        for request in (cloud.request, None):
+            cloud.request=request
+            cloud.event({'type':'new_message','session_id':'old',
+                         'message':{'id':'old-picture','contentType':'image','content':'image'}})
+        cloud.ordinary_message.assert_not_called()
+
+    def test_ordinary_app_message_routes_to_print_even_while_drawing(self):
+        cloud=self.cloud();received=threading.Event()
+        cloud.ordinary_message=MagicMock(side_effect=lambda event: received.set())
+        event={'type':'new_message','message':{'id':'app-picture','contentType':'image','content':'image'}}
+        cloud.event(event)
+        self.assertTrue(received.wait(1))
+        cloud.ordinary_message.assert_called_once_with(event)
+
     def test_cloud_prints_ordinary_app_image_message(self):
         from io import BytesIO
         from PIL import Image
