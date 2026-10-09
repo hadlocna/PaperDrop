@@ -4,6 +4,7 @@ import { broadcastToDevice, requestFromDevice, requestLogsFromDevice } from '../
 import crypto from 'crypto';
 import { AuthRequest } from '../middleware/authMiddleware';
 import { fetchRelayDeviceStatuses, relayIsOnline, relayLastActive, relayMessageToDevice } from '../lib/deviceRelay';
+import { latestDeviceActivity } from '../lib/deviceActivity';
 
 export const claimDevice = async (req: AuthRequest, res: Response) => {
     try {
@@ -117,13 +118,13 @@ export const getDevices = async (req: AuthRequest, res: Response) => {
         const now = new Date().getTime();
         const devicesWithStatus = devices.map(d => {
             const relayDevice = relayStatuses.get(d.deviceCode);
-            const lastActive = relayLastActive(relayDevice) || d.lastHeartbeat || d.lastSeenAt;
+            const lastActive = latestDeviceActivity(relayLastActive(relayDevice), d.lastHeartbeat, d.lastSeenAt);
             const isOnline = lastActive && (now - new Date(lastActive).getTime() < 60000);
             return {
                 ...d,
                 status: isOnline || relayIsOnline(relayDevice) ? 'online' : 'offline',
-                lastSeenAt: relayDevice?.lastSeen ? new Date(relayDevice.lastSeen) : d.lastSeenAt,
-                lastHeartbeat: relayDevice?.lastHeartbeat ? new Date(relayDevice.lastHeartbeat) : d.lastHeartbeat,
+                lastSeenAt: latestDeviceActivity(relayDevice?.lastSeen, d.lastSeenAt),
+                lastHeartbeat: latestDeviceActivity(relayDevice?.lastHeartbeat, d.lastHeartbeat),
                 wifiSignal: relayDevice?.wifiSignal ?? d.wifiSignal,
                 firmwareVersion: relayDevice?.firmwareVersion ?? d.firmwareVersion
             };
@@ -175,13 +176,13 @@ export const getDevice = async (req: AuthRequest, res: Response) => {
         const relayDevice = relayStatuses.get(device.deviceCode);
 
         // Calculate real-time status
-        const lastActive = relayLastActive(relayDevice) || device.lastHeartbeat || device.lastSeenAt;
+        const lastActive = latestDeviceActivity(relayLastActive(relayDevice), device.lastHeartbeat, device.lastSeenAt);
         const isOnline = lastActive && (new Date().getTime() - new Date(lastActive).getTime() < 60000);
         const deviceWithStatus = {
             ...device,
             status: isOnline || relayIsOnline(relayDevice) ? 'online' : 'offline',
-            lastSeenAt: relayDevice?.lastSeen ? new Date(relayDevice.lastSeen) : device.lastSeenAt,
-            lastHeartbeat: relayDevice?.lastHeartbeat ? new Date(relayDevice.lastHeartbeat) : device.lastHeartbeat,
+            lastSeenAt: latestDeviceActivity(relayDevice?.lastSeen, device.lastSeenAt),
+            lastHeartbeat: latestDeviceActivity(relayDevice?.lastHeartbeat, device.lastHeartbeat),
             wifiSignal: relayDevice?.wifiSignal ?? device.wifiSignal,
             firmwareVersion: relayDevice?.firmwareVersion ?? device.firmwareVersion
         };

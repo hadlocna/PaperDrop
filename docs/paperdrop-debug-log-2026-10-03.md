@@ -1,6 +1,47 @@
 # PaperDrop Troubleshooting Log - 2026-10-03
 
-## Summary
+## Latest Validated Results - 2026-10-09
+
+- On October 8, the live software probe passed the production Stream Deck button/controller path: synthetic recording, real 15-second timer, backend transcription, moderation/image generation, review, preview/return, and simulated print submission. The backend transcribed the rocket prompt correctly; generation returned in about 14 seconds.
+- A separate forced WebSocket disconnect test reauthenticated automatically. Normal runtime was restored afterward with `cloud_connected: true` and `device_connected: true`. These results validate the current release, not the original image's historical outage cause.
+- Physical printing was intentionally skipped. The synthetic server message was marked failed with an explicit software-test explanation rather than falsely acknowledging a real print. No other household received a test message.
+- Found and fixed locally a backend false-offline defect: stale relay activity could override a fresh local heartbeat. List/detail endpoints and displayed timestamps now choose the freshest valid activity. This is a confirmed code defect, but server deployment logs are needed to determine whether it caused the reported all-device outage.
+- Backend build and all 65 backend tests passed, including new list/detail regression tests. Two firmware-upload tests initially failed under sandbox filesystem restrictions; all tests passed outside those restrictions. Previously, 41 Pi/controller tests passed on the device.
+- Reusable probe: `scripts/check_streamdeck_workflow.py`. It substitutes prerecorded input and simulated printing, exercises the deployed backend, and restores the regular runtime. `--connection-only` tests recovery without image generation. Private fixtures/recovery files and screenshots are excluded from Git.
+- On October 9, SSH did not respond at the previous Wi-Fi or direct Ethernet addresses. Remote main remained unchanged at `e0a8ad9`. Hold deployment-triggering pushes until management access is restored; the previous tests do not prove present connectivity.
+- Still open: intermittent physical/network reachability, initial USB hot-plug enumeration failure, actual hardware printing/drawing acceptance, and server-side confirmation of the all-offline incident. Bluetooth and microphone playback are deferred at the user's request. Automatic firmware updates were disabled on the Pi.
+
+## Clean OS Reinstallation Check - 2026-10-08
+
+### Installation Progress
+
+- Console logs showed repeated Ethernet DHCP activation failures on the direct laptop cable and Wi-Fi association/credential retries. `throttled=0x0` showed no recorded undervoltage/throttling flags.
+- A separate `laptop-direct` NetworkManager profile with IPv4 disabled and IPv6 link-local enabled provided SSH access; its IPv6 address changed after activation, so rediscovery was necessary.
+- SSH public-key access is confirmed. Pi runs 64-bit Debian 13 / Python 3.13; privileged installation and outbound HTTPS work.
+- Installed checksum-verified published managed release `2.1.3-20261004`, its Python dependencies, system dependencies, managed service units, and BlueALSA configuration. Python imports, compilation, dependency consistency, and systemd unit checks passed.
+- Confirmed release includes microphone signal validation, Bluetooth playback padding, and Stream Deck recording diagnostics. System-Python speaker status reports Bluetooth powered and audio ready. The helper intentionally uses system Python for the OS-provided D-Bus module.
+- Added the SSH user to the audio group; new login sessions receive access.
+- Recovery enrollment returned HTTP 403. Backend defines this as invalid/expired recovery; a fresh owner-issued recovery file is needed. Runtime and update timer remain inactive pending identity restoration.
+- Printer, USB microphone, and Stream Deck are currently disconnected, so physical function checks remain pending.
+- Updated recovery file redeemed successfully; restored Ale's existing device `PD-780420ea` without creating a new account/device.
+- Enabled enrollment/runtime services and automatic-update timer. Runtime authenticated to the backend, exchanged device hello/heartbeat, and wrote a healthy marker for release `2.1.3-20261004`.
+- Current mode is ordinary printer runtime because the Stream Deck is disconnected. Printer, microphone, speaker pairing, and Stream Deck drawing acceptance tests remain pending reconnection.
+- User reports all devices shown offline after a friend's deployment. Direct Wi-Fi SSH still works; Ale's runtime remains on `2.1.3-20261004`, authenticated and sending 30-second heartbeats. This does not establish that the server persists those heartbeats or that the browser uses the same backend.
+- Temporarily stopped `paperdrop-update.timer` before further deployment checks; no update service was active. Timer remains enabled for boot, so this pause ends on reboot unless changed. No code or firmware deployment performed.
+- Remote main still matches `e0a8ad9`. Investigate deployed frontend API target, backend heartbeat/database errors, and relay configuration before attributing the all-offline display to Pi firmware.
+- After peripherals were reattached, Linux initially still detected only the keyboard receiver. One controlled reboot recovered enumeration of Epson TM-T20III, KTMicro microphone, and Stream Deck Mini. No undervoltage/throttling flags were recorded; the reason hot-plug enumeration failed is not yet established.
+- Disabled automatic-update timer across reboots during investigation. PaperDrop started after the network-online wait, selected Stream Deck mode, opened all six keys, detected the printer, and reported `cloud_connected: true` and `device_connected: true` in its local companion state.
+- Direct two-second USB microphone capture succeeded. Companion key rendering returned a valid 240x240 PNG. Ran 41 isolated Pi/controller tests against installed release code: all passed, with test-resource warnings about unclosed SQLite connections.
+- Bluetooth pairing/playback, audible microphone-test playback, real paper output, and complete recorded drawing generation remain unvalidated on this clean installation. Startup logged `speaker_cue_unavailable` because no speaker is selected yet.
+- Reboot cleared the previous sudo authorization cache: further privileged operations now need an interactive password. SSH and unprivileged diagnostics continue working.
+
+- User installed a clean Raspberry Pi OS image with password SSH enabled.
+- Refreshed remote Git references: local `main` matches `origin/main` at `e0a8ad9`; troubleshooting commit `73bffeb` is an ancestor of remote main.
+- Previous Pi address `192.168.3.247` timed out on SSH. A TCP port-22 sweep of `192.168.3.1` through `.254` found no accepting SSH endpoint. The default `raspberrypi.local` hostname did not resolve.
+- At the initial discovery check, installation was pending access. The later installation and successful enrollment are recorded above.
+- Use the managed runtime dependencies and units under `agent/factory` for installation; the root-level `install_paperdrop.sh` sets up an older printer-only service.
+
+## Original Summary
 
 This is a concise, shareable log of the troubleshooting performed on Ale's PaperDrop Raspberry Pi. It intentionally omits private keys, passwords, device secrets, enrollment-token contents, and full raw logs.
 

@@ -1,4 +1,5 @@
 import { CaptureStatus } from './publicNetwork';
+import { latestDeviceActivity } from './deviceActivity';
 type RelayDevice = {
     code: string;
     status?: string;
@@ -87,11 +88,7 @@ export const fetchRelayDeviceStatuses = async (): Promise<Map<string, RelayDevic
 };
 
 export const relayLastActive = (device?: RelayDevice): Date | null => {
-    const timestamp = device?.lastHeartbeat || device?.lastSeen;
-    if (!timestamp) return null;
-
-    const date = new Date(timestamp);
-    return Number.isNaN(date.getTime()) ? null : date;
+    return latestDeviceActivity(device?.lastHeartbeat, device?.lastSeen);
 };
 
 export const relayIsOnline = (device?: RelayDevice): boolean => {

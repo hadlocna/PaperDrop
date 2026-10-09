@@ -34,6 +34,7 @@ releases/
 
 # Per-device diagnostics contain private keys and personalized images
 /.paperdrop-debug-ssh/
+/.codex-remote-attachments/
 
 # Generated release images, voice caches and private device state
 /artifacts/
