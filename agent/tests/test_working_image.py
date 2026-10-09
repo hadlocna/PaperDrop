@@ -83,7 +83,7 @@ class WorkingImageTests(unittest.TestCase):
             source.write_text(key)
             for name in ('etc/ssh/sshd_config.d', 'etc/sudoers.d', 'home/paperdrop'):
                 (root / name).mkdir(parents=True)
-            real_path = Path
+            real_path = type(root)
             def mapped(value):
                 return real_path(root / str(value).lstrip('/'))
             user = Mock(pw_dir='/home/paperdrop', pw_uid=1000, pw_gid=1000)
