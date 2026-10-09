@@ -1,5 +1,10 @@
 # PaperDrop automatic-update image
 
+For the newer sanitized, manually accepted Raspberry Pi 5 installation, see
+[working-pi-image.md](working-pi-image.md). That snapshot intentionally leaves
+automatic firmware updates disabled until a controlled release. The historical
+factory builder below still describes its original fixed baseline.
+
 This image targets Raspberry Pi 4 and 5 (64-bit Raspberry Pi OS Lite). It contains
 both the ordinary printer agent and the USB Stream Deck interface, all 420 spoken
 prompts, Bluetooth audio, and Python dependencies. A USB Stream Deck present at

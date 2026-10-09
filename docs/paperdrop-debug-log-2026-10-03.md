@@ -179,6 +179,9 @@ This is a concise, shareable log of the troubleshooting performed on Ale's Paper
 
 ## Focused Validation - 2026-10-09
 
+- User acceptance: speaker discovery/pairing works after the Refresh fix. All functions the user exercised passed. Two local incoming-mail fixtures (voice and picture for Elise) were received successfully; the user confirmed listening/preview/printing checks passed. These fixtures exercised local receiving, not cross-household server delivery.
+- Wrap-up: installed Python runtime sources match `main` at `e78ea5b` after newline normalization. A sanitized working-system image is being built separately from the running SD card. Enrollment, identity, Wi-Fi profiles, Bluetooth bonds, account/SSH keys, logs and test mail are not distributed. New-card boot acceptance remains separate from source-device acceptance.
+
 - Bluetooth discovery follow-up: confirmed web `Refresh` sent `status`, which reads cached BlueZ devices and never starts discovery. Changed it to `scan`; the empty-speaker warning now requires a completed successful scan. Regression tests cover both behaviors. This frontend fix requires web deployment; no Pi firmware change is needed for it.
 - Live adapter was powered/pairable, and Bluetooth/BlueALSA services were active. Both the existing 10-second helper scan and a separate 15-second classic Bluetooth scan found no audio speaker during the check. Physical pairing-mode discovery remains unconfirmed; this does not prove a second Pi defect or that the UI fix alone resolves all discovery failures.
 

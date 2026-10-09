@@ -1,0 +1,11 @@
+[Unit]
+Description=Import an optional owner-provided SSH maintenance public key
+After=local-fs.target
+Before=paperdrop-enroll.service
+ConditionPathExists=/boot/firmware/paperdrop-authorized-keys
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/paperdrop/import_debug_key.py
+UMask=0077
+[Install]
+WantedBy=multi-user.target
