@@ -2,6 +2,13 @@
 
 PaperDrop is a plug-and-play thermal printer that allows family members to send physical printed messages to loved ones at home.
 
+## Raspberry Pi 5 Image Preview
+
+The [2026-10-09 working-system image](https://github.com/hadlocna/PaperDrop/releases/tag/working-pi-2026-10-09)
+contains the manually tested printer + Stream Deck setup, without device credentials.
+See the [flashing, recovery JSON, and optional SSH guide](docs/working-pi-image.md).
+This is a preview pending a newly flashed-card boot test, not a fleet-wide stable update.
+
 ## 🌟 Features
 
 - **Instant Messaging**: Send text and images from your phone to a thermal printer

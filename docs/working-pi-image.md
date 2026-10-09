@@ -1,5 +1,10 @@
 # Validated-device image snapshot
 
+Download the compressed image, checksum, and build metadata from the
+[working Pi image preview release](https://github.com/hadlocna/PaperDrop/releases/tag/working-pi-2026-10-09).
+Use this release download rather than assuming the web app's older image-download
+link already points at this snapshot. Recovery JSON still comes from your own device settings.
+
 The 2026-10-09 working-device image uses the tested Raspberry Pi 5 installation:
 64-bit Raspberry Pi OS / Debian 13 (Trixie), managed runtime
 `2.1.3-20261004`, USB printer + Stream Deck auto mode, system-Python D-Bus,
