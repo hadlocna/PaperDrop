@@ -2,6 +2,15 @@
 
 ## Latest Validated Results - 2026-10-09
 
+### Network Recovery
+
+- Restored direct Ethernet SSH by activating the `laptop-direct` profile; confirmed its autoconnect setting is now enabled.
+- Wi-Fi was disconnected while PaperDrop remained running. Logs showed association rejections/timeouts and subsequent DNS failures in the Cloud client. Wi-Fi power saving was already disabled, so that change alone had not restored access.
+- Tested a separate clone of the original Wi-Fi profile, limited to the router's 2.4 GHz access point. It connected successfully and PaperDrop automatically reauthenticated without reinstalling or restarting the runtime.
+- Initial gateway check: 10/10 replies. Signal remained weak, approximately -81 dBm. Prefer the tested profile at startup; original profile retained as fallback. Longer-term stability and placement/access-point coverage remain open.
+- Follow-up one-minute check: 30/30 gateway replies, zero packet loss, Wi-Fi SSH working, and `cloud_connected: true`. Saved tested profile with higher autoconnect priority. Automatic firmware updates remain disabled.
+- This directly establishes a local network cause for this observed loss of server access, distinct from the separately fixed false-offline display bug. It does not prove the cause of the original all-device outage.
+
 - On October 8, the live software probe passed the production Stream Deck button/controller path: synthetic recording, real 15-second timer, backend transcription, moderation/image generation, review, preview/return, and simulated print submission. The backend transcribed the rocket prompt correctly; generation returned in about 14 seconds.
 - A separate forced WebSocket disconnect test reauthenticated automatically. Normal runtime was restored afterward with `cloud_connected: true` and `device_connected: true`. These results validate the current release, not the original image's historical outage cause.
 - Physical printing was intentionally skipped. The synthetic server message was marked failed with an explicit software-test explanation rather than falsely acknowledging a real print. No other household received a test message.
