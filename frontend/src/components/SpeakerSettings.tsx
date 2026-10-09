@@ -27,10 +27,12 @@ export function SpeakerSettings({ deviceId }: { deviceId: string }) {
     const [errorAction, setErrorAction] = useState('');
     const [message, setMessage] = useState('');
     const [volume, setVolume] = useState(50);
+    const [hasScanned, setHasScanned] = useState(false);
     useEffect(() => { if (typeof state?.volume === 'number') setVolume(state.volume); }, [state]);
 
     useEffect(() => {
         let active = true;
+        setHasScanned(false);
         setBusy('status');
         api.get(`/devices/${deviceId}/speaker`, { timeout: 65000 })
             .then(res => { if (active) setState(res.data); })
@@ -47,6 +49,7 @@ export function SpeakerSettings({ deviceId }: { deviceId: string }) {
         try {
             const res = await api.post(`/devices/${deviceId}/speaker`, { action, address, volume }, { timeout: 65000 });
             setState(res.data);
+            if (action === 'scan') setHasScanned(true);
             setMessage(res.data.message || (action === 'scan' ? 'Scan finished.' : action === 'connect' ? 'Speaker connected and saved.' : ''));
         } catch (err: any) {
             setError(err.response?.data?.error || 'Unable to reach PaperDrop. Check its power and Wi-Fi.');
@@ -66,12 +69,12 @@ export function SpeakerSettings({ deviceId }: { deviceId: string }) {
             <button disabled={!!busy} onClick={() => run('scan')} className="px-4 py-2 bg-charcoal-800 text-white rounded-xl text-sm font-medium disabled:opacity-50 flex items-center gap-2">
                 <RefreshCw size={16} className={busy === 'scan' ? 'animate-spin' : ''} />{busy === 'scan' ? 'Scanning nearby…' : 'Scan for speakers'}
             </button>
-            <button disabled={!!busy} onClick={() => run('status')} className="px-3 py-2 border rounded-xl text-sm disabled:opacity-50">Refresh</button>
+            <button disabled={!!busy} onClick={() => run('scan')} className="px-3 py-2 border rounded-xl text-sm disabled:opacity-50">Refresh</button>
         </div>
         {busy && <p role="status" className="text-sm text-gray-500">{busy === 'microphone_test' ? 'Speak now: recording for 5 seconds, then playing it back…' : busy === 'connect' ? 'Pairing and connecting… This can take up to a minute.' : busy === 'test' ? 'Playing test sound…' : busy === 'scan' ? 'Looking for speakers for 10 seconds…' : 'Checking speaker…'}</p>}
         {globalError && <p role="alert" className="text-sm text-red-700">{error}</p>}
         {message && <p role="status" className="text-sm text-emerald-700">{message}</p>}
-        {state?.devices.length === 0 && !busy && <p className="text-sm text-gray-500">No speakers found yet. Enable pairing mode and scan again.</p>}
+        {hasScanned && state?.devices.length === 0 && !busy && !error && <p className="text-sm text-gray-500">No speakers found. Enable pairing mode and scan again.</p>}
         <ul className="space-y-2">
             {state?.devices.map(speaker => <li key={speaker.address} className="p-3 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between gap-3">
                 <div className="min-w-0"><p className="font-medium text-sm text-charcoal-800 break-words">{speaker.name}</p><p className="text-xs text-gray-500">{speaker.connected ? 'Connected' : speaker.paired ? 'Paired' : 'Available'}{speaker.selected ? ' · Selected' : ''}</p></div>

@@ -177,6 +177,18 @@ This is a concise, shareable log of the troubleshooting performed on Ale's Paper
   - verify the app microphone test is audible enough in the room, since the Pi can confirm command success but not human audibility;
   - if playback is still only a burst, retrieve `/tmp/paperdrop-mic-check.wav` from the Pi and inspect whether the recording itself contains speech.
 
+## Focused Validation - 2026-10-09
+
+- Bluetooth discovery follow-up: confirmed web `Refresh` sent `status`, which reads cached BlueZ devices and never starts discovery. Changed it to `scan`; the empty-speaker warning now requires a completed successful scan. Regression tests cover both behaviors. This frontend fix requires web deployment; no Pi firmware change is needed for it.
+- Live adapter was powered/pairable, and Bluetooth/BlueALSA services were active. Both the existing 10-second helper scan and a separate 15-second classic Bluetooth scan found no audio speaker during the check. Physical pairing-mode discovery remains unconfirmed; this does not prove a second Pi defect or that the UI fix alone resolves all discovery failures.
+
+- SSH over Wi-Fi succeeded at `192.168.3.247`; runtime reported cloud and USB Stream Deck connected. Epson printer and USB microphone were enumerated.
+- Live software-in-loop test passed: synthetic prompt, production 15-second timer, server transcription/image generation (14 seconds), review, preview/return, and simulated print completion. Physical printing and microphone capture were intentionally not tested. Normal runtime was restored afterward.
+- Router connectivity: 15/15 replies, no packet loss. RAM and disk had ample headroom; firmware reported `throttled=0x0`.
+- Wi-Fi remains on the tested 2.4 GHz profile, with weak signal (-82 dBm). Earlier association failures on the unpinned profile and recovery after pinning band/AP suggest an association/roaming or radio-quality problem, not a proven PaperDrop application defect. Exact underlying cause is still unconfirmed; improve placement and verify longer-term stability. No universal Wi-Fi configuration change is recommended.
+- Automatic firmware updates remain disabled pending hardware acceptance. No firmware update was applied during this validation.
+- Still requires human validation: real Stream Deck recording and drawing, physical print confirmation, browser log downloads, and audible microphone playback. Backend deployment revision and fleet-wide online status are not established by this device-only test.
+
 ## Next Diagnostic Steps
 
 - Watch runtime logs while triggering app actions:
