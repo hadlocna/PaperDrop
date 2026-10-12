@@ -1,8 +1,10 @@
 #!/usr/bin/python3
 """Offline network picker and captive portal for PaperDrop's setup access point."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import hashlib
 import html
 import json
+import logging
 from pathlib import Path
 import re
 import secrets
@@ -18,8 +20,8 @@ TOKEN = secrets.token_urlsafe(24)
 ALLOWED_HOSTS = {ADDRESS, 'paperdrop.setup', 'localhost', '127.0.0.1'}
 
 
-def run(*args):
-    return subprocess.run(args, capture_output=True, text=True, timeout=35)
+def run(*args, timeout=35):
+    return subprocess.run(args, capture_output=True, text=True, timeout=timeout)
 
 
 def connected():
@@ -180,25 +182,49 @@ class Portal:
             self._connect(ssid, password, country, security, hidden)
 
     def _connect(self, ssid, password, country, security, hidden):
+        stage = 'country'
         try:
             # Give the browser time to receive the response before removing its network.
             time.sleep(2)
             if run('raspi-config', 'nonint', 'do_wifi_country', country).returncode:
                 raise RuntimeError('Could not set Wi-Fi country')
             self.country = country
+            stage = 'saving network'
+            # Configure a profile explicitly. NM's `device wifi connect` shortcut
+            # can lose the security setting when reusing a profile after AP mode.
+            profile = 'PaperDrop-WiFi-' + hashlib.sha256(ssid.encode()).hexdigest()[:16]
+            if run('nmcli', 'connection', 'show', profile).returncode:
+                if run('nmcli', 'connection', 'add', 'type', 'wifi', 'ifname', INTERFACE,
+                       'con-name', profile, 'ssid', ssid).returncode:
+                    raise RuntimeError('Could not create Wi-Fi profile')
+            key_mgmt = 'wpa-psk' if security == 'secured' else 'none'
+            advertised = next((network['security'] for network in self.networks
+                               if network['ssid'] == ssid), '')
+            if security == 'secured' and 'WPA3' in advertised and 'WPA2' not in advertised:
+                key_mgmt = 'sae'
+            result = run('nmcli', 'connection', 'modify', profile,
+                         '802-11-wireless.ssid', ssid, '802-11-wireless.mode', 'infrastructure',
+                         '802-11-wireless.hidden', 'yes' if hidden else 'no',
+                         '802-11-wireless-security.key-mgmt', key_mgmt,
+                         '802-11-wireless-security.psk', password if security == 'secured' else '',
+                         '802-11-wireless-security.psk-flags', '0',
+                         'ipv4.method', 'auto', 'ipv6.method', 'auto',
+                         'connection.autoconnect', 'yes', 'connection.autoconnect-priority', '10')
+            if result.returncode:
+                raise RuntimeError('Could not save Wi-Fi profile')
+            stage = 'leaving setup'
             self.stop_dns()
             run('nmcli', 'connection', 'down', PROFILE)
-            args = ['nmcli', 'device', 'wifi', 'connect', ssid, 'ifname', INTERFACE]
-            if hidden:
-                args += ['hidden', 'yes']
-            if security == 'secured':
-                args += ['password', password]
-            result = run(*args)
+            stage = 'Wi-Fi activation'
+            # NM allows 90 seconds for scanning, authentication and DHCP. Do not
+            # kill a valid AP-to-client transition after the ordinary 35s timeout.
+            result = run('nmcli', 'connection', 'up', profile, 'ifname', INTERFACE, timeout=95)
             if result.returncode or not connected():
                 raise RuntimeError('Wi-Fi activation failed')
             with self.lock:
                 self.state = {'state': 'connected', 'message': 'PaperDrop is connected to Wi-Fi.', 'ssid': ssid}
-        except (OSError, subprocess.SubprocessError, RuntimeError):
+        except (OSError, subprocess.SubprocessError, RuntimeError) as error:
+            logging.warning('Wi-Fi setup failed at %s (%s)', stage, type(error).__name__)
             # Do not expose nmcli output: it can contain credentials.
             try:
                 self.start_ap()

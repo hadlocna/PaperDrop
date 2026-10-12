@@ -48,7 +48,7 @@ class NetworkTests(unittest.TestCase):
         portal = wifi.Portal()
         portal.state['state'] = 'connecting'
         with patch.object(wifi.time, 'sleep'), patch.object(portal, 'stop_dns'), patch.object(portal, 'start_ap') as restore, \
-                patch.object(wifi, 'run', side_effect=[Mock(returncode=0), Mock(returncode=0), Mock(returncode=1, stderr='private fixture')]):
+                patch.object(wifi, 'run', side_effect=[Mock(returncode=0)] * 4 + [Mock(returncode=1, stderr='private fixture')]):
             portal.connect('Home', 'fixture-password', 'PT', 'secured')
         restore.assert_called_once()
         self.assertEqual(portal.state['state'], 'failed')
@@ -66,9 +66,12 @@ class NetworkTests(unittest.TestCase):
         portal = wifi.Portal()
         with patch.object(wifi.time, 'sleep'), patch.object(portal, 'stop_dns'), patch.object(portal, 'start_ap') as restore, \
                 patch.object(wifi, 'connected', return_value=True), patch.object(wifi, 'run') as run:
-            run.side_effect = [Mock(returncode=0), Mock(returncode=0), Mock(returncode=0), subprocess.TimeoutExpired('systemctl', 35)]
+            run.side_effect = [Mock(returncode=0)] * 5 + [subprocess.TimeoutExpired('systemctl', 35)]
             portal.connect('Cafe', '', 'PT', 'open')
-        self.assertNotIn('password', run.call_args_list[2].args)
+        settings = run.call_args_list[2].args
+        self.assertEqual(settings[settings.index('802-11-wireless-security.psk') + 1], '')
+        self.assertEqual(settings[settings.index('802-11-wireless-security.key-mgmt') + 1], 'none')
+        self.assertNotIn('password', run.call_args_list[4].args)
         self.assertEqual(portal.state['state'], 'connected')
         restore.assert_not_called()
 
@@ -77,8 +80,20 @@ class NetworkTests(unittest.TestCase):
         with patch.object(wifi.time, 'sleep'), patch.object(portal, 'stop_dns'), \
                 patch.object(wifi, 'connected', return_value=True), patch.object(wifi, 'run', return_value=Mock(returncode=0)) as run:
             portal.connect('Hidden Home', 'fixture-password', 'PT', 'secured', hidden=True)
-        self.assertIn('hidden', run.call_args_list[2].args)
+        settings = run.call_args_list[2].args
+        self.assertEqual(settings[settings.index('802-11-wireless.hidden') + 1], 'yes')
         self.assertEqual(portal.state['state'], 'connected')
+
+    def test_hotspot_transition_configures_security_before_profile_activation(self):
+        portal = wifi.Portal()
+        with patch.object(wifi.time, 'sleep'), patch.object(portal, 'stop_dns'), \
+                patch.object(wifi, 'connected', return_value=True), patch.object(wifi, 'run', return_value=Mock(returncode=0)) as run:
+            portal.connect('Home', 'fixture-password', 'PT', 'secured')
+        settings = run.call_args_list[2].args
+        self.assertEqual(settings[settings.index('802-11-wireless-security.key-mgmt') + 1], 'wpa-psk')
+        activation = run.call_args_list[4]
+        self.assertEqual(activation.args[:3], ('nmcli', 'connection', 'up'))
+        self.assertGreaterEqual(activation.kwargs['timeout'], 90)
 
     def test_captive_dns_is_scoped_to_setup_interface(self):
         portal = wifi.Portal()
