@@ -77,7 +77,7 @@ class Receiver:
                 raise ValueError('Mail too large')
             if kind == 'voice':
                 with wave.open(io.BytesIO(content)) as wav:
-                    if wav.getnchannels() not in (1, 2) or wav.getsampwidth() != 2 or not 0 < wav.getnframes()/wav.getframerate() <= 20:
+                    if wav.getnchannels() not in (1, 2) or wav.getsampwidth() != 2 or not 0 < wav.getnframes()/wav.getframerate() <= 60:
                         raise ValueError('Invalid voice recording')
                 atomic_write(target, content)
             else:

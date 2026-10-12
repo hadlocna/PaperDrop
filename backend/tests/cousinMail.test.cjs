@@ -7,6 +7,12 @@ const {HOUSES}=require('../dist/services/housePostcards');
 let db,events;const source=HOUSES.portugal.deviceId,target=HOUSES.ohio.deviceId;
 const wav=Buffer.alloc(32044);wav.write('RIFF');wav.write('WAVE',8);wav.writeUInt32LE(wav.length-8,4);wav.write('fmt ',12);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(16000,24);wav.writeUInt32LE(32000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(32000,40);
 const event={type:'mail_send',id:'c'.repeat(32),sender:'alma',house:'ohio',recipient:'andy',kind:'voice',media:wav.toString('base64')};
+function recording(seconds) {
+ const data=Buffer.alloc(44+seconds*24000*2);
+ wav.copy(data,0,0,44);
+ data.writeUInt32LE(data.length-8,4);data.writeUInt32LE(24000,24);data.writeUInt32LE(48000,28);
+ data.writeUInt32LE(data.length-44,40);return data.toString('base64');
+}
 function matches(m,w){return Object.entries(w).every(([k,v])=>typeof v==='object'?(v.in?v.in.includes(m[k]):!v.notIn.includes(m[k])):m[k]===v);}
 beforeEach(()=>{db=new Map();events=[];deviceConnections.clear();
  for(const id of [source,target])deviceConnections.set(id,{readyState:1,send:r=>events.push({device:id,...JSON.parse(r)})});
@@ -44,4 +50,11 @@ test('all houses can send back; drawing envelope retains labels and print acknow
 test('lost receipt redelivers same ID on sync, never creates a second message',async()=>{
  await handleCousinMail(source,event);await handleCousinMail(target,{type:'mail_sync'});await handleCousinMail(target,{type:'mail_sync'});
  const deliveries=events.filter(e=>e.type==='cousin_mail');assert.equal(deliveries.length,2);assert.equal(deliveries[0].message.id,deliveries[1].message.id);
+});
+test('60-second voice note queues offline; longer recordings are rejected',async()=>{
+ deviceConnections.delete(target);
+ await handleCousinMail(source,{...event,media:recording(60)});
+ assert.equal(db.size,1);assert.equal(events.at(-1).status,'queued');
+ await handleCousinMail(source,{...event,id:'d'.repeat(32),media:recording(61)});
+ assert.equal(db.size,1);assert.ok(events.at(-1).error);
 });

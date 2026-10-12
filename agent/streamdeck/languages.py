@@ -39,6 +39,13 @@ ROWS += [
 ('Five stars! You earned a special prize. Press the green button to print it.', 'Cinq étoiles ! Tu as gagné une surprise. Touche le bouton vert pour l’imprimer.', 'Fünf Sterne! Du hast einen besonderen Preis gewonnen. Drücke die grüne Taste zum Drucken.', 'Cinque stelle! Hai vinto un premio speciale. Premi il pulsante verde per stamparlo.', 'Cinco estrelas! Ganhaste um prémio especial. Carrega no botão verde para o imprimir.'),
 ]
 CATALOG = {row[0]:dict(zip(LANGUAGES,row)) for row in ROWS}
+# Include stop guidance in the complete cached prompt, before recording starts.
+STOP_GUIDANCE = CATALOG['Tap the red button when you are finished talking.']
+for original in (DRAW_PROMPT, TALK_PROMPT):
+    updated = original + ' ' + STOP_GUIDANCE['en']
+    CATALOG[updated] = {code: CATALOG[original][code] + ' ' + STOP_GUIDANCE[code] for code in LANGUAGES}
+DRAW_PROMPT += ' ' + STOP_GUIDANCE['en']
+TALK_PROMPT += ' ' + STOP_GUIDANCE['en']
 TEMPLATES = {
 'letter': ['Can you find the letter {x}?','Peux-tu trouver la lettre {x} ?','Findest du den Buchstaben {x}?','Trovi la lettera {x}?','Consegues encontrar a letra {x}?'],
 'after': ['What number comes after {x}?','Quel nombre vient après {x} ?','Welche Zahl kommt nach {x}?','Quale numero viene dopo {x}?','Que número vem depois do {x}?'],
@@ -69,6 +76,7 @@ def all_phrases():
     return list(CATALOG)+voice_phrases()+['Who in Lisbon?','Who in Ohio?','Who in Düsseldorf?']
 
 LABEL_ROWS = [
+('Choose time','Durée','Zeit wählen','Scegli durata','Escolher tempo'),
 ('Games','Jeux','Spiele','Giochi','Jogos'),('Home','Accueil','Start','Inizio','Início'),
 ('Back','Retour','Zurück','Indietro','Voltar'),('Draw & Print','Dessiner','Malen','Disegna','Desenhar'),
 ('Colors','Couleurs','Farben','Colori','Cores'),('Letters','Lettres','Buchstaben','Lettere','Letras'),('Numbers','Nombres','Zahlen','Numeri','Números'),

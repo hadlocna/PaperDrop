@@ -51,6 +51,21 @@ class CousinMailTests(unittest.TestCase):
         self.box.mark_seen(inbox[0]);self.receiver.receive(msg)
         self.receiver.cloud.mail_receipt.assert_called_with(msg['id'],'read')
 
+    def test_receives_full_minute_voice_note_and_rejects_longer_audio(self):
+        for seconds in (60, 61):
+            out = io.BytesIO()
+            with wave.open(out, 'wb') as wav:
+                wav.setparams((1, 2, 24000, 0, 'NONE', 'not compressed'))
+                wav.writeframes(b'\x01\x00' * 24000 * seconds)
+            message = dict(self.message(), id=('b' if seconds == 60 else 'c') * 64,
+                           media=base64.b64encode(out.getvalue()).decode())
+            if seconds == 60:
+                self.receiver.receive(message)
+                self.assertEqual(len(self.box.inbox('alma')), 1)
+            else:
+                with self.assertRaises(ValueError):
+                    self.receiver.receive(message)
+
     def test_picture_is_labelled_and_automatically_printed(self):
         font=ImageFont.load_default()
         with patch('cousin_mail.ImageFont.truetype',return_value=font), patch('cousin_mail.ImageDraw.Draw') as draw:

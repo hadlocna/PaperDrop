@@ -121,7 +121,7 @@ class Media:
         with self.audio_lock:
             proc = subprocess.Popen(['/usr/bin/afplay', str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             self.player = proc
-        if proc.wait(timeout=25) != 0:
+        if proc.wait(timeout=75) != 0:
             raise RuntimeError('Playback did not finish')
 
     def start_recording(self, path):
@@ -134,7 +134,7 @@ class Media:
             self.recording = subprocess.Popen([
                 ffmpeg, '-hide_banner', '-loglevel', 'error', '-y', '-stats_period', '0.1', '-progress', 'pipe:1', '-f', 'avfoundation',
                 '-i', ':' + os.environ.get('PAPERDROP_MICROPHONE', 'MacBook Pro Microphone'),
-                '-t', '15', '-ac', '1', '-ar', '24000', str(path)
+                '-t', str(getattr(self, 'recording_seconds', 30)), '-ac', '1', '-ar', '24000', str(path)
             ], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log)
             log.close()
             proc = self.recording

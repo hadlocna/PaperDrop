@@ -17,6 +17,7 @@ class Mailbox:
             id TEXT PRIMARY KEY, sender TEXT NOT NULL, recipient TEXT NOT NULL,
             created REAL NOT NULL, seen INTEGER NOT NULL DEFAULT 0, payload TEXT NOT NULL)''')
         self.db.execute('CREATE TABLE IF NOT EXISTS preferences (person TEXT PRIMARY KEY, language TEXT NOT NULL)')
+        self.db.execute('CREATE TABLE IF NOT EXISTS recording_preferences (person TEXT PRIMARY KEY, seconds INTEGER NOT NULL)')
         self.db.execute('CREATE TABLE IF NOT EXISTS rewards (id TEXT PRIMARY KEY, person TEXT NOT NULL, number INTEGER NOT NULL, payload TEXT NOT NULL, UNIQUE(person, number))')
         self.db.commit()
 
@@ -53,6 +54,17 @@ class Mailbox:
         if language not in LANGUAGES:raise ValueError('Unknown language')
         with self.lock,self.db:
             self.db.execute('INSERT INTO preferences VALUES (?,?) ON CONFLICT(person) DO UPDATE SET language=excluded.language',(person,language))
+
+    def recording_seconds(self, person):
+        with self.lock:
+            row = self.db.execute('SELECT seconds FROM recording_preferences WHERE person=?', (person,)).fetchone()
+        return row[0] if row and row[0] in (10, 15, 30, 60) else 30
+
+    def set_recording_seconds(self, person, seconds):
+        if type(seconds) is not int or seconds not in (10, 15, 30, 60):
+            raise ValueError('Unknown recording time')
+        with self.lock, self.db:
+            self.db.execute('INSERT INTO recording_preferences VALUES (?,?) ON CONFLICT(person) DO UPDATE SET seconds=excluded.seconds', (person, seconds))
 
     def get(self, ident):
         with self.lock:

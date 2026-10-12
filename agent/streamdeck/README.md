@@ -36,6 +36,16 @@ bench/demo notes below describe older behavior and are retained for context.
 
 ## Current Pi controls
 
+Each child's personal screen has a clock button, **Choose time**. Select 10, 15,
+30 or 60 seconds; the default is 30. The choice is saved separately for each child
+and applies to drawing requests and voice notes. Language selection is on the
+same clock screen. With no child selected, a home drawing uses 30 seconds.
+Tap to start, wait for spoken guidance and the red microphone, then tap the red
+**Done** button to stop early. Recording stops automatically at the selected
+limit. Guidance in all five languages now explains the Done button. Voice-note
+playback allows the full recording; the timer limits recording, not listening.
+Long notes require the updated backend limits and recipient receiving code.
+
 Tap a cousin’s face → globe to choose English, Français, Deutsch, Italiano, or Português (Portugal). The Pi remembers each child’s preference. Games and all spoken guidance follow that choice, with cached AI-generated Marin speech. A correct game answer earns a star and automatically starts the next round after the feedback finishes; Home cancels it.
 
 # Current demo: Pi controller + laptop button bridge

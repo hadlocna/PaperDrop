@@ -131,7 +131,7 @@ class PiMedia(Media):
         with self.audio_lock:
             self.player = proc = subprocess.Popen(self.playback_command(path), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:
-            if proc.wait(timeout=30):
+            if proc.wait(timeout=75):
                 raise RuntimeError('Pi speaker unavailable')
         finally:
             if proc.poll() is None:
@@ -160,7 +160,7 @@ class PiMedia(Media):
         with self.audio_lock:
             self.recording = proc = subprocess.Popen([
                 'arecord', '-q', '-D', self.capture_pcm(),
-                '-t', 'raw', '-f', 'S16_LE', '-c', '1', '-r', '24000', '-d', '15'
+                '-t', 'raw', '-f', 'S16_LE', '-c', '1', '-r', '24000', '-d', str(getattr(self, 'recording_seconds', 30))
             ], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         def capture():
             try:

@@ -164,11 +164,11 @@ class DrawingFlowTests(unittest.TestCase):
             self.wait_mode('recording')
             self.controller.record_latched = True
             timer = self.timers[-1]
-            self.assertEqual(timer.interval, 15)
+            self.assertEqual(timer.interval, 30)
             if finish == 'done':
                 self.tap(5)
             else:
-                timer.function()  # Fire the actual 15-second completion callback.
+                timer.function()  # Fire the actual 30-second completion callback.
             self.wait_mode('print_review')
             timer.function()  # A late callback must not generate another drawing.
             self.assertEqual(self.media.finish_calls, cycle)
@@ -191,7 +191,7 @@ class DrawingFlowTests(unittest.TestCase):
     def test_done_button_draws_reviews_and_prints_twice_with_wake_listening_off(self):
         self.exercise('done')
 
-    def test_15_second_timeout_draws_reviews_and_prints_twice_with_wake_listening_off(self):
+    def test_30_second_timeout_draws_reviews_and_prints_twice_with_wake_listening_off(self):
         self.exercise('timeout')
 
 

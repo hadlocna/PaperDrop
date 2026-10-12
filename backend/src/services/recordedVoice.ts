@@ -55,9 +55,9 @@ export async function handleRecordedVoice(deviceId: string, event: any) {
     if (event.type !== 'voice_request' || s.busy || !s.ownerId) return;
     s.busy = true;
     try {
-        if (typeof event.audio !== 'string' || event.audio.length > 2200000 || !/^[A-Za-z0-9+/]*={0,2}$/.test(event.audio)) throw Error('Invalid audio');
+        if (typeof event.audio !== 'string' || event.audio.length > 4000000 || !/^[A-Za-z0-9+/]*={0,2}$/.test(event.audio)) throw Error('Invalid audio');
         const audio = Buffer.from(event.audio, 'base64');
-        if (audio.length < 16044 || audio.length > 1600044 || audio.toString('ascii',0,4) !== 'RIFF' || audio.toString('ascii',8,12) !== 'WAVE') throw Error('Invalid recording');
+        if (audio.length < 16044 || audio.length > 3000000 || audio.toString('ascii',0,4) !== 'RIFF' || audio.toString('ascii',8,12) !== 'WAVE') throw Error('Invalid recording');
         const ai = new OpenAI({timeout:90000, maxRetries:0});
         const options = {signal:s.abort.signal};
         const result = await ai.audio.transcriptions.create({model:'gpt-4o-mini-transcribe', file:await toFile(audio,'request.wav',{type:'audio/wav'})}, options);

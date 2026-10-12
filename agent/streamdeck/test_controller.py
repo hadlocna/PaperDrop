@@ -49,6 +49,45 @@ class FakeMedia:
 
 
 class ControllerTests(unittest.TestCase):
+    def test_recording_time_is_per_child_and_survives_reopen(self):
+        self.tap(0)
+        self.tap(1)
+        self.assertEqual(self.c.mode, 'recording_time')
+        self.assertEqual([t['label'] for t in self.c.snapshot()['tiles'][:4]], ['10s', '15s', '30s', '60s'])
+        self.assertTrue(self.c.snapshot()['tiles'][2]['selected'])
+        self.tap(3)
+        self.assertEqual(self.c.mode, 'personal')
+        self.assertEqual(self.box.recording_seconds('alma'), 60)
+        self.assertEqual(self.box.recording_seconds('theodore'), 30)
+        reopened = Mailbox(self.temp.name)
+        self.assertEqual(reopened.recording_seconds('alma'), 60)
+        reopened.close()
+        for invalid in (0, 20, 61, True, '30'):
+            with self.assertRaises(ValueError):
+                self.box.set_recording_seconds('alma', invalid)
+
+    def test_selected_time_controls_capture_countdown_and_timeout(self):
+        from unittest.mock import patch
+        for seconds in (10, 15, 30, 60):
+            with self.subTest(seconds=seconds):
+                self.c.person = 'alma'
+                self.box.set_recording_seconds('alma', seconds)
+                with patch('controller.threading.Timer') as timer:
+                    self.c.start_recording(1, 'voice')
+                    self.wait('recording')
+                    deadline = time.monotonic() + 1
+                    while not timer.called and time.monotonic() < deadline:
+                        time.sleep(.005)
+                    self.assertEqual(timer.call_args.args[0], seconds)
+                    self.assertEqual(self.media.recording_seconds, seconds)
+                    self.assertEqual(self.c.snapshot()['tiles'][3]['label'], f'{seconds}s')
+                    callback = timer.call_args.args[1]
+                    callback()
+                    self.wait('review')
+                    callback()
+                    self.assertEqual(self.c.mode, 'review')
+                self.c.discard()
+
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory()
         self.box=Mailbox(self.temp.name)
@@ -56,6 +95,7 @@ class ControllerTests(unittest.TestCase):
         self.c=Controller(FAMILY,self.box,self.media)
     def tearDown(self):
         self.c.close()
+        self.box.close()
         self.temp.cleanup()
     def test_guidance_finishes_before_microphone_and_countdown(self):
         gate = threading.Event()
@@ -248,7 +288,7 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual([t['label'] for t in self.c.snapshot()['tiles'][3:]],['Ohio','Düsseldorf','Draw & Print'])
         self.tap(0)
         tiles=self.c.snapshot()['tiles']
-        self.assertEqual([t['label'] for t in tiles[:2]],['Games','English'])
+        self.assertEqual([t['label'] for t in tiles[:2]],['Games','Choose time'])
         self.assertEqual(tiles[2]['label'],'Draw & Print')
         self.assertEqual(tiles[3]['person'],'andy')
         self.assertEqual(tiles[4]['person'],'rue')
@@ -365,6 +405,8 @@ class ControllerTests(unittest.TestCase):
         cues=[]
         self.media.cue=cues.append
         self.tap(0);self.tap(1)
+        self.assertEqual(self.c.mode,'recording_time')
+        self.c.act(4)
         self.assertEqual(self.c.mode,'languages')
         self.assertEqual([t['label'] for t in self.c.snapshot()['tiles'][:5]],['English','Français','Deutsch','Italiano','Português'])
         self.tap(1)

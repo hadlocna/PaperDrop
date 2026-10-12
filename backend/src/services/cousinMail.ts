@@ -13,7 +13,7 @@ export const mailId = (device: string, id: string) => crypto.createHash('sha256'
 const starts = new Map<string, number[]>();
 
 function validWave(bytes: Buffer): boolean {
-    if (bytes.length < 44 || bytes.length > 2000000 || bytes.toString('ascii', 0, 4) !== 'RIFF'
+    if (bytes.length < 44 || bytes.length > 3000000 || bytes.toString('ascii', 0, 4) !== 'RIFF'
         || bytes.toString('ascii', 8, 12) !== 'WAVE') return false;
     let rate = 0, channels = 0, dataSize = 0;
     for (let offset = 12; offset + 8 <= bytes.length;) {
@@ -29,7 +29,7 @@ function validWave(bytes: Buffer): boolean {
         offset += 8 + size + (size % 2);
     }
     return [1, 2].includes(channels) && rate >= 8000 && rate <= 48000
-        && dataSize > 0 && dataSize % (channels * 2) === 0 && dataSize / (rate * channels * 2) <= 20;
+        && dataSize > 0 && dataSize % (channels * 2) === 0 && dataSize / (rate * channels * 2) <= 60;
 }
 
 // Mail is sent only in response to a capable device's authenticated mailbox sync.

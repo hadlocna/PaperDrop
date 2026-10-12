@@ -41,6 +41,7 @@ class Controller:
         self.stage = ''
         self.record_key = None
         self.record_started = 0
+        self.record_limit = 30
         self.record_latched = False
         self.job = None
         self.return_mode = 'review'
@@ -116,7 +117,7 @@ class Controller:
             elif self.mode == 'personal':
                 heading, hint = f'{name}’s space', 'Letters, numbers, your latest voice note and your latest picture.'
                 tiles[0] = tile('Games','Gamepad2',color='#c8b8e2')
-                tiles[1] = tile(LANGUAGES[self.language],'Languages',color='#b7d8c7')
+                tiles[1] = tile('Choose time','Clock',color='#b7d8c7')
                 tiles[2] = tile('Draw & Print','Drawing',color='#f0cb86')
                 for key,kind,icon in [(3,'voice','Mic'),(4,'drawing','Pencil')]:
                     message = self.latest(kind)
@@ -124,6 +125,13 @@ class Controller:
                         tiles[key] = self.sender_tile(message['sender'],type_badge=icon,demo=message.get('demo',False),
                             badge=not message['seen'])
                 tiles[5] = tile('Home','Home')
+            elif self.mode == 'recording_time':
+                heading, hint = 'Choose time', 'Recording stops when you press Done, or when the time runs out.'
+                selected = self.mailbox.recording_seconds(self.person)
+                for i, seconds in enumerate((10, 15, 30, 60)):
+                    tiles[i] = tile(f'{seconds}s', 'Clock', selected=seconds == selected, color='#b7d8c7')
+                tiles[4] = tile(LANGUAGES[self.language], 'Languages', color='#c7dfed')
+                tiles[5] = tile('Back', 'ArrowLeft')
             elif self.mode == 'languages':
                 heading, hint = 'Choose your language', 'Your choice is saved for you.'
                 for i,(code,native_name) in enumerate(LANGUAGES.items()):
@@ -186,7 +194,7 @@ class Controller:
                          tile('Their mail', 'Mail', badge=self.unread(self.person, self.recipient)),
                          tile('Back', 'ArrowLeft'), tile('Home', 'Home')]
             elif self.mode in ('arming', 'recording'):
-                remaining = max(0, 15-int(time.monotonic()-self.record_started))
+                remaining = max(0, self.record_limit-int(time.monotonic()-self.record_started))
                 arming = self.mode=='arming'
                 heading = 'Listen, then wait for red…' if arming else ('Describe your picture' if self.draft['kind'] == 'drawing' else 'Recording your voice')
                 hint = 'Wait for the red microphone before speaking.' if arming else 'Talk into the Pi microphone. Tap the red button when finished. Nothing is sent yet.'
@@ -387,7 +395,7 @@ class Controller:
             if key==0:
                 self.transition('games','Let’s play! Choose colors, letters, numbers, or riddles.')
             elif key==1:
-                self.transition('languages','Choose your language.')
+                self.transition('recording_time')
             elif key in (3,4):
                 message = self.latest('voice' if key==3 else 'drawing')
                 if message:
@@ -402,6 +410,14 @@ class Controller:
                         self.transition('incoming')
             elif key == 5:
                 self.home()
+        elif self.mode == 'recording_time':
+            if key < 4:
+                self.mailbox.set_recording_seconds(self.person, (10, 15, 30, 60)[key])
+                self.hub()
+            elif key == 4:
+                self.transition('languages', 'Choose your language.')
+            elif key == 5:
+                self.hub()
         elif self.mode == 'languages':
             if key<5:
                 self.language=list(LANGUAGES)[key]
@@ -578,6 +594,8 @@ class Controller:
         self.draft = dict(id=ident, sender=self.person or self.station, recipient=self.recipient, kind=kind,
                           audio=str(self.mailbox.root / (ident+'.wav')),local_print=local_print)
         self.record_key = key
+        self.record_limit = self.mailbox.recording_seconds(self.person or '@station')
+        self.media.recording_seconds = self.record_limit
         self.record_started = time.monotonic()
         self.record_latched = False
         self.transition('arming')
@@ -605,7 +623,7 @@ class Controller:
                         with self.lock:
                             if self.mode == 'recording' and self.draft and self.draft['id'] == token:
                                 self.finish_recording()
-                    timer = threading.Timer(15, timeout)
+                    timer = threading.Timer(self.record_limit, timeout)
                     timer.daemon = True
                     timer.start()
             except Exception as exc:

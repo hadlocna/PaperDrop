@@ -108,7 +108,7 @@ def main():
         if controller.mode == 'error':
             raise RuntimeError(controller.note)
         report['steps'].append('button_recording_started')
-        # Exercise the production 15-second timer rather than calling generate directly.
+        # Exercise the child's configured timer rather than calling generate directly.
         wait_for(lambda: controller.mode in ('print_review', 'error'), 190, 'Drawing did not reach review')
         if controller.mode == 'error':
             raise RuntimeError(controller.note)

@@ -41,6 +41,16 @@ test('button recorded drawing does not require wake phrase listening',async()=>{
  assert.ok(events.some(e=>e.type==='new_message'));
  closeRecordedVoice('button-recorded');
 });
+test('full minute of 24 kHz button audio reaches transcription and image generation',async()=>{
+ const {events,request}=fixture('full-minute');
+ const audio=Buffer.alloc(44+60*24000*2);audio.write('RIFF');audio.write('WAVE',8);
+ request.audio=audio.toString('base64');
+ await handleRecordedVoice('full-minute',{type:'voice_start',session_id:'full-minute',mode:'recorded'});
+ await handleRecordedVoice('full-minute',request);
+ assert.equal(transcriptions,1);assert.equal(images,1);
+ assert.ok(events.some(e=>e.type==='new_message'));
+ closeRecordedVoice('full-minute');
+});
 test('wake listening disabled during generation prevents delivery',async()=>{
  const {events,request}=fixture('disabled-during-generation');
  await handleRecordedVoice('disabled-during-generation',{type:'voice_start',session_id:'disabled-during-generation'});
