@@ -27,6 +27,8 @@ mount "${loop}p1" "$root/boot/firmware"
 tar -xzf artifacts/firmware/paperdrop-2.0.0-20260921.tar.gz -C "$root/opt/paperdrop/releases/2.0.0-20260921"
 cp agent/src/auto_update.py agent/src/update_guard.py "$root/usr/local/lib/paperdrop/"
 cp agent/factory/first_boot.py agent/factory/wifi_portal.py "$root/usr/local/lib/paperdrop/"
+cp frontend/src/assets/logo-horizontal.png "$root/usr/local/lib/paperdrop/setup-logo.png"
+chroot "$root" apt-get install -y -qq --no-install-recommends nftables
 cp agent/factory/paperdrop-*.service agent/factory/paperdrop-*.timer "$root/etc/systemd/system/"
 # Include the offline wake model for devices without a button pad.
 if [ ! -d "$root/opt/paperdrop-models/vosk-model-small-en-us-0.15" ]; then

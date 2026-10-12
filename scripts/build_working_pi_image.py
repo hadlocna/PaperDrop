@@ -35,6 +35,8 @@ def sanitize(root, revision):
     factory = Path(__file__).resolve().parents[1] / 'agent/factory'
     # Use the repository's setup experience, rather than an older exported helper.
     shutil.copyfile(factory / 'wifi_portal.py', root / 'usr/local/lib/paperdrop/wifi_portal.py')
+    shutil.copyfile(factory.parents[1] / 'frontend/src/assets/logo-horizontal.png',
+                    root / 'usr/local/lib/paperdrop/setup-logo.png')
     shutil.copyfile(factory / 'paperdrop-setup.service', root / 'etc/systemd/system/paperdrop-setup.service')
     shutil.copyfile(factory / 'import_debug_key.py', root / 'usr/local/lib/paperdrop/import_debug_key.py')
     shutil.copyfile(factory / 'paperdrop-debug-key.service', root / 'etc/systemd/system/paperdrop-debug-key.service')
@@ -77,7 +79,7 @@ def sanitize(root, revision):
         'PaperDrop sanitized working-system image\n'
         'Copy a fresh paperdrop-enrollment.json here before first boot to restore your device.\n'
         'Connect Ethernet to a router, or join PaperDrop-Setup Wi-Fi (password: paperdrop-setup).\n'
-        'Tap the Wi-Fi sign-in notification, or open http://10.42.0.1 and choose your network.\n'
+        'Tap the Wi-Fi sign-in notification, or open http://paperdrop.me and choose your network.\n'
         'Pair the speaker again in the web app. No Wi-Fi or Bluetooth pairing is included.\n'
         'SSH is disabled: no account password or authorized keys are distributed.\n'
         'For key-only SSH, copy your public key to paperdrop-authorized-keys on this boot drive.\n'
@@ -120,6 +122,8 @@ def sanitize(root, revision):
 
 
 def verify(root, emulated=False):
+    if not (root / 'usr/sbin/nft').exists():
+        raise RuntimeError('Working-image source needs nftables for the setup portal')
     forbidden = ['etc/paperdrop/device.json', 'etc/paperdrop/enrollment.json',
                  'etc/paperdrop/speaker.json', 'boot/firmware/paperdrop-enrollment.json']
     for name in forbidden:

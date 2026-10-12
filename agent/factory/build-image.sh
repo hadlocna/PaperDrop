@@ -46,7 +46,7 @@ cp "$root/etc/resolv.conf.build" "$root/etc/resolv.conf"
 printf '#!/bin/sh\nexit 101\n' > "$root/usr/sbin/policy-rc.d"
 chmod +x "$root/usr/sbin/policy-rc.d"
 chroot "$root" apt-get update -qq
-chroot "$root" apt-get install -y -qq --no-install-recommends python3-venv python3-dbus bluez bluez-alsa-utils libasound2-plugin-bluez alsa-utils libhidapi-libusb0 libcairo2 fonts-dejavu-core libusb-1.0-0 network-manager dnsmasq-base openssh-server curl ca-certificates
+chroot "$root" apt-get install -y -qq --no-install-recommends python3-venv python3-dbus bluez bluez-alsa-utils libasound2-plugin-bluez alsa-utils libhidapi-libusb0 libcairo2 fonts-dejavu-core libusb-1.0-0 network-manager dnsmasq-base nftables openssh-server curl ca-certificates
 mkdir -p "$root/opt/paperdrop/releases/2.0.0-20260921" "$root/var/lib/paperdrop/streamdeck" "$root/var/log/paperdrop" "$root/etc/paperdrop" "$root/usr/local/lib/paperdrop"
 tar -xzf artifacts/firmware/paperdrop-2.0.0-20260921.tar.gz -C "$root/opt/paperdrop/releases/2.0.0-20260921"
 ln -s releases/2.0.0-20260921 "$root/opt/paperdrop/current"
@@ -57,6 +57,7 @@ chroot "$root" /opt/paperdrop/current/venv/bin/pip download -r /opt/paperdrop/cu
 cp agent/src/auto_update.py agent/src/update_guard.py "$root/usr/local/lib/paperdrop/"
 cp agent/factory/paperdrop-*.service agent/factory/paperdrop-*.timer "$root/etc/systemd/system/"
 cp agent/factory/first_boot.py agent/factory/wifi_portal.py "$root/usr/local/lib/paperdrop/"
+cp frontend/src/assets/logo-horizontal.png "$root/usr/local/lib/paperdrop/setup-logo.png"
 mkdir -p "$root/etc/systemd/system/bluealsa.service.d"
 cat > "$root/etc/systemd/system/bluealsa.service.d/paperdrop.conf" <<'EOF'
 [Service]
@@ -79,7 +80,7 @@ chroot "$root" systemctl mask userconfig.service 2>/dev/null || true
 cat > "$root/boot/firmware/PAPERDROP-START-HERE.txt" <<'EOF'
 PaperDrop automatic-update image
 Power off your Pi before swapping cards. Use Ethernet for the simplest first start.
-For Wi-Fi, join the PaperDrop-Setup network (password: paperdrop-setup) from a phone and open http://10.42.0.1:8080.
+For Wi-Fi, join PaperDrop-Setup (password: paperdrop-setup). Tap the Wi-Fi sign-in notification, or open http://paperdrop.me.
 Once online, PaperDrop checks the published stable release automatically.
 Use the PaperDrop app to claim a new device and connect its Bluetooth speaker.
 A house-specific enrollment file can restore an existing device before first boot.

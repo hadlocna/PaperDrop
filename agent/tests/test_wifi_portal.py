@@ -107,6 +107,18 @@ class NetworkTests(unittest.TestCase):
         self.assertIn('--conf-file=/dev/null', command)
         self.assertIn('--address=/#/10.42.0.1', command)
 
+    def test_http_capture_is_scoped_and_removed_with_setup(self):
+        portal = wifi.Portal()
+        with patch.object(wifi, 'run', return_value=Mock(returncode=0)) as run:
+            portal.start_http_redirect()
+            self.assertTrue(portal.http_redirect)
+            rules = run.call_args.kwargs['input']
+            self.assertIn('iifname "wlan0" ip saddr 10.42.0.0/24 tcp dport 80', rules)
+            self.assertNotIn('flush ruleset', rules)
+            portal.stop_dns()
+            self.assertFalse(portal.http_redirect)
+            self.assertEqual(run.call_args.args, ('nft', 'delete', 'table', 'ip', 'paperdrop_setup'))
+
     def test_double_submission_does_not_start_second_attempt(self):
         portal = wifi.Portal()
         with patch.object(wifi.threading, 'Thread') as worker:
@@ -159,11 +171,26 @@ class HTTPTests(unittest.TestCase):
         for path, host in [('/generate_204', 'connectivitycheck.gstatic.com'),
                            ('/hotspot-detect.html', 'captive.apple.com'),
                            ('/connecttest.txt', 'www.msftconnecttest.com'),
-                           ('/', 'example.com')]:
+                           ('/', 'example.com'), ('/some/path?x=1', '1.1.1.1')]:
             with self.subTest(path=path), self.assertRaises(HTTPError) as error:
                 opener.open(Request(self.base + path, headers={'Host': host}))
             self.assertEqual(error.exception.code, 302)
-            self.assertEqual(error.exception.headers['Location'], 'http://10.42.0.1/')
+            self.assertEqual(error.exception.headers['Location'], 'http://paperdrop.me/')
+
+    def test_paperdrop_domain_serves_setup_and_its_exact_offline_logo(self):
+        with urlopen(Request(self.base, headers={'Host': 'PaperDrop.me'})) as response:
+            self.assertIn('paperdrop.me', response.read().decode())
+        with urlopen(Request(self.base + '/paperdrop-logo.png', headers={'Host': 'paperdrop.me'})) as response:
+            self.assertEqual(response.headers['Content-Type'], 'image/png')
+            self.assertEqual(response.read(), wifi.LOGO_PATH.read_bytes())
+
+    def test_head_probe_redirects_without_response_body(self):
+        opener = build_opener(NoRedirect)
+        with self.assertRaises(HTTPError) as error:
+            opener.open(Request(self.base + '/generate_204', method='HEAD', headers={'Host': 'example.com'}))
+        self.assertEqual(error.exception.code, 302)
+        self.assertEqual(error.exception.headers['Location'], 'http://paperdrop.me/')
+        self.assertEqual(error.exception.read(), b'')
 
     def test_scan_and_status_api_return_data_without_password(self):
         with patch.object(self.portal, 'scan', return_value={'networks': [{'ssid': '<script>Fixture</script>'}], 'message': ''}):

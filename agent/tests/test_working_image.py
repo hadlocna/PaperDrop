@@ -46,6 +46,8 @@ class WorkingImageTests(unittest.TestCase):
             self.assertTrue((root / 'etc/cloud/cloud-init.disabled').exists())
             self.assertEqual((root / 'usr/local/lib/paperdrop/wifi_portal.py').read_bytes(),
                              (REPO / 'agent/factory/wifi_portal.py').read_bytes())
+            self.assertEqual((root / 'usr/local/lib/paperdrop/setup-logo.png').read_bytes(),
+                             (REPO / 'frontend/src/assets/logo-horizontal.png').read_bytes())
             self.assertTrue(all(line.split(':')[1] == '*' for line in (root / 'etc/shadow').read_text().splitlines()))
             self.assertNotIn('ds=', (root / 'boot/firmware/cmdline.txt').read_text())
             self.assertIn('root=PARTUUID=70647031-02', (root / 'boot/firmware/cmdline.txt').read_text())

@@ -14,14 +14,26 @@ import time
 from urllib.parse import parse_qs, urlsplit
 
 ADDRESS = '10.42.0.1'
+PORTAL_URL = 'http://paperdrop.me/'
 PROFILE = 'PaperDrop-Setup'
 INTERFACE = 'wlan0'
 TOKEN = secrets.token_urlsafe(24)
-ALLOWED_HOSTS = {ADDRESS, 'paperdrop.setup', 'localhost', '127.0.0.1'}
+ALLOWED_HOSTS = {ADDRESS, 'paperdrop.me', 'www.paperdrop.me', 'paperdrop.setup', 'localhost', '127.0.0.1'}
+LOGO_PATH = Path(__file__).with_name('setup-logo.png')
+if not LOGO_PATH.exists():
+    # Use the exact app asset in repository previews; image builders install it beside this file.
+    LOGO_PATH = Path(__file__).resolve().parents[2] / 'frontend/src/assets/logo-horizontal.png'
+HTTP_REDIRECT_RULES = '''table ip paperdrop_setup {
+    chain prerouting {
+        type nat hook prerouting priority dstnat; policy accept;
+        iifname "wlan0" ip saddr 10.42.0.0/24 tcp dport 80 redirect to :80
+    }
+}
+'''
 
 
-def run(*args, timeout=35):
-    return subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+def run(*args, timeout=35, input=None):
+    return subprocess.run(args, capture_output=True, text=True, timeout=timeout, input=input)
 
 
 def connected():
@@ -84,6 +96,15 @@ class Portal:
         self.country = 'US'
         self.state = {'state': 'ready', 'message': '', 'ssid': ''}
         self.dns = None
+        self.http_redirect = False
+
+    def start_http_redirect(self):
+        # Own one table only; never flush or replace NetworkManager's firewall.
+        run('nft', 'delete', 'table', 'ip', 'paperdrop_setup')
+        result = run('nft', '-f', '-', input=HTTP_REDIRECT_RULES)
+        if result.returncode:
+            raise RuntimeError('Could not enable setup HTTP redirects')
+        self.http_redirect = True
 
     def scan(self, force=False):
         with self.scan_lock:
@@ -111,6 +132,9 @@ class Portal:
             return {'networks': self.networks, 'message': self.scan_error}
 
     def stop_dns(self):
+        if self.http_redirect:
+            run('nft', 'delete', 'table', 'ip', 'paperdrop_setup')
+            self.http_redirect = False
         if self.dns is not None:
             self.dns.terminate()
             try:
@@ -139,6 +163,9 @@ class Portal:
         if result.returncode or run('nmcli', 'connection', 'up', PROFILE).returncode:
             raise RuntimeError('Could not start setup Wi-Fi')
         self.stop_dns()
+        self.start_dns()
+
+    def start_dns(self):
         # No system-wide DNS configuration, upstream DNS or Internet dependency.
         self.dns = subprocess.Popen([
             'dnsmasq', '--keep-in-foreground', '--conf-file=/dev/null', '--pid-file=',
@@ -151,6 +178,7 @@ class Portal:
         time.sleep(0.5)
         if self.dns.poll() is not None:
             raise RuntimeError('Could not start setup DNS and DHCP')
+        self.start_http_redirect()
 
     def begin_connection(self, data):
         ssid = data.get('ssid', '')
@@ -242,11 +270,11 @@ class Portal:
 
 PAGE = r'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#f6f3ec"><title>Connect PaperDrop</title>
+<meta name="theme-color" content="#FFF8F0"><title>Connect PaperDrop</title>
 <style>
-:root{font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#203b32;background:#f6f3ec;font-synthesis:none}*{box-sizing:border-box}body{margin:0;padding:28px 20px 48px}main{max-width:480px;margin:auto}.brand{display:flex;gap:10px;align-items:center;font-weight:750;font-size:19px;margin-bottom:32px}.mark{width:34px;height:38px;border-radius:9px 9px 14px 9px;background:#244b3c;color:white;display:grid;place-items:center;font-size:22px}.step{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#567164;font-weight:750}h1{font-size:36px;line-height:1.1;letter-spacing:-1.5px;margin:12px 0}p{line-height:1.55;margin:0 0 22px;color:#59675d}.card{background:#fff;border:1px solid #e0e4db;border-radius:20px;padding:22px;margin-top:24px;box-shadow:0 6px 22px #203b3205}.heading{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}h2{font-size:16px;margin:0}.quiet{background:none;border:0;color:#35624e;font:inherit;font-size:14px;font-weight:650;cursor:pointer;padding:10px;min-height:44px}.network{display:flex;align-items:center;gap:12px;width:100%;padding:16px 2px;background:none;border:0;border-bottom:1px solid #edf0e9;text-align:left;cursor:pointer;color:inherit;font:inherit;min-height:66px}.network:last-child{border-bottom:0}.network:disabled{cursor:default;opacity:.6}.network:hover:enabled{background:#f5f8f3}.network.selected{background:#edf5ef;border-radius:12px;padding:16px 10px}.bars{display:flex;gap:3px;align-items:flex-end;width:28px;height:22px;flex-shrink:0}.bars i{width:4px;background:#d7dfd6;border-radius:2px}.bars i.on{background:#467258}.name{flex:1;min-width:0;overflow-wrap:anywhere}.name strong{display:block;font-size:15px}.name small{font-size:12px;color:#6e7c70}.arrow{font-size:20px}.empty{font-size:14px;padding:18px 0;margin:0}.hint{font-size:13px;margin:12px 0 0}.manual{margin:14px 0 0;padding:0;text-align:left;font-size:14px}label{display:block;font-size:14px;font-weight:650;margin:18px 0 8px}input,select{font:inherit;color:inherit;padding:13px;border:1px solid #cdd7cc;border-radius:10px;background:#fff;width:100%;min-height:48px}input:focus,select:focus,button:focus-visible{outline:3px solid #99bea6;outline-offset:2px}.password{position:relative}.password input{padding-right:76px}.password button{position:absolute;right:6px;top:3px}.primary{background:#244b3c;color:#fff;font:inherit;font-weight:650;border:0;border-radius:12px;padding:15px;width:100%;min-height:50px;margin-top:22px;cursor:pointer}.primary:disabled{opacity:.65;cursor:wait}.back{padding:0;margin-bottom:10px}.status{padding:15px 17px;background:#edf5ef;border:1px solid #c9ddcd;border-radius:12px;margin:22px 0 0;font-size:14px;line-height:1.5}.status.error{background:#fff1e9;border-color:#efd1bd;color:#823e24}.status h2{margin:0 0 8px}footer{margin-top:25px;font-size:12px;color:#718073;line-height:1.7;text-align:center}footer a{color:inherit}details{margin-top:20px}summary{cursor:pointer;font-size:13px;color:#627264;min-height:30px}[hidden]{display:none!important}@media(max-width:360px){body{padding:22px 14px}h1{font-size:32px}.card{padding:17px}}
+:root{font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#3D405B;background:#FFF8F0;font-synthesis:none}*{box-sizing:border-box}body{margin:0;padding:28px 20px 48px}main{max-width:480px;margin:auto}.brand{display:flex;justify-content:center;margin-bottom:28px}.brand img{width:220px;max-width:85%;height:auto;object-fit:contain}.step{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#9D4733;font-weight:750}h1{font-size:36px;line-height:1.1;letter-spacing:-1.5px;margin:12px 0}p{line-height:1.55;margin:0 0 22px;color:#686A7D}.card{background:#fff;border:1px solid #F0E2D7;border-radius:20px;padding:22px;margin-top:24px;box-shadow:0 6px 22px #3D405B05}.heading{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}h2{font-size:16px;margin:0}.quiet{background:none;border:0;color:#9D4733;font:inherit;font-size:14px;font-weight:650;cursor:pointer;padding:10px;min-height:44px}.network{display:flex;align-items:center;gap:12px;width:100%;padding:16px 2px;background:none;border:0;border-bottom:1px solid #F1EBE5;text-align:left;cursor:pointer;color:inherit;font:inherit;min-height:66px}.network:last-child{border-bottom:0}.network:disabled{cursor:default;opacity:.6}.network:hover:enabled{background:#FFF5EE}.network.selected{background:#FFF1E7;border-radius:12px;padding:16px 10px}.bars{display:flex;gap:3px;align-items:flex-end;width:28px;height:22px;flex-shrink:0}.bars i{width:4px;background:#E2E1E7;border-radius:2px}.bars i.on{background:#E07A5F}.name{flex:1;min-width:0;overflow-wrap:anywhere}.name strong{display:block;font-size:15px}.name small{font-size:12px;color:#686A7D}.arrow{font-size:20px}.empty{font-size:14px;padding:18px 0;margin:0}.hint{font-size:13px;margin:12px 0 0}.manual{margin:14px 0 0;padding:0;text-align:left;font-size:14px}label{display:block;font-size:14px;font-weight:650;margin:18px 0 8px}input,select{font:inherit;color:inherit;padding:13px;border:1px solid #D4D3DC;border-radius:10px;background:#fff;width:100%;min-height:48px}input:focus,select:focus,button:focus-visible{outline:3px solid #EABBAF;outline-offset:2px}.password{position:relative}.password input{padding-right:76px}.password button{position:absolute;right:6px;top:3px}.primary{background:#3D405B;color:#fff;font:inherit;font-weight:650;border:0;border-radius:12px;padding:15px;width:100%;min-height:50px;margin-top:22px;cursor:pointer}.primary:disabled{opacity:.65;cursor:wait}.back{padding:0;margin-bottom:10px}.status{padding:15px 17px;background:#FFF1E7;border:1px solid #E8C6B9;border-radius:12px;margin:22px 0 0;font-size:14px;line-height:1.5}.status.error{background:#fff1e9;border-color:#efd1bd;color:#823e24}.status h2{margin:0 0 8px}footer{margin-top:25px;font-size:12px;color:#686A7D;line-height:1.7;text-align:center}footer a{color:inherit}details{margin-top:20px}summary{cursor:pointer;font-size:13px;color:#686A7D;min-height:30px}[hidden]{display:none!important}@media(max-width:360px){body{padding:22px 14px}h1{font-size:32px}.card{padding:17px}}
 </style></head><body><main>
-<div class="brand"><span class="mark" aria-hidden="true">↳</span>PaperDrop</div>
+<div class="brand"><img src="/paperdrop-logo.png" alt="PaperDrop" width="606" height="211"></div>
 <div class="step">A little setup. A lot of magic.</div><h1>Let’s get connected.</h1>
 <p>Choose the Wi-Fi you want PaperDrop to use.</p>
 <div id="status" class="status" role="status" aria-live="polite" __STATUS_HIDDEN__>__STATUS__</div>
@@ -269,7 +297,7 @@ PAGE = r'''<!doctype html>
 <button class="primary" id="submit" type="submit">Connect PaperDrop</button>
 </form></section>
 <noscript><style>#connection{display:block!important}#picker{display:none}</style><p class="hint">Enter your Wi-Fi name and password below.</p></noscript>
-<footer>Keep this phone on PaperDrop-Setup until you connect.<br>Setup page: <a href="http://10.42.0.1">10.42.0.1</a><br>__DEVICE__</footer>
+<footer>Keep this phone on PaperDrop-Setup until you connect.<br><a href="__PORTAL_URL__">paperdrop.me</a><br>__DEVICE__</footer>
 </main><script>
 const $ = (id) => document.getElementById(id);
 let busy = false;
@@ -502,6 +530,7 @@ def page(portal):
         state = portal.state.copy()
     return (PAGE.replace('__TOKEN__', html.escape(TOKEN, quote=True))
             .replace('__COUNTRY__', html.escape(portal.country, quote=True))
+            .replace('__PORTAL_URL__', html.escape(PORTAL_URL, quote=True))
             .replace('__DEVICE__', html.escape(device))
             .replace('__STATUS_HIDDEN__', '' if state['message'] else 'hidden')
             .replace('__STATUS__', html.escape(state['message'])))
@@ -517,26 +546,27 @@ class Setup(BaseHTTPRequestHandler):
         pass
 
     def reply(self, status, body, content_type='application/json'):
-        payload = body.encode() if isinstance(body, str) else json.dumps(body).encode()
+        payload = body if isinstance(body, bytes) else body.encode() if isinstance(body, str) else json.dumps(body).encode()
         self.send_response(status)
-        self.send_header('Content-Type', content_type + '; charset=utf-8')
+        self.send_header('Content-Type', content_type + ('; charset=utf-8' if content_type.startswith(('text/', 'application/')) else ''))
         self.send_header('Cache-Control', 'no-store')
         self.send_header('Content-Length', str(len(payload)))
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Referrer-Policy', 'no-referrer')
         self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'")
         self.end_headers()
-        self.wfile.write(payload)
+        if self.command != 'HEAD':
+            self.wfile.write(payload)
 
     def known_host(self):
         return self.headers.get('Host', '').split(':')[0].lower() in ALLOWED_HOSTS
 
     def do_GET(self):
         path = urlsplit(self.path).path
-        if not self.known_host() or path not in ('/', '/api/networks', '/api/status', '/favicon.ico'):
+        if not self.known_host() or path not in ('/', '/api/networks', '/api/status', '/favicon.ico', '/paperdrop-logo.png'):
             # Includes Android generate_204, Apple hotspot-detect and Windows probes.
             self.send_response(302)
-            self.send_header('Location', 'http://' + ADDRESS + '/')
+            self.send_header('Location', PORTAL_URL)
             self.send_header('Cache-Control', 'no-store')
             self.send_header('Content-Length', '0')
             self.end_headers()
@@ -545,12 +575,17 @@ class Setup(BaseHTTPRequestHandler):
             self.reply(200, self.server.portal.scan(force=query.get('refresh') == ['1']))
         elif path == '/favicon.ico':
             self.reply(204, '')
+        elif path == '/paperdrop-logo.png':
+            self.reply(200, LOGO_PATH.read_bytes(), 'image/png')
         elif path == '/api/status':
             with self.server.portal.lock:
                 state = self.server.portal.state.copy()
             self.reply(200, state)
         else:
             self.reply(200, page(self.server.portal), 'text/html')
+
+    def do_HEAD(self):
+        self.do_GET()
 
     def do_POST(self):
         try:

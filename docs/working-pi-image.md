@@ -39,7 +39,8 @@ network setup helpers own first boot instead.
    **PaperDrop-Setup** network (password `paperdrop-setup`). The published
    2026-10-09 image uses `http://10.42.0.1:8080` to enter Wi-Fi details and country.
    Images rebuilt with the current setup helper also offer a phone Wi-Fi sign-in
-   page at `http://10.42.0.1`, with nearby networks you can tap to select.
+   page at `http://paperdrop.me`, with nearby networks you can tap to select.
+   Ordinary HTTP URLs redirect there while on the setup network.
    A direct laptop Ethernet cable alone does not provide Internet/DHCP.
 6. Confirm your existing device appears online. Pair the Bluetooth speaker again
    using **Scan for speakers** or **Refresh**. Re-select language/volume as needed.

@@ -5,6 +5,7 @@ Wants=NetworkManager.service
 [Service]
 Type=simple
 ExecStart=/usr/bin/python3 /usr/local/lib/paperdrop/wifi_portal.py
+ExecStopPost=-/usr/sbin/nft delete table ip paperdrop_setup
 Restart=on-failure
 RestartSec=15
 [Install]

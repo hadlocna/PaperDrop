@@ -20,7 +20,8 @@ boot selects the button interface; otherwise the ordinary printer agent runs.
    `paperdrop-enrollment.json` into the `bootfs` drive, keeping that exact name.
 4. Power off the Pi, swap cards, connect Ethernet if available, and power it on.
    For Wi-Fi, join **PaperDrop-Setup** (password `paperdrop-setup`) from a phone,
-   tap the phone's **Sign in to Wi-Fi** notification or open **http://10.42.0.1**.
+   tap the phone's **Sign in to Wi-Fi** notification. Any ordinary HTTP page
+   redirects to the setup page at **http://paperdrop.me** while on this network.
    Choose a nearby network, enter its password, and tap **Connect PaperDrop**.
    Use **Country / region** if the device has moved countries. The original
    **http://10.42.0.1:8080** address still works.
@@ -39,11 +40,20 @@ all channels while hosting an access point; the page labels the cached scan
 and offers manual entry for missing or hidden networks. Enterprise and WEP
 networks are shown with an unsupported-sign-in explanation.
 
-Only the setup subnet uses the temporary DNS/DHCP server. Ordinary HTTP hostnames
+Only the setup subnet uses the temporary DNS/DHCP server. HTTP hostnames
 resolve to the local portal while joined to PaperDrop-Setup, including phone
-connectivity checks. Automatic pop-up behavior depends on the phone. HTTPS
+connectivity checks. An isolated nftables table also redirects port-80 HTTP
+requests using cached DNS or literal IPv4 addresses to **http://paperdrop.me**.
+The rule matches only `wlan0` clients on `10.42.0.0/24` and is removed when
+setup finishes or its service stops. The public paperdrop.me website and its
+public DNS records are unaffected. The page uses the same logo asset and
+coral/charcoal/cream palette as the PaperDrop app, served entirely offline.
+Automatic pop-up behavior depends on the phone. HTTPS
 sites, browser HTTPS-only modes, private DNS and VPNs may prevent redirection;
-the explicit HTTP address above is the fallback. A failed connection restores
+**http://paperdrop.me** is the fallback. TLS requires a trusted certificate for
+the originally requested hostname, so arbitrary HTTPS websites cannot be
+redirected without certificate errors. No fake TLS certificate is installed.
+A failed connection restores
 setup Wi-Fi and displays a retry message after the phone reconnects. The
 disappearance of the setup network alone is not proof of Internet/cloud access.
 
