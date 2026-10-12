@@ -1,6 +1,7 @@
 # Per-child recording time
 
-Installed and tested on Ale's Pi on 12 October 2026; server deployment follows the approved push.
+Installed and tested on Ale's Pi on 12 October 2026. Backend deployment of
+`3c15c38` succeeded at 19:13 CEST; GitHub's full application/device checks passed.
 
 Personal screen: clock / Choose time replaces the direct language button.
 Clock screen: 10s, 15s, 30s, 60s, language, Back. Selecting a duration saves it
@@ -23,8 +24,8 @@ supports authoring just these prompts, but no fresh API recordings were generate
 
 Validation: 71 isolated Pi tests passed, excluding the drawing test that requires
 a local Node backend fixture unavailable on the Pi. TypeScript compilation and
-all 66 backend tests passed, plus an added full-minute drawing test passed in the
-ten-test recorded-voice suite, including a 60-second offline voice queue regression
+all 67 backend tests passed in CI, including a full-minute drawing upload test,
+a 60-second offline voice queue regression
 and rejection of recordings exceeding that duration. Child preference persistence,
 each timer duration, countdown, automatic stop and stale timeout callbacks are
 covered. Live microphone, physical buttons and physical printing need acceptance
@@ -36,6 +37,18 @@ production backend generation, review/preview and simulated print completion.
 Normal runtime was restored and reauthenticated. It did not use the physical
 microphone or emit paper; the owner's physical acceptance remains separate.
 
+The production 60-second recording timer also reached automatic completion,
+but that Wi-Fi generation attempt was interrupted by a cloud disconnect. A
+separate 60-second / 24 kHz WAV upload through a temporary SSH Ethernet-to-laptop
+forward succeeded against the deployed production backend: transcription,
+generation (15.99 seconds), review/preview and simulated print completion.
+The original production URL, TLS hostname and certificate verification remained
+in use. That diagnostic used a 10-second controller timer with a prerecorded
+60-second fixture; it verifies upload capacity separately from the live 60-second
+timer test. No Pi network settings were altered, and the forwarding was closed.
+Normal Wi-Fi runtime was restored. Remaining intermittent DNS/cloud failures
+are the known network limitation, not a successful reliability result.
+
 Staging on the Pi: `/tmp/paperdrop-recording-timer`; running installation was
 updated at 19:02 CEST. Original files are retained at
 `/var/lib/paperdrop/maintenance/recording-timer-20261012-190222`.
@@ -46,7 +59,7 @@ installation/startup error it restores original code. It does not change automat
 update settings, firmware manifests or release version. A maintenance backup is
 retained under `/var/lib/paperdrop/maintenance`.
 
-Deploy backend changes before activation: old drawing upload limits reject long
+The backend changes are deployed: old drawing upload limits reject long
 recordings, and old family-mail validation rejects voice notes over 20 seconds.
 Receiving stations also need the receiving/playback changes for longer mail;
 they must not be updated without owner authorization. Their old code otherwise

@@ -30,6 +30,7 @@ def main():
     parser.add_argument('--audio', type=Path, required=True)
     parser.add_argument('--report', type=Path, default=Path('/tmp/paperdrop-sil-report.json'))
     parser.add_argument('--connection-only', action='store_true', help='Test authenticated reconnect without image generation.')
+    parser.add_argument('--recording-seconds', type=int, choices=(10, 15, 30, 60), default=30)
     args = parser.parse_args()
     if os.geteuid() != 0:
         parser.error('Root access is required for the protected device identity and runtime service.')
@@ -101,7 +102,11 @@ def main():
         station = Path('/etc/paperdrop/station')
         if station.exists():
             family['station'] = station.read_text().strip()
-        controller = Controller(family, Mailbox(root / 'mailbox'), ProbeMedia(root))
+        mailbox = Mailbox(root / 'mailbox')
+        mailbox.set_recording_seconds('@station', args.recording_seconds)
+        controller = Controller(family, mailbox, ProbeMedia(root))
+        report['recording_seconds'] = args.recording_seconds
+        report['audio_seconds'] = duration
         controller.press(5, True)
         controller.press(5, False)
         wait_for(lambda: controller.mode in ('recording', 'error'), 5, 'Simulated button did not start recording')
@@ -109,7 +114,8 @@ def main():
             raise RuntimeError(controller.note)
         report['steps'].append('button_recording_started')
         # Exercise the child's configured timer rather than calling generate directly.
-        wait_for(lambda: controller.mode in ('print_review', 'error'), 190, 'Drawing did not reach review')
+        wait_for(lambda: controller.mode in ('print_review', 'error'), args.recording_seconds + 200,
+                 'Drawing did not reach review')
         if controller.mode == 'error':
             raise RuntimeError(controller.note)
         report['generation'] = 'passed'
