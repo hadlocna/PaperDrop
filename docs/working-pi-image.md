@@ -36,8 +36,10 @@ network setup helpers own first boot instead.
    for user `paperdrop` and passwordless sudo for that maintenance account. No
    default password, private key, or authorized public key ships in the image.
 5. Connect Ethernet to a router for initial setup, or join the Pi's
-   **PaperDrop-Setup** network (password `paperdrop-setup`) and open
-   `http://10.42.0.1:8080` to enter Wi-Fi details and the correct country.
+   **PaperDrop-Setup** network (password `paperdrop-setup`). The published
+   2026-10-09 image uses `http://10.42.0.1:8080` to enter Wi-Fi details and country.
+   Images rebuilt with the current setup helper also offer a phone Wi-Fi sign-in
+   page at `http://10.42.0.1`, with nearby networks you can tap to select.
    A direct laptop Ethernet cable alone does not provide Internet/DHCP.
 6. Confirm your existing device appears online. Pair the Bluetooth speaker again
    using **Scan for speakers** or **Refresh**. Re-select language/volume as needed.

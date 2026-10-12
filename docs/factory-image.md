@@ -20,7 +20,10 @@ boot selects the button interface; otherwise the ordinary printer agent runs.
    `paperdrop-enrollment.json` into the `bootfs` drive, keeping that exact name.
 4. Power off the Pi, swap cards, connect Ethernet if available, and power it on.
    For Wi-Fi, join **PaperDrop-Setup** (password `paperdrop-setup`) from a phone,
-   open **http://10.42.0.1:8080**, and enter the home Wi-Fi and country code.
+   tap the phone's **Sign in to Wi-Fi** notification or open **http://10.42.0.1**.
+   Choose a nearby network, enter its password, and tap **Connect PaperDrop**.
+   Use **Country / region** if the device has moved countries. The original
+   **http://10.42.0.1:8080** address still works.
 5. Once online, enrollment restores the same device/account/house. The app's
    Speaker & microphone settings pair the house's Bluetooth speaker and set volume.
 
@@ -28,6 +31,25 @@ The universal image contains no Wi-Fi passwords, SSH private keys, account token
 or device identities. Do not share a recovery file outside its household. A blank
 image without a recovery file creates a new device, which needs claiming in the app.
 Bluetooth pairing is stored on the card, so replacement cards need pairing once.
+
+The setup helper watches for lost connectivity and offers setup again after
+saved networks have been unavailable for 30 seconds. It scans before opening
+the access point, then allows refreshing the list. Some Pi radios cannot scan
+all channels while hosting an access point; the page labels the cached scan
+and offers manual entry for missing or hidden networks. Enterprise and WEP
+networks are shown with an unsupported-sign-in explanation.
+
+Only the setup subnet uses the temporary DNS/DHCP server. Ordinary HTTP hostnames
+resolve to the local portal while joined to PaperDrop-Setup, including phone
+connectivity checks. Automatic pop-up behavior depends on the phone. HTTPS
+sites, browser HTTPS-only modes, private DNS and VPNs may prevent redirection;
+the explicit HTTP address above is the fallback. A failed connection restores
+setup Wi-Fi and displays a retry message after the phone reconnects. The
+disappearance of the setup network alone is not proof of Internet/cloud access.
+
+This experience is installed by the current factory and working-image builders.
+Existing SD cards need an explicit helper update or a newly built image; the
+ordinary managed-runtime firmware package does not update factory helpers.
 
 ## Updates and recovery
 

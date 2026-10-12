@@ -1,5 +1,5 @@
 [Unit]
-Description=PaperDrop local Wi-Fi setup when no network is configured
+Description=PaperDrop network picker and captive setup portal
 After=NetworkManager.service
 Wants=NetworkManager.service
 [Service]
