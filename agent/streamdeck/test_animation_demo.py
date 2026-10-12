@@ -31,8 +31,9 @@ class AnimationDemoTests(unittest.TestCase):
         self.assertEqual(len(self.box.inbox('margo')),1)
         self.c.person='alma';self.c.mode='personal'
         tiles=self.c.snapshot()['tiles']
-        self.assertEqual((tiles[3]['person'],tiles[3]['type_badge']),('andy','Mic'))
-        self.assertEqual((tiles[4]['person'],tiles[4]['type_badge']),('elise','Pencil'))
+        self.assertEqual(tiles[3]['icon'], 'Clock')
+        self.assertEqual(tiles[4]['icon'], 'Mail')
+        self.assertEqual(tiles[4]['badge'], 2)
     def test_mail_moves_without_moving_other_keys_or_actions(self):
         reset_examples(self.box)
         snapshot=self.c.snapshot()
@@ -47,6 +48,12 @@ class AnimationDemoTests(unittest.TestCase):
         with patch('render.time.monotonic',return_value=1):a=self.renderer.keys(snapshot)
         with patch('render.time.monotonic',return_value=2):b=self.renderer.keys(snapshot)
         self.assertEqual([x.tobytes() for x in a],[x.tobytes() for x in b])
+    def test_inbox_badge_displays_the_count(self):
+        spec = dict(label='Inbox', icon='Mail', badge_count=True)
+        first = self.renderer.key(dict(spec, badge=1))
+        second = self.renderer.key(dict(spec, badge=2))
+        self.assertNotEqual(first.tobytes(), second.tobytes())
+        self.renderer.key(dict(spec, badge=100))
     def test_pencil_moves_while_buttons_remain_disabled(self):
         self.c.mode='generating';s=self.c.snapshot()
         self.assertTrue(all(t['disabled'] for t in s['tiles']))

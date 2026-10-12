@@ -3,10 +3,19 @@
 Installed and tested on Ale's Pi on 12 October 2026. Backend deployment of
 `3c15c38` succeeded at 19:13 CEST; GitHub's full application/device checks passed.
 
-Personal screen: clock / Choose time replaces the direct language button.
-Clock screen: 10s, 15s, 30s, 60s, language, Back. Selecting a duration saves it
-for that child and returns to their personal screen. Existing language choices
-remain available. Default recording time is 30 seconds; drawing without a
+Personal screen (corrected after owner feedback): Games, Language, Draw & Print,
+Choose time, Inbox, Home. The mixed inbox replaces separate voice/picture buttons
+and shows their combined unread count. Existing five-language welcome recordings
+name Games, Language and Postcard, matching the restored top row. All relevant
+cached speech clips were checked on the Pi.
+The corrected layout and numeric inbox badge were installed and validated on
+12 October: 74 isolated Pi tests passed, live navigation verified direct Language,
+Duration, Inbox and Home, and opening the inbox left its unread count unchanged.
+Unread counts above 99 display as `99+`. All 20 relevant cached menu/inbox clips
+exist across the five languages; the welcome names the three restored top-row
+choices. Voice and picture read rules and access to old messages are preserved.
+Clock screen: 10s, 15s, 30s, 60s, blank, Back. Selecting a duration saves it
+for that child and returns to their personal screen. Default recording time is 30 seconds; drawing without a
 selected child also uses 30 seconds. Tap to start and tap red Done to stop,
 or wait for the automatic stop. Existing hold/release interaction is retained.
 
@@ -54,7 +63,7 @@ updated at 19:02 CEST. Original files are retained at
 `/var/lib/paperdrop/maintenance/recording-timer-20261012-190222`.
 The staged `install.sh` is reproduced in `scripts/install_recording_timer.sh`.
 It requires root and an idle Home/personal screen, saves original code, installs
-only six application files and ten speech clips, and restarts the runtime. On
+only seven application files and ten speech clips, and restarts the runtime. On
 installation/startup error it restores original code. It does not change automatic
 update settings, firmware manifests or release version. A maintenance backup is
 retained under `/var/lib/paperdrop/maintenance`.

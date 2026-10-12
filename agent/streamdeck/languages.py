@@ -76,6 +76,7 @@ def all_phrases():
     return list(CATALOG)+voice_phrases()+['Who in Lisbon?','Who in Ohio?','Who in Düsseldorf?']
 
 LABEL_ROWS = [
+('Inbox','Boîte','Postfach','Posta','Correio'),
 ('Choose time','Durée','Zeit wählen','Scegli durata','Escolher tempo'),
 ('Games','Jeux','Spiele','Giochi','Jogos'),('Home','Accueil','Start','Inizio','Início'),
 ('Back','Retour','Zurück','Indietro','Voltar'),('Draw & Print','Dessiner','Malen','Disegna','Desenhar'),

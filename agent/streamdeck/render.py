@@ -126,7 +126,13 @@ class Renderer:
             phase=spec.get('_time',0)%4
             bounce=int(9*abs(math.sin(phase*math.pi*2))) if phase<1 else 0
             draw.rounded_rectangle((166,14-bounce,236,86-bounce),radius=18,fill='#e46f53')
-            self.icon(image,'Mail',(176,23-bounce,225,72-bounce))
+            if spec.get('badge_count'):
+                count = spec['badge']
+                text = str(count) if count < 100 else '99+'
+                font = ImageFont.truetype(FONT, 36 if len(text) < 3 else 27)
+                draw.text((201, 50-bounce), text, font=font, fill=CREAM, anchor='mm')
+            else:
+                self.icon(image,'Mail',(176,23-bounce,225,72-bounce))
         if spec.get('type_badge'):
             draw.rounded_rectangle((5,5,81,81),radius=15,fill=CREAM)
             self.icon(image,spec['type_badge'],(15,15,71,71))

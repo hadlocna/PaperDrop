@@ -115,22 +115,19 @@ class Controller:
                     tiles[3+i] = tile(self.houses[house]['name'],house=house)
                 tiles[5] = tile('Draw & Print','Drawing',color='#f0cb86')
             elif self.mode == 'personal':
-                heading, hint = f'{name}’s space', 'Letters, numbers, your latest voice note and your latest picture.'
+                heading, hint = f'{name}’s space', 'Games, language, drawing, recording time and your inbox.'
                 tiles[0] = tile('Games','Gamepad2',color='#c8b8e2')
-                tiles[1] = tile('Choose time','Clock',color='#b7d8c7')
+                tiles[1] = tile(LANGUAGES[self.language],'Languages',color='#b7d8c7')
                 tiles[2] = tile('Draw & Print','Drawing',color='#f0cb86')
-                for key,kind,icon in [(3,'voice','Mic'),(4,'drawing','Pencil')]:
-                    message = self.latest(kind)
-                    if message:
-                        tiles[key] = self.sender_tile(message['sender'],type_badge=icon,demo=message.get('demo',False),
-                            badge=not message['seen'])
+                tiles[3] = tile('Choose time', 'Clock', color='#b7d8c7')
+                tiles[4] = tile('Inbox', 'Mail', badge=self.unread(self.person), badge_count=True,
+                                demo=any(m.get('demo') for m in self.mailbox.inbox(self.person)))
                 tiles[5] = tile('Home','Home')
             elif self.mode == 'recording_time':
                 heading, hint = 'Choose time', 'Recording stops when you press Done, or when the time runs out.'
                 selected = self.mailbox.recording_seconds(self.person)
                 for i, seconds in enumerate((10, 15, 30, 60)):
                     tiles[i] = tile(f'{seconds}s', 'Clock', selected=seconds == selected, color='#b7d8c7')
-                tiles[4] = tile(LANGUAGES[self.language], 'Languages', color='#c7dfed')
                 tiles[5] = tile('Back', 'ArrowLeft')
             elif self.mode == 'languages':
                 heading, hint = 'Choose your language', 'Your choice is saved for you.'
@@ -225,6 +222,10 @@ class Controller:
                 picture = source.get('image')
                 heading, hint = 'Your picture, across all six keys', 'Tap any button to return. This never sends the picture.'
                 tiles = [tile('Return', mosaic=picture, piece=i) for i in range(6)]
+            elif self.mode == 'inbox_empty':
+                heading, hint = 'Your inbox', 'No mail yet.'
+                tiles[1] = tile('Inbox', 'Mail', disabled=True)
+                tiles[5] = tile('Back', 'ArrowLeft')
             elif self.mode == 'incoming':
                 sender = self.current['sender']
                 picture = self.current.get('image')
@@ -395,29 +396,21 @@ class Controller:
             if key==0:
                 self.transition('games','Let’s play! Choose colors, letters, numbers, or riddles.')
             elif key==1:
+                self.transition('languages','Choose your language.')
+            elif key==3:
                 self.transition('recording_time')
-            elif key in (3,4):
-                message = self.latest('voice' if key==3 else 'drawing')
-                if message:
-                    self.current=message
-                    self.mail = [m for m in reversed(self.mailbox.inbox(self.person)) if m['kind'] == message['kind']]
-                    self.mail.sort(key=lambda m: m['seen'])
-                    self.mail_index=0
-                    self.current=self.mail[0]
-                    if key==3:
-                        self.transition('incoming')
-                    else:
-                        self.transition('incoming')
+            elif key==4:
+                self.open_mail()
             elif key == 5:
                 self.home()
         elif self.mode == 'recording_time':
             if key < 4:
                 self.mailbox.set_recording_seconds(self.person, (10, 15, 30, 60)[key])
                 self.hub()
-            elif key == 4:
-                self.transition('languages', 'Choose your language.')
             elif key == 5:
                 self.hub()
+        elif self.mode == 'inbox_empty' and key == 5:
+            self.hub()
         elif self.mode == 'languages':
             if key<5:
                 self.language=list(LANGUAGES)[key]
@@ -581,9 +574,12 @@ class Controller:
     def open_mail(self, sender=None):
         mail = self.mailbox.inbox(self.person, sender=sender)
         if not mail:
-            self.speak('No mail yet.')
+            if sender is None:
+                self.transition('inbox_empty', 'No mail yet.')
+            else:
+                self.speak('No mail yet.')
             return
-        self.mail = sorted(mail, key=lambda m:m['seen'])
+        self.mail = sorted(reversed(mail), key=lambda m:m['seen'])
         self.mail_index = 0
         self.current = self.mail[0]
         self.transition('incoming', 'There is a postcard for you. Press play to listen, or the picture to see it.')

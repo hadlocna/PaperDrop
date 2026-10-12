@@ -6,7 +6,7 @@ stage=${1:-/tmp/paperdrop-recording-timer}
 release=$(readlink -f /opt/paperdrop/current)
 backup=/var/lib/paperdrop/maintenance/recording-timer-$(date +%Y%m%d-%H%M%S)
 python="$release/venv/bin/python"
-files=(controller.py store.py languages.py media.py pi_media.py cousin_mail.py)
+files=(controller.py store.py languages.py media.py pi_media.py cousin_mail.py render.py)
 "$python" - "$stage" <<'PY'
 import pathlib, sys, urllib.request, json
 p = pathlib.Path(sys.argv[1])

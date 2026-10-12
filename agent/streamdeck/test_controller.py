@@ -51,7 +51,7 @@ class FakeMedia:
 class ControllerTests(unittest.TestCase):
     def test_recording_time_is_per_child_and_survives_reopen(self):
         self.tap(0)
-        self.tap(1)
+        self.tap(3)
         self.assertEqual(self.c.mode, 'recording_time')
         self.assertEqual([t['label'] for t in self.c.snapshot()['tiles'][:4]], ['10s', '15s', '30s', '60s'])
         self.assertTrue(self.c.snapshot()['tiles'][2]['selected'])
@@ -212,11 +212,12 @@ class ControllerTests(unittest.TestCase):
         self.c.switch_station('ohio')
         self.assertEqual(self.c.snapshot()['tiles'][0]['badge'],1)
         self.assertEqual(self.c.snapshot()['tiles'][1]['badge'],0)
-        self.tap(0);self.tap(3);self.tap(1)
+        self.tap(0);self.tap(4);self.tap(1)
         self.wait('incoming')
         self.tap(5)
         self.assertEqual(len(self.box.inbox('andy',unread=True)),0)
-        self.assertEqual(self.c.snapshot()['tiles'][3]['person'],'alma')
+        self.assertEqual(self.c.snapshot()['tiles'][4]['icon'],'Mail')
+        self.assertEqual(self.c.snapshot()['tiles'][4]['badge'],0)
 
     def test_generation_mashing_cannot_send_or_change_recipient(self):
         self.compose();self.record(2);self.wait('generating')
@@ -281,27 +282,55 @@ class ControllerTests(unittest.TestCase):
         self.tap(3);self.wait('sent')
         self.assertEqual(len(self.box.inbox('andy')),1)
 
-    def test_personal_space_latest_items_and_no_extra_menus(self):
-        for ident,sender,kind in [('old','sloan','voice'),('new','andy','voice'),('pic','rue','drawing')]:
-            self.box.send(dict(id=ident,sender=sender,recipient='alma',kind=kind,audio='test',image='image' if kind=='drawing' else None))
-        self.assertEqual(self.c.snapshot()['tiles'][0]['badge'],3)
-        self.assertEqual([t['label'] for t in self.c.snapshot()['tiles'][3:]],['Ohio','Düsseldorf','Draw & Print'])
+    def test_combined_inbox_counts_both_types_and_preserves_read_rules(self):
+        for ident, sender, kind in [('old', 'sloan', 'voice'), ('new', 'andy', 'voice'), ('pic', 'rue', 'drawing')]:
+            self.box.send(dict(id=ident, sender=sender, recipient='alma', kind=kind,
+                              audio='test' if kind == 'voice' else None,
+                              image='image' if kind == 'drawing' else None))
         self.tap(0)
-        tiles=self.c.snapshot()['tiles']
-        self.assertEqual([t['label'] for t in tiles[:2]],['Games','Choose time'])
-        self.assertEqual(tiles[2]['label'],'Draw & Print')
-        self.assertEqual(tiles[3]['person'],'andy')
-        self.assertEqual(tiles[4]['person'],'rue')
-        self.tap(4);self.tap(1)
-        self.assertEqual(self.c.mode,'preview')
-        self.tap(0);self.tap(5)
-        self.assertEqual(self.c.mode,'personal')
-        self.media.play_gate.clear();self.tap(3);self.tap(1);self.wait('playing')
-        self.assertEqual(self.c.snapshot()['tiles'][0]['person'],'andy')
-        self.media.play_gate.set();self.wait('incoming')
-        self.assertEqual(len(self.box.inbox('alma', unread=True)),1)
-        self.tap(4);self.tap(1);self.wait('incoming')
-        self.assertEqual(len(self.box.inbox('alma', unread=True)),0)
+        tiles = self.c.snapshot()['tiles']
+        self.assertEqual([t['label'] for t in tiles],
+                         ['Games', 'English', 'Draw & Print', 'Choose time', 'Inbox', 'Home'])
+        self.assertEqual(tiles[4]['badge'], 3)
+        self.tap(4)
+        self.assertEqual(self.c.current['id'], 'pic')
+        self.assertEqual(len(self.c.mail), 3)
+        self.assertEqual(len(self.box.inbox('alma', unread=True)), 3)
+        self.tap(1); self.assertEqual(self.c.mode, 'preview')
+        self.tap(0)
+        self.assertEqual(len(self.box.inbox('alma', unread=True)), 2)
+        self.tap(4)
+        self.assertEqual(self.c.current['id'], 'new')
+        self.media.play_gate.clear(); self.tap(1); self.wait('playing')
+        self.assertEqual(len(self.box.inbox('alma', unread=True)), 2)
+        self.media.play_gate.set(); self.wait('incoming')
+        self.assertEqual(len(self.box.inbox('alma', unread=True)), 1)
+        self.tap(4); self.tap(1); self.wait('incoming')
+        self.tap(5)
+        self.assertEqual(self.c.snapshot()['tiles'][4]['badge'], 0)
+        self.tap(4)
+        self.assertEqual(len(self.c.mail), 3)  # Read messages remain accessible.
+
+    def test_empty_inbox_has_a_way_back_and_other_childs_mail_is_private(self):
+        self.box.send(dict(id='other', sender='andy', recipient='theodore', kind='voice', audio='test'))
+        self.tap(0)
+        self.assertEqual(self.c.snapshot()['tiles'][4]['badge'], 0)
+        self.tap(4); self.assertEqual(self.c.mode, 'inbox_empty')
+        self.tap(5); self.assertEqual(self.c.mode, 'personal')
+        self.tap(3); self.assertEqual(self.c.mode, 'recording_time')
+        self.assertTrue(self.c.snapshot()['tiles'][4]['disabled'])
+        self.tap(5); self.tap(1); self.assertEqual(self.c.mode, 'languages')
+
+    def test_personal_announcement_matches_top_row_in_every_language(self):
+        from languages import LANGUAGES, translate
+        cues = []
+        self.media.cue = cues.append
+        for language in LANGUAGES:
+            self.box.set_language('alma', language)
+            self.c.home()
+            self.tap(0)
+            self.assertEqual(cues[-1], translate('Choose games, your language, or a postcard.', language))
+            self.assertEqual(self.c.snapshot()['tiles'][1]['label'], LANGUAGES[language])
 
     def test_games_correct_retry_repeat_and_home(self):
         self.tap(1)
@@ -405,8 +434,6 @@ class ControllerTests(unittest.TestCase):
         cues=[]
         self.media.cue=cues.append
         self.tap(0);self.tap(1)
-        self.assertEqual(self.c.mode,'recording_time')
-        self.c.act(4)
         self.assertEqual(self.c.mode,'languages')
         self.assertEqual([t['label'] for t in self.c.snapshot()['tiles'][:5]],['English','Français','Deutsch','Italiano','Português'])
         self.tap(1)

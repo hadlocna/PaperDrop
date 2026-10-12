@@ -36,10 +36,17 @@ bench/demo notes below describe older behavior and are retained for context.
 
 ## Current Pi controls
 
-Each child's personal screen has a clock button, **Choose time**. Select 10, 15,
+Each child's personal screen reads **Games / Language / Draw & Print** across the
+top and **Choose time / Inbox / Home** across the bottom. Inbox combines received
+voice notes and pictures, with a total unread badge. Unread items appear first,
+newest first; read items remain available with Next. Opening the inbox does not
+mark mail read: voice notes require completed playback and pictures require preview.
+The welcome announcement names the three top-row choices in all five languages.
+
+The clock button, **Choose time**, offers 10, 15,
 30 or 60 seconds; the default is 30. The choice is saved separately for each child
-and applies to drawing requests and voice notes. Language selection is on the
-same clock screen. With no child selected, a home drawing uses 30 seconds.
+and applies to drawing requests and voice notes. Language has its own personal
+screen button. With no child selected, a home drawing uses 30 seconds.
 Tap to start, wait for spoken guidance and the red microphone, then tap the red
 **Done** button to stop early. Recording stops automatically at the selected
 limit. Guidance in all five languages now explains the Done button. Voice-note
