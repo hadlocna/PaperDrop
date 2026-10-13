@@ -20,6 +20,11 @@ class Mailbox:
         self.db.execute('CREATE TABLE IF NOT EXISTS mail_notifications (id TEXT PRIMARY KEY, recipient TEXT NOT NULL)')
         self.db.execute('CREATE TABLE IF NOT EXISTS recording_preferences (person TEXT PRIMARY KEY, seconds INTEGER NOT NULL)')
         self.db.execute('CREATE TABLE IF NOT EXISTS rewards (id TEXT PRIMARY KEY, person TEXT NOT NULL, number INTEGER NOT NULL, payload TEXT NOT NULL, UNIQUE(person, number))')
+        # Repair older rows only where a completed print is already recorded.
+        printed = [(ident,) for ident, payload in self.db.execute('SELECT id,payload FROM mail WHERE seen=0')
+                   if json.loads(payload).get('printed') is True]
+        self.db.executemany('UPDATE mail SET seen=1 WHERE id=?', printed)
+        self.db.executemany('DELETE FROM mail_notifications WHERE id=?', printed)
         self.db.commit()
 
     def award(self, person, name, game, language):
@@ -71,8 +76,8 @@ class Mailbox:
 
     def get(self, ident):
         with self.lock:
-            row = self.db.execute('SELECT payload FROM mail WHERE id=?', (ident,)).fetchone()
-        return json.loads(row[0]) if row else None
+            row = self.db.execute('SELECT payload,seen FROM mail WHERE id=?', (ident,)).fetchone()
+        return dict(json.loads(row[0]), seen=bool(row[1])) if row else None
 
     def inbox(self, person, sender=None, unread=False):
         with self.lock:
@@ -85,6 +90,8 @@ class Mailbox:
         with self.lock, self.db:
             self.db.execute('UPDATE mail SET seen=1 WHERE id=?', (message['id'],))
             self.db.execute('DELETE FROM mail_notifications WHERE id=?', (message['id'],))
+
+        message['seen'] = True
 
         if getattr(self, 'on_read', None):
             self.on_read(message)
@@ -106,8 +113,11 @@ class Mailbox:
             if not current:
                 raise ValueError('Message not in mailbox')
             current['printed'] = True
+            current['seen'] = True
             current.pop('print_attempt', None)
-            self.db.execute('UPDATE mail SET payload=? WHERE id=?', (json.dumps(current), message['id']))
+            self.db.execute('UPDATE mail SET payload=?,seen=1 WHERE id=?', (json.dumps(current), message['id']))
+            self.db.execute('DELETE FROM mail_notifications WHERE id=?', (message['id'],))
+        message.update(printed=True, seen=True)
         if getattr(self, 'on_print', None):
             self.on_print(current)
 

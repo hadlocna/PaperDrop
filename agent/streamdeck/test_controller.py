@@ -50,6 +50,46 @@ class FakeMedia:
 
 
 class ControllerTests(unittest.TestCase):
+    def test_unread_badges_refresh_after_listening_and_printing(self):
+        voice=dict(id='count-voice',sender='andy',recipient='alma',kind='voice',audio='fixture',remote=True)
+        picture=dict(id='count-picture',sender='andy',recipient='alma',kind='drawing',image='fixture',remote=True)
+        self.box.send(voice);self.box.send(picture)
+        self.assertEqual(self.c.snapshot()['tiles'][0]['badge'],2)
+        self.assertEqual(self.c.snapshot()['tiles'][1]['badge'],0)
+        self.c.person='alma';self.c.open_mail('andy')
+        self.c.current=self.box.get(voice['id']);self.c.transition('incoming')
+        self.tap(1);self.wait('incoming')
+        self.assertTrue(self.c.current['seen'])
+        self.c.hub();self.assertEqual(self.c.snapshot()['tiles'][4]['badge'],1)
+        self.c.open_mail();self.assertEqual(self.c.snapshot()['tiles'][0]['badge'],1)
+        self.c.open_mail('andy');self.c.current=self.box.get(picture['id']);self.c.transition('incoming')
+        self.media.print_image=lambda path, ident: {'status':'printed'}
+        self.tap(2);self.wait('incoming')
+        self.assertTrue(self.c.current['seen'])
+        self.c.transition('mail_list')
+        self.assertTrue(all(t.get('icon')=='MailOpen' for t in self.c.snapshot()['tiles'][:2]))
+        self.c.hub();self.assertEqual(self.c.snapshot()['tiles'][4]['badge'],0)
+        self.c.home();self.assertEqual(self.c.snapshot()['tiles'][0]['badge'],0)
+        reopened=Mailbox(self.temp.name)
+        self.assertEqual(reopened.inbox('alma',unread=True),[])
+        self.assertEqual(reopened.notifications(),[])
+        reopened.close()
+
+    def test_shared_mail_read_updates_both_children_and_print_repairs_old_rows(self):
+        message=dict(id='shared-count',sender='@house-mail',recipient=self.c.station,kind='drawing',image='fixture',cloud_message=True)
+        self.box.send(message)
+        self.assertEqual([t['badge'] for t in self.c.snapshot()['tiles'][:2]],[1,1])
+        self.box.mark_printed(message)
+        self.assertEqual([t['badge'] for t in self.c.snapshot()['tiles'][:2]],[0,0])
+        self.assertTrue(self.box.get(message['id'])['seen'])
+        self.assertEqual(self.box.notifications(),[])
+        # Simulate a prior version that saved printing without clearing unread.
+        with self.box.db:
+            self.box.db.execute('UPDATE mail SET seen=0 WHERE id=?',(message['id'],))
+        reopened=Mailbox(self.temp.name)
+        self.assertTrue(reopened.get(message['id'])['seen'])
+        reopened.close()
+
     def test_reply_actions_follow_message_type_and_reset_on_home(self):
         for kind in ('voice', 'drawing'):
             self.c.home()
@@ -213,9 +253,9 @@ class ControllerTests(unittest.TestCase):
         self.box.send(draft)
         self.c.deliver_saved(draft['id'])
         self.wait('sent')
-        self.assertEqual(deliveries,[draft])
+        self.assertEqual(deliveries,[dict(draft,seen=False)])
         self.assertIsNone(self.c.draft)
-        self.assertEqual(self.box.get(draft['id']),draft)
+        self.assertEqual(self.box.get(draft['id']),dict(draft,seen=False))
         self.assertEqual(self.c.snapshot()['heading'],'Printed at Düsseldorf')
         with self.assertRaises(ValueError):self.c.deliver_saved(draft['id'])
 

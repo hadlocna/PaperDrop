@@ -124,7 +124,7 @@ class Controller:
                 heading = 'PaperDrop at home'
                 hint = 'Your face opens learning and your latest postcards. Choose a house to send, or tap Draw & Print.'
                 for i, p in enumerate(self.children(self.station)):
-                    tiles[i] = self.person_tile(p, badge=self.unread(p), selected=p==self.person)
+                    tiles[i] = self.person_tile(p, badge=self.unread(p), badge_count=True, selected=p==self.person)
                 for i, house in enumerate(self.remote_houses()):
                     tiles[3+i] = tile(self.houses[house]['name'],house=house)
                 tiles[5] = tile('Draw & Print','Drawing',color='#f0cb86')
