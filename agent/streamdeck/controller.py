@@ -260,7 +260,7 @@ class Controller:
                     tiles[key] = tile('Voice note' if message['kind']=='voice' else 'Picture',
                                       'MailOpen' if read else 'Mail', color='#ffffff' if read else '#f0cb86',
                                       type_badge='Mic' if message['kind']=='voice' else 'Pencil',
-                                      message_id=message['id'], read=read)
+                                      message_id=message['id'], read=read, badge=0 if read else 1, badge_count=True)
                 if not self.mail:
                     tiles[1] = tile('Inbox', 'MailOpen', disabled=True)
                     hint = 'No mail yet.'
@@ -272,7 +272,7 @@ class Controller:
                 heading = f'For {name}, from {self.sender_name(sender)}'
                 hint = f'{self.mail_index+1} of {len(self.mail)} · Play or preview, then reply when you want.'
                 tiles = [self.sender_tile(sender, disabled=True), tile('Preview' if picture else 'Listen', 'ZoomIn' if picture else 'Play', image=picture),
-                         tile('Print Again' if self.current.get('printed') else 'Print', 'Check', color='#85b8a2') if picture else tile(disabled=True),
+                         tile('Print Again' if self.current.get('printed') else 'Print', 'Printer', color='#85b8a2') if picture else tile(disabled=True),
                          tile('Reply', 'Drawing' if picture else 'Mic', color='#85b8a2', disabled=sender=='@house-mail'),
                          tile('Back', 'ArrowLeft'), tile('Home', 'Home')]
             elif self.mode == 'print_review':
@@ -281,7 +281,7 @@ class Controller:
                 tiles[1] = tile('Picture', 'ZoomIn', image=picture)
                 tiles[3] = tile('Redo', 'RotateCcw')
                 tiles[4] = tile('Delete', 'Trash2', color='#e89179')
-                tiles[5] = tile('Print', 'Check', color='#85b8a2')
+                tiles[5] = tile('Print', 'Printer', color='#85b8a2')
             elif self.mode == 'print_done':
                 heading, hint = 'Sent to the printer', 'Your picture is in the printer queue. Tap the picture to look, or Home to start again.'
                 picture = self.draft.get('image')
