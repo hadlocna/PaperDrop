@@ -127,6 +127,7 @@ class Bench:
                         previous=None
                 if self.device and not self.device.connected():
                     raise OSError('USB disconnected')
+                self.controller.announce_mail()
                 snap=self.controller.snapshot()
                 marker=(snap['revision'],snap['heading'],snap['hint'],json.dumps(snap['tiles'],sort_keys=True),int(time.monotonic()*5) if self.renderer.animated(snap) else 0)
                 if marker!=previous:

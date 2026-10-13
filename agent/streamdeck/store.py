@@ -17,6 +17,7 @@ class Mailbox:
             id TEXT PRIMARY KEY, sender TEXT NOT NULL, recipient TEXT NOT NULL,
             created REAL NOT NULL, seen INTEGER NOT NULL DEFAULT 0, payload TEXT NOT NULL)''')
         self.db.execute('CREATE TABLE IF NOT EXISTS preferences (person TEXT PRIMARY KEY, language TEXT NOT NULL)')
+        self.db.execute('CREATE TABLE IF NOT EXISTS mail_notifications (id TEXT PRIMARY KEY, recipient TEXT NOT NULL)')
         self.db.execute('CREATE TABLE IF NOT EXISTS recording_preferences (person TEXT PRIMARY KEY, seconds INTEGER NOT NULL)')
         self.db.execute('CREATE TABLE IF NOT EXISTS rewards (id TEXT PRIMARY KEY, person TEXT NOT NULL, number INTEGER NOT NULL, payload TEXT NOT NULL, UNIQUE(person, number))')
         self.db.commit()
@@ -40,8 +41,10 @@ class Mailbox:
 
     def send(self, draft):
         with self.lock, self.db:
-            self.db.execute('INSERT OR IGNORE INTO mail (id,sender,recipient,created,payload) VALUES (?,?,?,?,?)',
+            inserted = self.db.execute('INSERT OR IGNORE INTO mail (id,sender,recipient,created,payload) VALUES (?,?,?,?,?)',
                             (draft['id'], draft['sender'], draft['recipient'], time.time(), json.dumps(draft)))
+            if inserted.rowcount and (draft.get('remote') or draft.get('cloud_message') or draft.get('remote_notice')):
+                self.db.execute('INSERT OR IGNORE INTO mail_notifications VALUES (?,?)', (draft['id'], draft['recipient']))
         return {'id': draft['id'], 'status': 'saved_locally', 'transport': 'local-bench'}
 
     def language(self, person):
@@ -73,16 +76,36 @@ class Mailbox:
 
     def inbox(self, person, sender=None, unread=False):
         with self.lock:
-            rows = self.db.execute('SELECT payload,seen FROM mail WHERE recipient=? ORDER BY created', (person,)).fetchall()
+            rows = self.db.execute('SELECT payload,seen FROM mail WHERE recipient IN (?,?) ORDER BY created',
+                                   (person, getattr(self, 'shared_recipient', person))).fetchall()
         return [dict(json.loads(p), seen=bool(seen)) for p, seen in rows
                 if (not unread or not seen) and (sender is None or json.loads(p)['sender'] == sender)]
 
     def mark_seen(self, message):
         with self.lock, self.db:
             self.db.execute('UPDATE mail SET seen=1 WHERE id=?', (message['id'],))
+            self.db.execute('DELETE FROM mail_notifications WHERE id=?', (message['id'],))
 
         if getattr(self, 'on_read', None):
             self.on_read(message)
+
+    def mark_printed(self, message):
+        with self.lock, self.db:
+            current = self.get(message['id'])
+            if not current:
+                raise ValueError('Message not in mailbox')
+            current['printed'] = True
+            self.db.execute('UPDATE mail SET payload=? WHERE id=?', (json.dumps(current), message['id']))
+        if getattr(self, 'on_print', None):
+            self.on_print(current)
+
+    def notifications(self):
+        with self.lock:
+            return self.db.execute('SELECT id,recipient FROM mail_notifications ORDER BY rowid').fetchall()
+
+    def acknowledge_notifications(self, ids):
+        with self.lock, self.db:
+            self.db.executemany('DELETE FROM mail_notifications WHERE id=?', [(ident,) for ident in ids])
 
     def close(self):
         self.db.close()

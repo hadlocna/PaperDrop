@@ -175,11 +175,13 @@ class Cloud:
     def ordinary_message(self, event):
         message = event.get('message', {})
         ident = message.get('id') or uuid.uuid4().hex
-        if not self.printer or message.get('contentType') != 'image':
+        if not self.printer or message.get('contentType') != 'image' or getattr(self.printer, 'mailbox', None) is None:
             inbox = self.root / 'pending-cloud-mail'
             inbox.mkdir(exist_ok=True)
-            (inbox / (uuid.uuid4().hex + '.json')).write_text(json.dumps(event))
-            return
+            import hashlib
+            payload = json.dumps(event, sort_keys=True)
+            (inbox / (hashlib.sha256(payload.encode()).hexdigest() + '.json')).write_text(payload)
+            return False
         target = self.root / 'app-messages' / (ident + '.png')
         target.parent.mkdir(exist_ok=True)
         try:
@@ -192,14 +194,19 @@ class Cloud:
             with Image.open(io.BytesIO(raw)) as img:
                 img.convert('RGB').save(target)
             target.with_suffix('.cloud.json').write_text(json.dumps({'message_id': ident}))
-            self.status(ident, 'printing')
-            result = self.printer.print_image(target, ident)
-            if getattr(self.printer, 'cloud', None) is not self and isinstance(result, dict) and result.get('status') == 'printed':
-                self.status(ident, 'printed')
-            logging.info('cloud_message_printed id=%s', ident)
+            mailbox = getattr(self.printer, 'mailbox', None)
+            family = getattr(self.printer, 'family', None)
+            if mailbox is None or not isinstance(family, dict):
+                raise RuntimeError('Mailbox is not ready')
+            mailbox.send(dict(id=ident, sender='@house-mail', recipient=family['station'],
+                              kind='drawing', image=str(target), cloud_message=True))
+            self.status(ident, 'printed' if mailbox.get(ident).get('printed') else 'received')
+            logging.info('cloud_message_buffered id=%s', ident)
+            return True
         except Exception as exc:
-            logging.warning('cloud_message_print_failed id=%s type=%s', ident, type(exc).__name__)
+            logging.warning('cloud_message_buffer_failed id=%s type=%s', ident, type(exc).__name__)
             self.status(ident, 'failed', str(exc))
+            return False
 
     def event(self, event):
         if event.get('type') == 'printer_ready_ack':

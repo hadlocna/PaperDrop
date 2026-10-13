@@ -2,7 +2,7 @@ const {test,beforeEach}=require('node:test');const assert=require('node:assert/s
 const {prisma}=require('../dist/lib/prisma');const {deviceConnections}=require('../dist/websocket/session');
 const {HOUSES}=require('../dist/services/housePostcards');const {handlePrinterReadiness,readinessId}=require('../dist/services/printerReadiness');
 let rows,events;const ohio=HOUSES.ohio.deviceId,lisbon=HOUSES.portugal.deviceId;
-const matches=(r,w)=>Object.entries(w).every(([k,v])=>typeof v==='object'?v.in.includes(r[k]):r[k]===v);
+const matches=(r,w)=>Object.entries(w).every(([k,v])=>typeof v==='object'?(v.in?v.in.includes(r[k]):!v.notIn.includes(r[k])):r[k]===v);
 beforeEach(()=>{rows=new Map();events=[];deviceConnections.clear();
  for(const d of [ohio,lisbon])deviceConnections.set(d,{readyState:1,send:s=>events.push({device:d,...JSON.parse(s)})});
  prisma.device.findUnique=async()=>({ownerId:'owner'});

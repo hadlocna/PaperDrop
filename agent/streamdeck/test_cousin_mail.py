@@ -66,14 +66,14 @@ class CousinMailTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.receiver.receive(message)
 
-    def test_picture_is_labelled_and_automatically_printed(self):
+    def test_picture_is_labelled_buffered_and_never_automatically_printed(self):
         font=ImageFont.load_default()
         with patch('cousin_mail.ImageFont.truetype',return_value=font), patch('cousin_mail.ImageDraw.Draw') as draw:
             self.receiver.receive(self.message('drawing'))
             captions=[call.args[1] for call in draw.return_value.text.call_args_list]
             self.assertEqual(captions,['To: Alma','From: Andi'])
-        self.receiver.media.print_image.assert_called_once()
-        self.receiver.cloud.mail_receipt.assert_called_with('a'*64,'printed')
+        self.receiver.media.print_image.assert_not_called()
+        self.receiver.cloud.mail_receipt.assert_called_with('a'*64,'received')
         self.assertEqual(self.box.inbox('alma')[0]['kind'],'drawing')
 
     def test_tall_mail_uses_full_width_and_retains_bottom(self):
@@ -82,7 +82,7 @@ class CousinMailTests(unittest.TestCase):
         msg = {**self.message('drawing'), 'media': base64.b64encode(out.getvalue()).decode()}
         with patch('cousin_mail.ImageFont.truetype', return_value=ImageFont.load_default()):
             self.receiver.receive(msg)
-        path = self.receiver.media.print_image.call_args.args[0]
+        path = self.box.inbox('alma')[0]['image']
         with Image.open(path) as image:
             self.assertEqual(image.size, (576, 4112))
             self.assertEqual(image.getpixel((575, 4099)), (0, 0, 0))
@@ -99,11 +99,12 @@ class CousinMailTests(unittest.TestCase):
         self.assertEqual(cloud.request,{'session':'drawing'})
         self.assertTrue((self.root/'incoming-mail'/('a'*64+'.json')).exists())
 
-    def test_uncertain_print_is_reported_failed_and_not_acknowledged_printed(self):
+    def test_receiving_never_attempts_even_an_unavailable_printer(self):
         from pi_media import PrintOutcomeUnknown
         self.receiver.media.print_image.side_effect=PrintOutcomeUnknown()
         with patch('cousin_mail.ImageFont.truetype',return_value=ImageFont.load_default()):
             self.receiver.receive(self.message('drawing'))
-        self.receiver.cloud.mail_receipt.assert_called_once_with('a'*64,'failed')
+        self.receiver.cloud.mail_receipt.assert_called_once_with('a'*64,'received')
+        self.receiver.media.print_image.assert_not_called()
 
 if __name__=='__main__':unittest.main()

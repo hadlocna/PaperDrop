@@ -6,7 +6,7 @@ stage=${1:-/tmp/paperdrop-recording-timer}
 release=$(readlink -f /opt/paperdrop/current)
 backup=/var/lib/paperdrop/maintenance/recording-timer-$(date +%Y%m%d-%H%M%S)
 python="$release/venv/bin/python"
-files=(controller.py store.py languages.py media.py pi_media.py cousin_mail.py render.py)
+files=(controller.py store.py languages.py media.py pi_media.py cousin_mail.py render.py app.py pi_cloud.py)
 "$python" - "$stage" <<'PY'
 import pathlib, sys, urllib.request, json
 p = pathlib.Path(sys.argv[1])
@@ -36,6 +36,7 @@ systemctl stop paperdrop-runtime.service
 for file in "${files[@]}"; do
     install -m 644 "$stage/agent/streamdeck/$file" "$release/streamdeck/$file"
 done
+install -m 644 "$stage/agent/streamdeck/assets/icons/MailOpen.svg" "$release/streamdeck/assets/icons/MailOpen.svg"
 for clip in "$stage"/speech/*.wav; do
     install -m 644 "$clip" "$release/streamdeck/speech/$(basename "$clip")"
 done

@@ -51,6 +51,17 @@ test('lost receipt redelivers same ID on sync, never creates a second message',a
  await handleCousinMail(source,event);await handleCousinMail(target,{type:'mail_sync'});await handleCousinMail(target,{type:'mail_sync'});
  const deliveries=events.filter(e=>e.type==='cousin_mail');assert.equal(deliveries.length,2);assert.equal(deliveries[0].message.id,deliveries[1].message.id);
 });
+test('buffered picture can be read without printing, then explicitly printed later',async()=>{
+ await handleCousinMail(source,{...event,kind:'drawing',media:Buffer.from('89504e470d0a1a0a','hex').toString('base64')});
+ const id=mailId(source,event.id);
+ await handleCousinMail(target,{type:'mail_receipt',id,status:'received'});
+ assert.equal(db.get(id).status,'received');
+ events.length=0;await handleCousinMail(target,{type:'mail_sync'});assert.equal(events.length,0);
+ await handleCousinMail(target,{type:'mail_receipt',id,status:'read'});assert.equal(db.get(id).status,'read');
+ await handleCousinMail(target,{type:'mail_receipt',id,status:'received'});assert.equal(db.get(id).status,'read');
+ await handleCousinMail(target,{type:'mail_receipt',id,status:'printed'});assert.equal(db.get(id).status,'printed');
+ await handleCousinMail(target,{type:'mail_receipt',id,status:'read'});assert.equal(db.get(id).status,'printed');
+});
 test('60-second voice note queues offline; longer recordings are rejected',async()=>{
  deviceConnections.delete(target);
  await handleCousinMail(source,{...event,media:recording(60)});

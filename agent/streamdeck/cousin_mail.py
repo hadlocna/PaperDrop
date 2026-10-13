@@ -1,4 +1,4 @@
-"""Durable receiving inbox; one serialized worker owns automatic picture printing."""
+"""Durable receiving inbox; incoming media never prints without a child action."""
 import base64
 import io
 import json
@@ -30,6 +30,8 @@ class Receiver:
         self.pending.mkdir(exist_ok=True)
         self.notices = self.root / 'printer-notices'
         self.notices.mkdir(exist_ok=True)
+        self.app_pending = self.root / 'pending-cloud-mail'
+        self.app_pending.mkdir(exist_ok=True)
         self.next_probe = 0
         self.thread = threading.Thread(target=self.run, daemon=True)
         self.thread.start()
@@ -46,10 +48,13 @@ class Receiver:
                                              'firmware': os.environ.get('PAPERDROP_FIRMWARE_VERSION', 'unknown')})
                         except Exception:
                             pass
-            for path in sorted(self.pending.glob('*.json')) + sorted(self.notices.glob('*.json')):
+            for path in sorted(self.pending.glob('*.json')) + sorted(self.notices.glob('*.json')) + sorted(self.app_pending.glob('*.json')):
                 try:
                     if path.parent == self.notices:
                         self.receive_notice(json.loads(path.read_text()))
+                    elif path.parent == self.app_pending:
+                        if not self.cloud.ordinary_message(json.loads(path.read_text())):
+                            continue
                     else:
                         self.receive(json.loads(path.read_text()))
                     path.unlink(missing_ok=True)
@@ -98,20 +103,9 @@ class Receiver:
                 atomic_write(target, output.getvalue())
             self.mailbox.send(dict(id=ident, sender=sender['id'], recipient=recipient['id'], kind=kind,
                                    **{'audio' if kind == 'voice' else 'image': str(target)}, remote=True))
-        if kind == 'voice':
-            seen = any(m['id'] == ident and m['seen'] for m in self.mailbox.inbox(recipient['id']))
-            self.cloud.mail_receipt(ident, 'read' if seen else 'received')
-        else:
-            try:
-                self.media.print_image(target, ident)
-            except Exception as exc:
-                from pi_media import PrintOutcomeUnknown
-                if isinstance(exc, PrintOutcomeUnknown):
-                    self.cloud.mail_receipt(ident, 'failed')
-                    # Retain the mailbox image and uncertain print receipt; do not resubmit paper.
-                    return
-                raise
-            self.cloud.mail_receipt(ident, 'printed')
+        saved = self.mailbox.get(ident)
+        seen = any(m['id'] == ident and m['seen'] for m in self.mailbox.inbox(recipient['id']))
+        self.cloud.mail_receipt(ident, 'printed' if saved.get('printed') else ('read' if seen else 'received'))
 
     def receive_notice(self, notice):
         ident = notice['id']
@@ -121,15 +115,10 @@ class Receiver:
         target = self.root / (ident + '-ready.png')
         if not target.exists():
             render_notice(target, house['name'], notice['firmware'])
-        try:
-            self.media.print_image(target, ident)
-        except Exception as exc:
-            from pi_media import PrintOutcomeUnknown
-            if isinstance(exc, PrintOutcomeUnknown):
-                self.cloud.mail_receipt(ident, 'failed', notice=True)
-                return
-            raise
-        self.cloud.mail_receipt(ident, 'printed', notice=True)
+        self.mailbox.send(dict(id=ident, sender=house['id'], recipient=self.family['station'],
+                               kind='drawing', image=str(target), remote_notice=True))
+        saved = self.mailbox.get(ident)
+        self.cloud.mail_receipt(ident, 'printed' if saved.get('printed') else 'received', notice=True)
 
     def close(self):
         self.stop.set()

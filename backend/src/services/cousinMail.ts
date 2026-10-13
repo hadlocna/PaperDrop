@@ -52,11 +52,12 @@ export async function handleCousinMail(device: string, event: any) {
             const message = await prisma.message.findUnique({where: {id: event.id}});
             if (!message || message.deviceId !== device || message.contentType !== TYPE) return;
             const body = JSON.parse(message.content);
-            const allowed = body.kind === 'voice' ? ['received', 'read'] : ['printed', 'failed'];
+            const allowed = body.kind === 'voice' ? ['received', 'read'] : ['received', 'read', 'printed', 'failed'];
             if (!allowed.includes(event.status)) return;
-            if (['read', 'printed'].includes(message.status || '')) return;
+            const terminal = body.kind === 'voice' ? ['read', 'printed'] : ['printed'];
+            if (terminal.includes(message.status || '') || (message.status === 'read' && event.status === 'received')) return;
             await prisma.message.updateMany({where: {id: message.id, deviceId: device, contentType: TYPE,
-                status: {notIn: ['read', 'printed']}}, data: {status: event.status,
+                status: {notIn: terminal}}, data: {status: event.status,
                 ...(event.status === 'printed' ? {printedAt: new Date()} : {})}});
             return;
         }

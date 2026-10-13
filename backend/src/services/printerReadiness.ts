@@ -40,8 +40,9 @@ export async function handlePrinterReadiness(deviceId: string, event: any) {
             }
         } else if (event.type === 'printer_notice_receipt' && deviceId === destination
                    && typeof event.id === 'string' && /^[a-f0-9]{64}$/.test(event.id)
-                   && ['printed', 'failed'].includes(event.status)) {
-            await prisma.message.updateMany({where: {id: event.id, deviceId, contentType: TYPE, status: {in: ['queued','sent']}},
+                   && ['received', 'read', 'printed', 'failed'].includes(event.status)) {
+            await prisma.message.updateMany({where: {id: event.id, deviceId, contentType: TYPE,
+                status: {notIn: event.status==='received' ? ['read','printed'] : ['printed']}},
                 data: {status: event.status, ...(event.status === 'printed' ? {printedAt: new Date()} : {})}});
         }
     } catch {

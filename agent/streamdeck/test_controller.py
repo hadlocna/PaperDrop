@@ -212,7 +212,7 @@ class ControllerTests(unittest.TestCase):
         self.c.switch_station('ohio')
         self.assertEqual(self.c.snapshot()['tiles'][0]['badge'],1)
         self.assertEqual(self.c.snapshot()['tiles'][1]['badge'],0)
-        self.tap(0);self.tap(4);self.tap(1)
+        self.tap(0);self.tap(4);self.tap(0);self.tap(0);self.tap(1)
         self.wait('incoming')
         self.tap(5)
         self.assertEqual(len(self.box.inbox('andy',unread=True)),0)
@@ -282,44 +282,67 @@ class ControllerTests(unittest.TestCase):
         self.tap(3);self.wait('sent')
         self.assertEqual(len(self.box.inbox('andy')),1)
 
-    def test_combined_inbox_counts_both_types_and_preserves_read_rules(self):
+    def test_cousin_envelopes_preserve_read_rules_and_one_action(self):
         for ident, sender, kind in [('old', 'sloan', 'voice'), ('new', 'andy', 'voice'), ('pic', 'rue', 'drawing')]:
             self.box.send(dict(id=ident, sender=sender, recipient='alma', kind=kind,
-                              audio='test' if kind == 'voice' else None,
-                              image='image' if kind == 'drawing' else None))
-        self.tap(0)
-        tiles = self.c.snapshot()['tiles']
-        self.assertEqual([t['label'] for t in tiles],
-                         ['Games', 'English', 'Draw & Print', 'Choose time', 'Inbox', 'Home'])
-        self.assertEqual(tiles[4]['badge'], 3)
-        self.tap(4)
-        self.assertEqual(self.c.current['id'], 'pic')
-        self.assertEqual(len(self.c.mail), 3)
-        self.assertEqual(len(self.box.inbox('alma', unread=True)), 3)
-        self.tap(1); self.assertEqual(self.c.mode, 'preview')
-        self.tap(0)
-        self.assertEqual(len(self.box.inbox('alma', unread=True)), 2)
-        self.tap(4)
-        self.assertEqual(self.c.current['id'], 'new')
+                              audio='test' if kind=='voice' else None, image='image' if kind=='drawing' else None))
+        self.tap(0); self.assertEqual(self.c.snapshot()['tiles'][4]['badge'],3)
+        self.tap(4); self.assertEqual(self.c.mode,'mail_people')
+        self.assertEqual([t.get('person') for t in self.c.snapshot()['tiles'][:4]],['andy','sloan','rue','elise'])
+        self.assertEqual([t.get('badge') for t in self.c.snapshot()['tiles'][:3]],[1,1,1])
+        self.tap(2); self.assertEqual(self.c.mode,'mail_list')
+        self.assertEqual(self.c.snapshot()['tiles'][0]['icon'],'Mail')
+        self.tap(0); self.assertEqual(self.c.current['id'],'pic')
+        self.media.print_calls=0
+        self.tap(1); self.assertEqual(self.c.mode,'preview'); self.tap(0)
+        self.assertEqual(self.media.print_calls,0)
+        self.tap(4); self.assertEqual(self.c.snapshot()['tiles'][0]['icon'],'MailOpen')
+        self.tap(5); self.tap(0); self.tap(0)
+        self.assertEqual(sum(t.get('icon')=='Play' and not t.get('disabled') for t in self.c.snapshot()['tiles']),1)
         self.media.play_gate.clear(); self.tap(1); self.wait('playing')
-        self.assertEqual(len(self.box.inbox('alma', unread=True)), 2)
+        self.assertEqual(len(self.box.inbox('alma',unread=True)),2)
         self.media.play_gate.set(); self.wait('incoming')
-        self.assertEqual(len(self.box.inbox('alma', unread=True)), 1)
-        self.tap(4); self.tap(1); self.wait('incoming')
-        self.tap(5)
-        self.assertEqual(self.c.snapshot()['tiles'][4]['badge'], 0)
-        self.tap(4)
-        self.assertEqual(len(self.c.mail), 3)  # Read messages remain accessible.
+        self.tap(4); self.tap(5); self.tap(1); self.tap(0); self.tap(1); self.wait('incoming')
+        self.tap(5); self.assertEqual(self.c.snapshot()['tiles'][4]['badge'],0)
 
-    def test_empty_inbox_has_a_way_back_and_other_childs_mail_is_private(self):
+    def test_cousin_picker_pages_empty_mail_and_child_isolation(self):
         self.box.send(dict(id='other', sender='andy', recipient='theodore', kind='voice', audio='test'))
-        self.tap(0)
-        self.assertEqual(self.c.snapshot()['tiles'][4]['badge'], 0)
-        self.tap(4); self.assertEqual(self.c.mode, 'inbox_empty')
-        self.tap(5); self.assertEqual(self.c.mode, 'personal')
-        self.tap(3); self.assertEqual(self.c.mode, 'recording_time')
-        self.assertTrue(self.c.snapshot()['tiles'][4]['disabled'])
-        self.tap(5); self.tap(1); self.assertEqual(self.c.mode, 'languages')
+        self.tap(0);self.tap(4)
+        self.assertEqual(self.c.mode,'mail_people')
+        self.assertEqual(self.c.snapshot()['tiles'][0]['badge'],0)
+        self.tap(4);self.assertEqual(self.c.snapshot()['tiles'][0]['person'],'lore')
+        self.tap(4);self.tap(0);self.assertEqual(self.c.mode,'mail_list')
+        self.assertEqual(self.c.mail,[])
+        self.tap(5);self.tap(5);self.assertEqual(self.c.mode,'personal')
+
+    def test_envelope_paging_and_explicit_print_survive_reopen(self):
+        for index in range(6):
+            self.box.send(dict(id=str(index),sender='andy',recipient='alma',kind='drawing',image='test'))
+        self.c.person='alma';self.c.open_mail('andy')
+        self.assertEqual(self.c.snapshot()['tiles'][0]['message_id'],'5')
+        self.tap(4);self.assertEqual(self.c.snapshot()['tiles'][0]['message_id'],'1')
+        self.tap(0);self.assertEqual(self.media.print_calls,0)
+        self.media.print_image=lambda path, ident:{'status':'printed'}
+        self.tap(2);self.wait('incoming')
+        self.assertTrue(self.c.snapshot()['tiles'][2]['disabled'])
+        self.assertTrue(self.box.get('1')['printed'])
+        reopened=Mailbox(self.temp.name);self.assertTrue(reopened.get('1')['printed']);reopened.close()
+
+    def test_notification_is_durable_localized_and_does_not_interrupt_recording(self):
+        from languages import translate
+        self.box.set_language('alma','fr')
+        message=dict(id='notify',sender='andy',recipient='alma',kind='voice',audio='test',remote=True)
+        self.box.send(message);self.box.send(message)
+        self.assertEqual(len(self.box.notifications()),1)
+        cues=[];self.media.start_guidance=lambda text:cues.append(text)
+        self.c.mode='recording';self.c.announce_mail();self.assertEqual(cues,[])
+        self.c.mode='home';self.c.notification_attempt=-100;self.c.announce_mail()
+        deadline=time.monotonic()+1
+        while self.c.notification_busy and time.monotonic()<deadline:time.sleep(.005)
+        self.assertEqual(cues,[translate('There is a postcard for you. Press play to listen, or the picture to see it.','fr')])
+        self.assertEqual(self.box.notifications(),[])
+        self.c.notification_attempt=-100;self.c.announce_mail();self.assertEqual(len(cues),1)
+        self.assertEqual(len(self.box.inbox('alma',unread=True)),1)
 
     def test_personal_announcement_matches_top_row_in_every_language(self):
         from languages import LANGUAGES, translate

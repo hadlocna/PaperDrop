@@ -264,13 +264,14 @@ const handleDeviceMessage = async (deviceId: string, message: any) => {
         }
     }
     else if (message.type === 'print_status') {
-        if (!['printing', 'printed', 'failed'].includes(message.status)) return;
+        if (!['received', 'read', 'printing', 'printed', 'failed'].includes(message.status)) return;
         recordedPrintStatus(deviceId, message.message_id, message.status);
         if (message.status === 'failed') broadcastToDevice(deviceId, { type: 'voice_notice', reason: 'print' });
         try {
             if (message.message_id) {
                 await prisma.message.updateMany({
-                    where: { id: message.message_id, deviceId },
+                    where: { id: message.message_id, deviceId,
+                        ...(['received', 'read'].includes(message.status) ? {status: {notIn: message.status==='received' ? ['read','printed'] : ['printed']}} : {}) },
                     data: {
                         status: message.status,
                         errorMessage: message.error || null,

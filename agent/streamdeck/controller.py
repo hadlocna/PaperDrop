@@ -25,6 +25,7 @@ class Controller:
         self.people = {p['id']: p for p in family['children']}
         self.houses = {h['id']: h for h in family['houses']}
         self.station = family['station']
+        self.mailbox.shared_recipient = self.station
         self.person = None
         self.recipient = None
         self.house = None
@@ -37,6 +38,9 @@ class Controller:
         self.current = None
         self.mail = []
         self.mail_index = 0
+        self.mail_sender = None
+        self.mail_page = 0
+        self.mail_people_page = 0
         self.note = ''
         self.stage = ''
         self.record_key = None
@@ -54,6 +58,8 @@ class Controller:
         self.wrong_keys = set()
         self.language = self.mailbox.language('@station')
         self.round_timer = None
+        self.notification_busy = False
+        self.notification_attempt = 0
 
     def children(self, house):
         return [p['id'] for p in self.family['children'] if p['house'] == house]
@@ -91,11 +97,15 @@ class Controller:
         return tile(self.people[person]['name'], person=person, **kw)
 
     def sender_tile(self, sender, **kw):
+        if sender == '@house-mail':
+            return tile('House mail', 'Mail', **kw)
         if sender in self.houses:
             return tile(self.houses[sender]['name'], house=sender, **kw)
         return self.person_tile(sender, **kw)
 
     def sender_name(self, sender):
+        if sender == '@house-mail':
+            return label('House mail', self.language)
         return (self.houses.get(sender) or self.people[sender])['name']
 
     def snapshot(self):
@@ -105,7 +115,7 @@ class Controller:
             target = self.people[self.recipient]['name'] if self.recipient else ''
             heading, hint = '', ''
             picture = None
-            busy = self.mode in ('arming', 'recording', 'finishing', 'generating', 'sending', 'playing', 'printing')
+            busy = self.mode in ('arming', 'recording', 'finishing', 'generating', 'sending', 'playing', 'printing', 'mail_printing')
             if self.mode == 'home':
                 heading = 'PaperDrop at home'
                 hint = 'Your face opens learning and your latest postcards. Choose a house to send, or tap Draw & Print.'
@@ -199,9 +209,9 @@ class Controller:
                 tiles[self.record_key] = tile('Wait' if arming else 'Done', 'Loader2' if arming else 'Mic', color='#f0cb86' if arming else '#e89179', disabled=arming)
                 tiles[3] = tile('Hold on' if arming else f'{remaining}s', 'Mic', disabled=True, color='#f0cb86' if arming else '#e89179')
                 tiles[4 if self.record_key==5 else 5] = tile('Delete', 'Trash2')
-            elif self.mode in ('finishing', 'generating', 'sending', 'playing', 'printing'):
+            elif self.mode in ('finishing', 'generating', 'sending', 'playing', 'printing', 'mail_printing'):
                 heading = {'finishing':'Keeping your recording…', 'generating':self.stage or 'Making your picture…',
-                           'sending':'Sending your postcard…', 'playing':'Playing…', 'printing':'Sending to the printer…'}[self.mode]
+                           'sending':'Sending your postcard…', 'playing':'Playing…', 'printing':'Sending to the printer…', 'mail_printing':'Sending to the printer…'}[self.mode]
                 hint = 'One moment. Buttons are resting.'
                 tiles = [tile('', 'Loader2', disabled=True, color='#f0cb86') for _ in range(6)]
                 if self.mode=='playing' and self.current:
@@ -214,17 +224,34 @@ class Controller:
                 heading, hint = f'Ready for {target}?', 'Nothing is sent yet. Green sends once. Redo records a new idea. Delete throws this draft away.'
                 picture = self.draft.get('image')
                 tiles = [self.person_tile(self.recipient, disabled=True),
-                         tile('Preview', 'ZoomIn' if picture else 'Volume2', image=picture),
-                         tile('Listen', 'Play'), tile('Redo', 'RotateCcw'),
+                         tile('Preview' if picture else 'Listen', 'ZoomIn' if picture else 'Play', image=picture),
+                         tile('Listen', 'Play') if picture else tile(disabled=True), tile('Redo', 'RotateCcw'),
                          tile('Delete', 'Trash2', color='#e89179'), tile('Send', 'Send', color='#85b8a2')]
             elif self.mode == 'preview':
                 source = self.draft if self.return_mode in ('review','print_review','print_done','game_win') else self.current
                 picture = source.get('image')
                 heading, hint = 'Your picture, across all six keys', 'Tap any button to return. This never sends the picture.'
                 tiles = [tile('Return', mosaic=picture, piece=i) for i in range(6)]
-            elif self.mode == 'inbox_empty':
-                heading, hint = 'Your inbox', 'No mail yet.'
-                tiles[1] = tile('Inbox', 'Mail', disabled=True)
+            elif self.mode == 'mail_people':
+                heading, hint = 'Your inbox', 'Choose a cousin. The number shows unread messages.'
+                people = self.mail_senders()
+                for key, sender in enumerate(people[self.mail_people_page*4:self.mail_people_page*4+4]):
+                    tiles[key] = self.sender_tile(sender, badge=self.unread(self.person, sender), badge_count=True)
+                tiles[4] = tile('Next', 'ChevronRight', disabled=len(people)<=4)
+                tiles[5] = tile('Back', 'ArrowLeft')
+            elif self.mode == 'mail_list':
+                heading, hint = f'From {self.sender_name(self.mail_sender)}', 'Yellow envelopes are new. White envelopes have been read.'
+                seen = {m['id']:m['seen'] for m in self.mailbox.inbox(self.person, sender=self.mail_sender)}
+                for key, message in enumerate(self.mail[self.mail_page*4:self.mail_page*4+4]):
+                    read = seen.get(message['id'], message['seen'])
+                    tiles[key] = tile('Voice note' if message['kind']=='voice' else 'Picture',
+                                      'MailOpen' if read else 'Mail', color='#ffffff' if read else '#f0cb86',
+                                      type_badge='Mic' if message['kind']=='voice' else 'Pencil',
+                                      message_id=message['id'], read=read)
+                if not self.mail:
+                    tiles[1] = tile('Inbox', 'MailOpen', disabled=True)
+                    hint = 'No mail yet.'
+                tiles[4] = tile('Next', 'ChevronRight', disabled=len(self.mail)<=4)
                 tiles[5] = tile('Back', 'ArrowLeft')
             elif self.mode == 'incoming':
                 sender = self.current['sender']
@@ -232,8 +259,9 @@ class Controller:
                 heading = f'For {name}, from {self.sender_name(sender)}'
                 hint = f'{self.mail_index+1} of {len(self.mail)} · Play or preview, then reply when you want.'
                 tiles = [self.sender_tile(sender, disabled=True), tile('Preview' if picture else 'Listen', 'ZoomIn' if picture else 'Play', image=picture),
-                         tile('Listen', 'Play', disabled=not self.current.get('audio')), tile('Reply', 'Mic', color='#85b8a2'),
-                         tile('Next', 'ChevronRight', disabled=len(self.mail)<2), tile('Home', 'Home')]
+                         tile('Printed' if self.current.get('printed') else 'Print', 'Check', color='#85b8a2', disabled=bool(self.current.get('printed'))) if picture else tile(disabled=True),
+                         tile('Reply', 'Mic', color='#85b8a2', disabled=sender=='@house-mail'),
+                         tile('Back', 'ArrowLeft'), tile('Home', 'Home')]
             elif self.mode == 'print_review':
                 heading, hint = 'Ready to print?', 'Look at your picture, then press the green Print button. Nothing has printed yet.'
                 picture = self.draft.get('image')
@@ -346,6 +374,7 @@ class Controller:
                 raise ValueError('Unknown station')
             self.media.stop_audio()
             self.station = station
+            self.mailbox.shared_recipient = station
             self.person = self.recipient = None
             self.home()
 
@@ -409,8 +438,27 @@ class Controller:
                 self.hub()
             elif key == 5:
                 self.hub()
-        elif self.mode == 'inbox_empty' and key == 5:
-            self.hub()
+        elif self.mode == 'mail_people':
+            people = self.mail_senders()
+            index = self.mail_people_page*4 + key
+            if key < 4 and index < len(people):
+                self.open_mail(people[index])
+            elif key == 4 and len(people)>4:
+                self.mail_people_page = (self.mail_people_page+1) % ((len(people)+3)//4)
+                self.transition('mail_people')
+            elif key == 5:
+                self.hub()
+        elif self.mode == 'mail_list':
+            index = self.mail_page*4 + key
+            if key < 4 and index < len(self.mail):
+                self.mail_index = index
+                self.current = self.mail[index]
+                self.transition('incoming', 'There is a postcard for you. Press play to listen, or the picture to see it.')
+            elif key == 4 and len(self.mail)>4:
+                self.mail_page = (self.mail_page+1) % ((len(self.mail)+3)//4)
+                self.transition('mail_list')
+            elif key == 5:
+                self.transition('mail_people')
         elif self.mode == 'languages':
             if key<5:
                 self.language=list(LANGUAGES)[key]
@@ -500,7 +548,7 @@ class Controller:
             if key == 1 and self.draft.get('image'):
                 self.return_mode = 'review'
                 self.transition('preview', 'Here is your picture. Tap any button to go back.')
-            elif key in (1,2):
+            elif key == 1 or (key == 2 and self.draft.get('image')):
                 self.play(self.draft, 'review')
             elif key in (3,4):
                 self.discard()
@@ -515,9 +563,11 @@ class Controller:
             if key == 1 and self.current.get('image'):
                 self.return_mode = 'incoming'
                 self.transition('preview', 'Tap any button to go back.')
-            elif key in (1,2) and self.current.get('audio'):
+            elif key == 1 and self.current.get('audio'):
                 self.play(self.current, 'incoming')
-            elif key == 3:
+            elif key == 2 and self.current.get('image') and not self.current.get('printed'):
+                self.print_received()
+            elif key == 3 and self.current['sender'] != '@house-mail':
                 sender = self.current['sender']
                 if sender in self.houses:
                     self.house = sender
@@ -527,10 +577,8 @@ class Controller:
                     self.recipient = sender
                     self.house = self.people[sender]['house']
                     self.compose()
-            elif key == 4 and len(self.mail)>1:
-                self.mail_index = (self.mail_index+1) % len(self.mail)
-                self.current = self.mail[self.mail_index]
-                self.transition('incoming')
+            elif key == 4:
+                self.transition('mail_list')
             elif key == 5:
                 self.hub()
         elif self.mode == 'print_review':
@@ -552,6 +600,8 @@ class Controller:
         elif self.mode == 'error':
             if key==3 and self.failed_mode=='printing':
                 self.print_draft()
+            elif key == 3 and self.failed_mode == 'mail_printing':
+                self.print_received()
             elif key == 3 and self.failed_mode == 'sending' and self.draft:
                 self.send()
             elif key == 3 and self.failed_mode == 'playing':
@@ -571,18 +621,70 @@ class Controller:
         self.note = ''
         self.transition('compose', f'For {self.people[self.recipient]["name"]}. Tap the microphone to talk, or the picture to draw. Tap again when you are done.')
 
+    def mail_senders(self):
+        people = [p for p in self.people if self.people[p]['house'] != self.station]
+        # Keep historical house-addressed mail accessible beside cousin mail.
+        people += [h for h in self.remote_houses() if self.mailbox.inbox(self.person, sender=h)]
+        if self.mailbox.inbox(self.person, sender='@house-mail'):
+            people.append('@house-mail')
+        return people
+
+    def announce_mail(self):
+        with self.lock:
+            if self.closed or self.mode not in ('home', 'personal') or self.notification_busy:
+                return
+            player = getattr(self.media, 'player', None)
+            if player is not None and player.poll() is None:
+                return
+            if time.monotonic()-self.notification_attempt < 60:
+                return
+            pending = self.mailbox.notifications()
+            if not pending:
+                return
+            recipient = pending[0][1]
+            ids = [ident for ident, person in pending if person==recipient]
+            language = self.mailbox.language(recipient) if recipient in self.people else self.language
+            self.notification_attempt = time.monotonic()
+            try:
+                player = self.media.start_guidance(translate('There is a postcard for you. Press play to listen, or the picture to see it.', language))
+            except Exception:
+                logging.warning('mail_notification_unavailable')
+                return
+            self.notification_busy = True
+        def completed():
+            try:
+                if player is None or player.wait(timeout=30)==0:
+                    self.mailbox.acknowledge_notifications(ids)
+                    self.notification_attempt = 0
+            except Exception:
+                logging.warning('mail_notification_failed')
+            finally:
+                self.notification_busy = False
+        threading.Thread(target=completed, daemon=True).start()
+
+    def print_received(self):
+        message = self.current
+        self.transition('mail_printing')
+        def success(result):
+            if not isinstance(result, dict) or result.get('status') != 'printed':
+                raise RuntimeError('The printer did not confirm this picture. It is still saved in your inbox.')
+            self.mailbox.mark_seen(message)
+            self.mailbox.mark_printed(message)
+            self.current = dict(message, printed=True)
+            self.mail = [dict(m, printed=True) if m['id']==message['id'] else m for m in self.mail]
+            self.transition('incoming')
+        self.background(lambda:self.media.print_image(message['image'], message['id']), success)
+
     def open_mail(self, sender=None):
-        mail = self.mailbox.inbox(self.person, sender=sender)
-        if not mail:
-            if sender is None:
-                self.transition('inbox_empty', 'No mail yet.')
-            else:
-                self.speak('No mail yet.')
+        if sender is None:
+            self.mail_people_page = 0
+            self.transition('mail_people')
             return
+        self.mail_sender = sender
+        mail = self.mailbox.inbox(self.person, sender=sender)
         self.mail = sorted(reversed(mail), key=lambda m:m['seen'])
-        self.mail_index = 0
-        self.current = self.mail[0]
-        self.transition('incoming', 'There is a postcard for you. Press play to listen, or the picture to see it.')
+        self.mail_index = self.mail_page = 0
+        self.transition('mail_list', 'No mail yet.' if not mail else None)
 
     def start_recording(self, key, kind, local_print=False):
         self.discard()

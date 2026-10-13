@@ -22,7 +22,8 @@ queue mail in the backend. A send receipt is not proof of physical playback or p
 Tap your face to see unread badges and sender portraits. The voice/picture button
 opens an inbox with Play/Preview, Reply and Next; older messages remain accessible.
 Voice notes never auto-play. A note is read only after playback completes.
-Incoming pictures print automatically with the recipient and sending child's names.
+Incoming pictures remain in the inbox with the recipient and sending child's names.
+Previewing never prints them; the child presses Print explicitly.
 USB print receipts suppress duplicate jobs; uncertain prints require inspection.
 Mailbox and media live outside firmware releases and survive upgrades/restarts.
 
@@ -37,10 +38,17 @@ bench/demo notes below describe older behavior and are retained for context.
 ## Current Pi controls
 
 Each child's personal screen reads **Games / Language / Draw & Print** across the
-top and **Choose time / Inbox / Home** across the bottom. Inbox combines received
-voice notes and pictures, with a total unread badge. Unread items appear first,
-newest first; read items remain available with Next. Opening the inbox does not
+top and **Choose time / Inbox / Home** across the bottom. Inbox first shows the
+remote cousins' portraits and their unread counts. Choose a cousin, then a yellow
+closed envelope (unread) or white open envelope (read). Voice notes and pictures
+share this list. Next pages through four cousins or four messages at a time.
+Unread items appear first, newest first. Opening the inbox or envelope does not
 mark mail read: voice notes require completed playback and pictures require preview.
+Received pictures have separate Preview and Print controls. Receiving and previewing
+never emit paper. Successful printing is recorded durably and suppresses repeat
+prints. House-addressed web pictures appear under House mail; no child sender is guessed.
+Incoming mail queues a localized spoken alert, deferred while recording or playing.
+Alerts are coalesced per recipient, survive restarts and are not repeated on redelivery.
 The welcome announcement names the three top-row choices in all five languages.
 
 The clock button, **Choose time**, offers 10, 15,

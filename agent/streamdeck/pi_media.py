@@ -207,8 +207,15 @@ class PiMedia(Media):
 
     def attach_mailbox(self, mailbox, family):
         from cousin_mail import Receiver
+        self.mailbox, self.family = mailbox, family
         self.receiver = Receiver(self.root, mailbox, family, self, self.cloud)
-        mailbox.on_read = lambda message: self.cloud.mail_receipt(message['id'], 'read') if message.get('remote') and message['kind'] == 'voice' else None
+        def receipt(message, status):
+            if message.get('cloud_message'):
+                self.cloud.status(message['id'], status)
+            elif message.get('remote') or message.get('remote_notice'):
+                self.cloud.mail_receipt(message['id'], status, notice=bool(message.get('remote_notice')))
+        mailbox.on_read = lambda message: receipt(message, 'read')
+        mailbox.on_print = lambda message: receipt(message, 'printed')
 
     def send_mail(self, draft, family):
         people = {p['id']: p for p in family['children']}

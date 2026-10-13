@@ -114,31 +114,36 @@ class PiTests(unittest.TestCase):
         self.assertTrue(received.wait(1))
         cloud.ordinary_message.assert_called_once_with(event)
 
-    def test_cloud_prints_ordinary_app_image_message(self):
+    def test_cloud_buffers_ordinary_app_image_message(self):
         from io import BytesIO
         from PIL import Image
         import base64
         cloud=self.cloud();cloud.request=None;cloud.printer=MagicMock();cloud.send=MagicMock()
-        cloud.printer.print_image.return_value={'status':'printed'}
+        from store import Mailbox
+        cloud.printer.mailbox=Mailbox(self.root);self.addCleanup(cloud.printer.mailbox.close)
+        cloud.printer.family={'station':'portugal'}
         output=BytesIO();Image.new('RGB',(8,8),'white').save(output,format='PNG')
         cloud.ordinary_message({'type':'new_message','message':{'id':'ordinary','contentType':'image',
             'content':base64.b64encode(output.getvalue()).decode()}})
         printed=self.root/'app-messages/ordinary.png'
         self.assertTrue(printed.exists())
-        cloud.printer.print_image.assert_called_once_with(printed,'ordinary')
-        self.assertEqual([call.args[0]['status'] for call in cloud.send.call_args_list], ['printing','printed'])
+        cloud.printer.print_image.assert_not_called()
+        self.assertEqual(cloud.printer.mailbox.get('ordinary')['image'],str(printed))
+        self.assertEqual([call.args[0]['status'] for call in cloud.send.call_args_list], ['received'])
 
-    def test_cloud_prints_ordinary_app_image_without_duplicate_status_from_pi_media(self):
+    def test_cloud_buffers_ordinary_app_image_with_receiving_receipt(self):
         from io import BytesIO
         from PIL import Image
         import base64
         cloud=self.cloud();cloud.request=None;cloud.send=MagicMock()
-        printer=MagicMock();printer.cloud=cloud;printer.print_image.return_value={'status':'printed'}
+        from store import Mailbox
+        printer=MagicMock();printer.cloud=cloud;printer.mailbox=Mailbox(self.root);self.addCleanup(printer.mailbox.close)
+        printer.family={'station':'portugal'}
         cloud.printer=printer
         output=BytesIO();Image.new('RGB',(8,8),'white').save(output,format='PNG')
         cloud.ordinary_message({'type':'new_message','message':{'id':'ordinary','contentType':'image',
             'content':base64.b64encode(output.getvalue()).decode()}})
-        self.assertEqual([call.args[0]['status'] for call in cloud.send.call_args_list], ['printing'])
+        self.assertEqual([call.args[0]['status'] for call in cloud.send.call_args_list], ['received'])
 
     def test_cloud_fetch_logs_returns_log_bundle(self):
         import subprocess

@@ -34,8 +34,8 @@ class ReadinessNoticeTests(unittest.TestCase):
         notice=dict(id='b'*64,house='ohio',firmware='2.1.1')
         with patch('cousin_mail.ImageFont.truetype',return_value=ImageFont.load_default()):
             self.receiver.receive_notice(notice)
-        self.receiver.media.print_image.assert_called_once()
-        self.receiver.cloud.mail_receipt.assert_called_once_with('b'*64,'printed',notice=True)
+        self.receiver.media.print_image.assert_not_called()
+        self.receiver.cloud.mail_receipt.assert_called_once_with('b'*64,'received',notice=True)
         self.assertEqual(self.box.inbox('alma'),[])
         self.receiver.family={**self.receiver.family,'station':'ohio'}
         with self.assertRaises(ValueError):self.receiver.receive_notice(notice)
