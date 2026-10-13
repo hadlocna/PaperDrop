@@ -28,6 +28,7 @@ class Controller:
         self.mailbox.shared_recipient = self.station
         self.person = None
         self.recipient = None
+        self.reply_kind = None
         self.house = None
         self.mode = 'home'
         self.revision = 0
@@ -203,6 +204,9 @@ class Controller:
                          tile('Draw', 'Drawing', color='#f0cb86'),
                          tile('Their mail', 'Mail', badge=self.unread(self.person, self.recipient)),
                          tile('Back', 'ArrowLeft'), tile('Home', 'Home')]
+                if self.reply_kind:
+                    tiles[2 if self.reply_kind == 'voice' else 1] = tile(disabled=True)
+                    hint = 'Tap Talk to reply.' if self.reply_kind == 'voice' else 'Tap Draw to reply.'
             elif self.mode in ('arming', 'recording'):
                 remaining = max(0, self.record_limit-int(time.monotonic()-self.record_started))
                 arming = self.mode=='arming'
@@ -268,8 +272,8 @@ class Controller:
                 heading = f'For {name}, from {self.sender_name(sender)}'
                 hint = f'{self.mail_index+1} of {len(self.mail)} · Play or preview, then reply when you want.'
                 tiles = [self.sender_tile(sender, disabled=True), tile('Preview' if picture else 'Listen', 'ZoomIn' if picture else 'Play', image=picture),
-                         tile('Printed' if self.current.get('printed') else 'Print', 'Check', color='#85b8a2', disabled=bool(self.current.get('printed'))) if picture else tile(disabled=True),
-                         tile('Reply', 'Mic', color='#85b8a2', disabled=sender=='@house-mail'),
+                         tile('Print Again' if self.current.get('printed') else 'Print', 'Check', color='#85b8a2') if picture else tile(disabled=True),
+                         tile('Reply', 'Drawing' if picture else 'Mic', color='#85b8a2', disabled=sender=='@house-mail'),
                          tile('Back', 'ArrowLeft'), tile('Home', 'Home')]
             elif self.mode == 'print_review':
                 heading, hint = 'Ready to print?', 'Look at your picture, then press the green Print button. Nothing has printed yet.'
@@ -325,6 +329,7 @@ class Controller:
                         record_seconds=round(time.monotonic()-self.record_started,1) if self.mode=='recording' else 0)
 
     def home(self):
+        self.reply_kind = None
         self.delivery = None
         self.discard()
         self.current = None
@@ -339,6 +344,7 @@ class Controller:
         return (unread or messages)[-1] if messages else None
 
     def hub(self):
+        self.reply_kind = None
         if not self.person:
             self.home()
             return
@@ -584,9 +590,10 @@ class Controller:
                 self.transition('preview', 'Tap any button to go back.')
             elif key == 1 and self.current.get('audio'):
                 self.play(self.current, 'incoming')
-            elif key == 2 and self.current.get('image') and not self.current.get('printed'):
+            elif key == 2 and self.current.get('image'):
                 self.print_received()
             elif key == 3 and self.current['sender'] != '@house-mail':
+                self.reply_kind = 'drawing' if self.current.get('image') else 'voice'
                 sender = self.current['sender']
                 if sender in self.houses:
                     self.house = sender
@@ -641,6 +648,9 @@ class Controller:
             self.transition('sender')
             return
         self.note = ''
+        if self.reply_kind:
+            self.transition('compose')
+            return
         self.transition('compose', f'For {self.people[self.recipient]["name"]}. Tap the microphone to talk, or the picture to draw. Tap again when you are done.')
 
     def mail_senders(self):
@@ -686,6 +696,7 @@ class Controller:
 
     def print_received(self):
         message = self.current
+        attempt = self.mailbox.begin_print_attempt(message)
         self.transition('mail_printing')
         def success(result):
             if not isinstance(result, dict) or result.get('status') != 'printed':
@@ -695,7 +706,7 @@ class Controller:
             self.current = dict(message, printed=True)
             self.mail = [dict(m, printed=True) if m['id']==message['id'] else m for m in self.mail]
             self.transition('incoming')
-        self.background(lambda:self.media.print_image(message['image'], message['id']), success)
+        self.background(lambda:self.media.print_image(message['image'], attempt), success)
 
     def open_mail(self, sender=None):
         if sender is None:

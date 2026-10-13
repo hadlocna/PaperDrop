@@ -102,6 +102,7 @@ LABEL_ROWS += list(ANSWERS.values()) + [
 ('Five stars!','Cinq étoiles !','Fünf Sterne!','Cinque stelle!','Cinco estrelas!'),
 ]
 LABELS={row[0]:dict(zip(LANGUAGES,row)) for row in LABEL_ROWS}
+LABELS['Print Again'] = dict(en='Print Again', fr='Réimprimer', de='Noch drucken', it='Ristampa', pt='Reimprimir')
 def label(text, language):
     if text in LABELS:return LABELS[text][language]
     if text.lower() in COLORS:return COLORS[text.lower()][list(LANGUAGES).index(language)].capitalize()

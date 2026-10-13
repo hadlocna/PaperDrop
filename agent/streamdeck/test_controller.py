@@ -50,6 +50,40 @@ class FakeMedia:
 
 
 class ControllerTests(unittest.TestCase):
+    def test_reply_actions_follow_message_type_and_reset_on_home(self):
+        for kind in ('voice', 'drawing'):
+            self.c.home()
+            message = dict(id=kind, sender='andy', recipient='alma', kind=kind, audio='fixture')
+            if kind == 'drawing':
+                message['image'] = 'picture'
+            self.box.send(message)
+            self.c.person='alma';self.c.open_mail('andy')
+            self.c.current=message;self.c.transition('incoming')
+            tiles=self.c.snapshot()['tiles']
+            self.assertEqual(tiles[1]['icon'], 'ZoomIn' if kind=='drawing' else 'Play')
+            self.assertEqual(tiles[3]['icon'], 'Drawing' if kind=='drawing' else 'Mic')
+            self.assertEqual(sum(t.get('icon')=='Play' for t in tiles), int(kind=='voice'))
+            self.tap(3)
+            self.assertEqual(self.c.mode,'compose')
+            forbidden=1 if kind=='drawing' else 2
+            self.assertTrue(self.c.snapshot()['tiles'][forbidden]['disabled'])
+            self.tap(forbidden)
+            self.assertEqual(self.c.mode,'compose')
+            self.c.hub();self.assertIsNone(self.c.reply_kind)
+
+    def test_reprint_attempt_survives_restart_and_retry(self):
+        message=dict(id='copy',sender='andy',recipient='alma',kind='drawing',image='picture')
+        self.box.send(message)
+        self.assertEqual(self.box.begin_print_attempt(message),'copy')
+        self.box.mark_printed(message)
+        attempt=self.box.begin_print_attempt(message)
+        self.assertNotEqual(attempt,'copy')
+        reopened=Mailbox(self.temp.name)
+        self.assertEqual(reopened.begin_print_attempt(message),attempt)
+        reopened.close()
+        self.box.mark_printed(message)
+        self.assertNotEqual(self.box.begin_print_attempt(message),attempt)
+
     def test_incoming_playback_failure_has_back_without_deleting_mail(self):
         self.box.send(dict(id='failed-play',sender='andy',recipient='alma',kind='voice',audio='fixture'))
         self.c.person='alma';self.c.open_mail('andy');self.tap(0)
@@ -360,7 +394,12 @@ class ControllerTests(unittest.TestCase):
         self.tap(0);self.assertEqual(self.media.print_calls,0)
         self.media.print_image=lambda path, ident:{'status':'printed'}
         self.tap(2);self.wait('incoming')
-        self.assertTrue(self.c.snapshot()['tiles'][2]['disabled'])
+        self.assertEqual(self.c.snapshot()['tiles'][2]['label'],'Print Again')
+        copies=[]
+        self.media.print_image=lambda path, ident: copies.append(ident) or {'status':'printed'}
+        self.tap(2);self.wait('incoming')
+        self.tap(2);self.wait('incoming')
+        self.assertEqual(len(set(copies)),2)
         self.assertTrue(self.box.get('1')['printed'])
         reopened=Mailbox(self.temp.name);self.assertTrue(reopened.get('1')['printed']);reopened.close()
 

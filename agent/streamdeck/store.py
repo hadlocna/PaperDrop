@@ -89,12 +89,24 @@ class Mailbox:
         if getattr(self, 'on_read', None):
             self.on_read(message)
 
+    def begin_print_attempt(self, message):
+        with self.lock, self.db:
+            current = self.get(message['id'])
+            if not current:
+                raise ValueError('Message not in mailbox')
+            if not current.get('print_attempt'):
+                # Preserve the original receipt for the first copy, including upgrades.
+                current['print_attempt'] = uuid.uuid4().hex if current.get('printed') else message['id']
+                self.db.execute('UPDATE mail SET payload=? WHERE id=?', (json.dumps(current), message['id']))
+            return current['print_attempt']
+
     def mark_printed(self, message):
         with self.lock, self.db:
             current = self.get(message['id'])
             if not current:
                 raise ValueError('Message not in mailbox')
             current['printed'] = True
+            current.pop('print_attempt', None)
             self.db.execute('UPDATE mail SET payload=? WHERE id=?', (json.dumps(current), message['id']))
         if getattr(self, 'on_print', None):
             self.on_print(current)
