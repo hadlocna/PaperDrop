@@ -49,6 +49,10 @@ never emit paper. Successful printing is recorded durably and suppresses repeat
 prints. House-addressed web pictures appear under House mail; no child sender is guessed.
 Incoming mail queues a localized spoken alert, deferred while recording or playing.
 Alerts are coalesced per recipient, survive restarts and are not repeated on redelivery.
+Voice playback has one Pause/Resume button and one Stop button, for both received
+notes and draft review. Stop returns to the message without marking it read;
+only completed playback marks an incoming voice note read. Paused time does not
+consume the playback timeout. There is one Listen action on each voice screen.
 The welcome announcement names the three top-row choices in all five languages.
 
 The clock button, **Choose time**, offers 10, 15,

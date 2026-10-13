@@ -37,6 +37,7 @@ for file in "${files[@]}"; do
     install -m 644 "$stage/agent/streamdeck/$file" "$release/streamdeck/$file"
 done
 install -m 644 "$stage/agent/streamdeck/assets/icons/MailOpen.svg" "$release/streamdeck/assets/icons/MailOpen.svg"
+install -m 644 "$stage/agent/streamdeck/assets/icons/Pause.svg" "$release/streamdeck/assets/icons/Pause.svg"
 for clip in "$stage"/speech/*.wav; do
     install -m 644 "$clip" "$release/streamdeck/speech/$(basename "$clip")"
 done

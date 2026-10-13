@@ -60,6 +60,9 @@ class Controller:
         self.round_timer = None
         self.notification_busy = False
         self.notification_attempt = 0
+        self.playback_paused = False
+        self.play_message = None
+        self.play_return = None
 
     def children(self, house):
         return [p['id'] for p in self.family['children'] if p['house'] == house]
@@ -209,7 +212,13 @@ class Controller:
                 tiles[self.record_key] = tile('Wait' if arming else 'Done', 'Loader2' if arming else 'Mic', color='#f0cb86' if arming else '#e89179', disabled=arming)
                 tiles[3] = tile('Hold on' if arming else f'{remaining}s', 'Mic', disabled=True, color='#f0cb86' if arming else '#e89179')
                 tiles[4 if self.record_key==5 else 5] = tile('Delete', 'Trash2')
-            elif self.mode in ('finishing', 'generating', 'sending', 'playing', 'printing', 'mail_printing'):
+            elif self.mode == 'playing':
+                heading = 'Paused' if self.playback_paused else 'Playing your recording'
+                hint = 'Resume continues from the same place. Stop returns to your message.'
+                tiles[0] = self.sender_tile(self.play_message['sender'], disabled=True)
+                tiles[1] = tile('Resume' if self.playback_paused else 'Pause', 'Play' if self.playback_paused else 'Pause', color='#b7d8c7')
+                tiles[2] = tile('Stop', 'Square', color='#e89179')
+            elif self.mode in ('finishing', 'generating', 'sending', 'printing', 'mail_printing'):
                 heading = {'finishing':'Keeping your recording…', 'generating':self.stage or 'Making your picture…',
                            'sending':'Sending your postcard…', 'playing':'Playing…', 'printing':'Sending to the printer…', 'mail_printing':'Sending to the printer…'}[self.mode]
                 hint = 'One moment. Buttons are resting.'
@@ -295,7 +304,7 @@ class Controller:
                 tiles[0] = tile('Picture', image=picture, disabled=True) if picture else tile(disabled=True)
                 tiles[1] = tile('Oops', 'AlertCircle', disabled=True, color='#e89179')
                 tiles[3] = tile('Retry', 'RotateCcw')
-                tiles[4] = tile('Delete', 'Trash2')
+                tiles[4] = tile('Back', 'ArrowLeft') if self.failed_mode in ('playing','mail_printing') and self.current else tile('Delete', 'Trash2')
                 tiles[5] = tile('Home', 'Home')
             if self.mode=='personal' and any(t.get('demo') for t in tiles):
                 hint += ' Includes sample postcards for this demonstration.'
@@ -312,6 +321,7 @@ class Controller:
             return dict(demo=demo,mode=self.mode, revision=self.revision, tiles=tiles, heading=heading, hint=hint,
                         station=self.station, person=self.person, recipient=self.recipient, language=self.language,
                         busy=busy, picture=picture, note=self.note, local_only=not hasattr(self.media,'send_drawing'),
+                        playback_paused=self.playback_paused,
                         record_seconds=round(time.monotonic()-self.record_started,1) if self.mode=='recording' else 0)
 
     def home(self):
@@ -544,6 +554,15 @@ class Controller:
                 self.hub()
         elif self.mode in ('arming', 'recording') and key == 5:
             self.finish_recording(discard=True)
+        elif self.mode == 'playing':
+            if key == 1 and self.media.pause_playback():
+                self.playback_paused = not self.playback_paused
+                self.transition('playing')
+            elif key == 2:
+                self.job = None
+                self.media.stop_audio()
+                self.playback_paused = False
+                self.transition(self.play_return)
         elif self.mode == 'review':
             if key == 1 and self.draft.get('image'):
                 self.return_mode = 'review'
@@ -605,7 +624,10 @@ class Controller:
             elif key == 3 and self.failed_mode == 'sending' and self.draft:
                 self.send()
             elif key == 3 and self.failed_mode == 'playing':
-                self.transition('personal' if self.current else 'review')
+                self.play(self.play_message, self.play_return)
+            elif key == 4 and self.failed_mode in ('playing','mail_printing') and self.current:
+                self.media.stop_audio()
+                self.transition(self.play_return if self.failed_mode=='playing' else 'incoming')
             elif key == 3 and self.draft and self.draft.get('duration') and self.draft['kind']=='drawing':
                 self.generate()
             elif key in (3,4):
@@ -744,7 +766,10 @@ class Controller:
                 logging.warning('operation_failed type=%s message=%s', type(exc).__name__, exc)
                 with self.lock:
                     if self.job==token and not self.closed:
-                        self.fail(getattr(exc, 'public_message', None) or ('The printer is unavailable. Your picture is saved; Retry sends this same picture.' if self.mode=='printing' else 'That did not work. Try again, or delete this postcard.'))
+                        fallback = ('Playback failed. Your recording is saved. Try again.' if self.mode=='playing'
+                                    else 'The printer is unavailable. Your picture is saved; Retry sends this same picture.' if self.mode in ('printing','mail_printing')
+                                    else 'That did not work. Try again, or delete this postcard.')
+                        self.fail(getattr(exc, 'public_message', None) or fallback)
         threading.Thread(target=run, daemon=True).start()
 
     def finish_recording(self, discard=False):
@@ -793,8 +818,11 @@ class Controller:
         self.background(lambda:self.media.draw(draft['audio'], target, progress), success)
 
     def play(self, message, return_mode):
+        self.playback_paused = False
+        self.play_message, self.play_return = message, return_mode
         self.transition('playing')
         def success(_):
+            self.playback_paused = False
             if return_mode in ('incoming','personal'):
                 self.mailbox.mark_seen(message)
             self.transition(return_mode)

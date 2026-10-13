@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
 import threading
 import time
@@ -46,6 +47,8 @@ class Media:
         self.root.mkdir(parents=True, exist_ok=True)
         self.audio_lock = threading.RLock()
         self.player = None
+        self.playback_process = None
+        self.playback_paused = False
         self.generation = 0
         self.recording = None
         self.record_ready = threading.Event()
@@ -55,8 +58,44 @@ class Media:
         with self.audio_lock:
             self.generation += 1
             if self.player and self.player.poll() is None:
+                if self.playback_paused and self.player is self.playback_process:
+                    self.player.send_signal(signal.SIGCONT)
                 self.player.terminate()
             self.player = None
+            self.playback_process = None
+            self.playback_paused = False
+
+    def pause_playback(self):
+        with self.audio_lock:
+            proc = self.playback_process
+            if proc is None or proc.poll() is not None:
+                return False
+            proc.send_signal(signal.SIGCONT if self.playback_paused else signal.SIGSTOP)
+            self.playback_paused = not self.playback_paused
+            return True
+
+    def wait_playback(self, proc):
+        active = 0
+        previous = time.monotonic()
+        try:
+            while proc.poll() is None:
+                time.sleep(.05)
+                now = time.monotonic()
+                if not self.playback_paused:
+                    active += now-previous
+                previous = now
+                if active > 75:
+                    raise RuntimeError('Playback timed out')
+            if proc.returncode != 0:
+                raise RuntimeError('Playback did not finish')
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
+            with self.audio_lock:
+                if self.playback_process is proc:
+                    self.playback_process = None
+                    self.playback_paused = False
 
     def start_guidance(self, text):
         """Start cached guidance synchronously so cancellation cannot race launch."""
@@ -121,8 +160,8 @@ class Media:
         with self.audio_lock:
             proc = subprocess.Popen(['/usr/bin/afplay', str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             self.player = proc
-        if proc.wait(timeout=75) != 0:
-            raise RuntimeError('Playback did not finish')
+            self.playback_process = proc
+        self.wait_playback(proc)
 
     def start_recording(self, path):
         self.stop_audio()

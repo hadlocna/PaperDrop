@@ -147,6 +147,8 @@ class Renderer:
 
     def animated(self,snapshot):
         if snapshot['mode']=='game_win':return True
+        if snapshot['mode']=='playing' and snapshot.get('playback_paused'):
+            return False
         if snapshot['busy'] or any(t.get('badge') for t in snapshot['tiles']):
             return True
         reveal=(snapshot['mode'] in ('sent','print_done','preview') or

@@ -25,6 +25,7 @@ class FakeMedia:
     def cue(self,text):pass
     def cue_sequence(self,texts,star=False):self.sequences.append((texts,star))
     def stop_audio(self):pass
+    def pause_playback(self):return True
     def start_recording(self,path):
         self.record_calls+=1
         Path(path).write_bytes(b'fake audio')
@@ -49,6 +50,41 @@ class FakeMedia:
 
 
 class ControllerTests(unittest.TestCase):
+    def test_incoming_playback_failure_has_back_without_deleting_mail(self):
+        self.box.send(dict(id='failed-play',sender='andy',recipient='alma',kind='voice',audio='fixture'))
+        self.c.person='alma';self.c.open_mail('andy');self.tap(0)
+        self.media.play=lambda _:(_ for _ in ()).throw(RuntimeError('speaker offline'))
+        self.tap(1);self.wait('error')
+        self.assertEqual(self.c.snapshot()['tiles'][4]['label'],'Back')
+        self.tap(4);self.assertEqual(self.c.mode,'incoming')
+        self.assertEqual(len(self.box.inbox('alma',unread=True)),1)
+
+    def test_pause_resume_stop_does_not_read_incoming_note(self):
+        self.box.send(dict(id='paused', sender='andy', recipient='alma', kind='voice', audio='fixture'))
+        self.c.person='alma';self.c.open_mail('andy');self.tap(0)
+        self.media.play_gate.clear();self.tap(1);self.wait('playing')
+        self.assertEqual([t.get('icon') for t in self.c.snapshot()['tiles'][1:3]], ['Pause','Square'])
+        self.tap(1);self.assertTrue(self.c.playback_paused)
+        self.assertEqual(self.c.snapshot()['tiles'][1]['label'],'Resume')
+        self.assertEqual(len(self.box.inbox('alma',unread=True)),1)
+        self.tap(1);self.assertFalse(self.c.playback_paused)
+        self.tap(2);self.assertEqual(self.c.mode,'incoming')
+        self.media.play_gate.set();time.sleep(.05)
+        self.assertEqual(self.c.mode,'incoming')
+        self.assertEqual(len(self.box.inbox('alma',unread=True)),1)
+        self.tap(1);self.wait('incoming')
+        self.assertEqual(len(self.box.inbox('alma',unread=True)),0)
+
+    def test_draft_playback_has_same_controls_and_stop_keeps_draft(self):
+        self.compose();self.record();self.wait('review')
+        original=dict(self.c.draft)
+        self.assertEqual(sum(t.get('icon')=='Play' for t in self.c.snapshot()['tiles']),1)
+        self.media.play_gate.clear();self.tap(1);self.wait('playing')
+        self.tap(1);self.assertTrue(self.c.playback_paused)
+        self.tap(2);self.assertEqual(self.c.mode,'review')
+        self.assertEqual(self.c.draft,original)
+        self.media.play_gate.set()
+
     def test_recording_time_is_per_child_and_survives_reopen(self):
         self.tap(0)
         self.tap(3)

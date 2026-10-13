@@ -76,6 +76,7 @@ def all_phrases():
     return list(CATALOG)+voice_phrases()+['Who in Lisbon?','Who in Ohio?','Who in Düsseldorf?']
 
 LABEL_ROWS = [
+('Pause','Pause','Pause','Pausa','Pausa'),('Resume','Reprendre','Weiter','Riprendi','Continuar'),('Stop','Arrêter','Stopp','Ferma','Parar'),
 ('House mail','Courrier maison','Hauspost','Posta di casa','Correio da casa'),
 ('Voice note','Message vocal','Sprachnachricht','Messaggio vocale','Mensagem de voz'),
 ('Inbox','Boîte','Postfach','Posta','Correio'),

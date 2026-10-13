@@ -130,13 +130,8 @@ class PiMedia(Media):
         self.stop_audio()
         with self.audio_lock:
             self.player = proc = subprocess.Popen(self.playback_command(path), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        try:
-            if proc.wait(timeout=75):
-                raise RuntimeError('Pi speaker unavailable')
-        finally:
-            if proc.poll() is None:
-                proc.kill()
-                proc.wait()
+            self.playback_process = proc
+        self.wait_playback(proc)
 
     def capture_pcm(self):
         configured = os.environ.get('PAPERDROP_CAPTURE_PCM')
