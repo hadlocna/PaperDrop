@@ -30,6 +30,7 @@ class FakeMedia:
         self.record_calls+=1
         Path(path).write_bytes(b'fake audio')
     def wait_recording_ready(self):pass
+    def cancel_recording(self):pass
     def finish_recording(self,path):
         if self.fail_record:raise ValueError('short')
         return 2.0
@@ -50,6 +51,70 @@ class FakeMedia:
 
 
 class ControllerTests(unittest.TestCase):
+    def test_older_mailbox_schema_preserves_language_and_mail_for_rollback(self):
+        import sqlite3
+        with tempfile.TemporaryDirectory() as root:
+            db = sqlite3.connect(Path(root)/'mail.sqlite')
+            db.execute('CREATE TABLE mail (id TEXT PRIMARY KEY, sender TEXT NOT NULL, recipient TEXT NOT NULL, created REAL NOT NULL, seen INTEGER NOT NULL DEFAULT 0, payload TEXT NOT NULL)')
+            db.execute('CREATE TABLE preferences (person TEXT PRIMARY KEY, language TEXT NOT NULL)')
+            row = dict(id='old-note', sender='andy', recipient='alma', kind='voice', audio='old.wav')
+            db.execute('INSERT INTO mail VALUES (?,?,?,?,?,?)', ('old-note','andy','alma',1,0,json.dumps(row)))
+            db.execute('INSERT INTO preferences VALUES (?,?)', ('alma','fr'))
+            db.commit(); db.close()
+            upgraded = Mailbox(root)
+            self.assertEqual(upgraded.language('alma'), 'fr')
+            self.assertEqual(upgraded.inbox('alma',unread=True), [dict(row,seen=False)])
+            upgraded.set_recording_seconds('alma',60)
+            upgraded.close()
+            # The prior reader's original SELECT contracts remain usable.
+            db = sqlite3.connect(Path(root)/'mail.sqlite')
+            self.assertEqual(json.loads(db.execute('SELECT payload FROM mail WHERE id=?',('old-note',)).fetchone()[0]), row)
+            self.assertEqual(db.execute('SELECT language FROM preferences WHERE person=?',('alma',)).fetchone()[0], 'fr')
+            db.close()
+
+    def test_print_receipt_failure_retry_reuses_completed_copy_after_reopen(self):
+        from unittest.mock import Mock
+        message = dict(id='receipt-failure', sender='andy', recipient='alma', kind='drawing', image='fixture')
+        self.box.send(message)
+        self.c.person = 'alma'
+        self.c.current = self.box.get(message['id'])
+        self.c.mail = [self.c.current]
+        self.c.transition('incoming')
+        copies = set()
+        def print_image(path, ident):
+            copies.add(ident)
+            return {'status': 'printed'}
+        self.media.print_image = print_image
+        self.box.on_print = Mock(side_effect=OSError('Receipt disk unavailable'))
+        self.c.print_received()
+        self.wait('error')
+        reopened = Mailbox(self.temp.name)
+        try:
+            self.assertTrue(reopened.get(message['id'])['printed'])
+            self.assertEqual(reopened.begin_print_attempt(message), message['id'])
+        finally:
+            reopened.close()
+        self.box.on_print = Mock()
+        self.tap(3)
+        self.wait('incoming')
+        self.assertEqual(copies, {message['id']})
+        self.assertNotIn('print_attempt', self.box.get(message['id']))
+        # A new, explicitly requested Print Again still gets a different copy.
+        self.tap(2)
+        self.wait('incoming')
+        self.assertEqual(len(copies), 2)
+
+    def test_microphone_readiness_failure_cancels_capture_before_error(self):
+        from unittest.mock import Mock
+        self.media.cancel_recording = Mock()
+        self.media.wait_recording_ready = Mock(side_effect=RuntimeError('Not ready'))
+        self.c.person = 'alma'
+        self.c.recipient = 'andy'
+        self.c.start_recording(1, 'voice')
+        self.wait('error')
+        self.media.cancel_recording.assert_called_once_with()
+        self.assertEqual(self.media.record_calls, 1)
+
     def test_unread_badges_refresh_after_listening_and_printing(self):
         voice=dict(id='count-voice',sender='andy',recipient='alma',kind='voice',audio='fixture',remote=True)
         picture=dict(id='count-picture',sender='andy',recipient='alma',kind='drawing',image='fixture',remote=True)

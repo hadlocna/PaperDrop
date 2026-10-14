@@ -114,12 +114,21 @@ class Mailbox:
                 raise ValueError('Message not in mailbox')
             current['printed'] = True
             current['seen'] = True
-            current.pop('print_attempt', None)
             self.db.execute('UPDATE mail SET payload=?,seen=1 WHERE id=?', (json.dumps(current), message['id']))
             self.db.execute('DELETE FROM mail_notifications WHERE id=?', (message['id'],))
         message.update(printed=True, seen=True)
         if getattr(self, 'on_print', None):
             self.on_print(current)
+        # A receipt-storage failure must keep Retry tied to the completed copy.
+        # Only a fully acknowledged action may create a new Print Again ID.
+        attempt = current.get('print_attempt')
+        if attempt:
+            with self.lock, self.db:
+                latest = self.get(message['id'])
+                if latest.get('print_attempt') == attempt:
+                    latest.pop('print_attempt')
+                    self.db.execute('UPDATE mail SET payload=? WHERE id=?', (json.dumps(latest), message['id']))
+            message.pop('print_attempt', None)
 
     def notifications(self):
         with self.lock:

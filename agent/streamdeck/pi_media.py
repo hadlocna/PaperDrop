@@ -147,16 +147,17 @@ class PiMedia(Media):
         return 'default'
 
     def start_recording(self, path):
+        self.cancel_recording()
         self.stop_audio()
         self.record_ready = threading.Event()
         ready = self.record_ready
         self.record_error = None
-        self.capture_done = threading.Event()
         with self.audio_lock:
             self.recording = proc = subprocess.Popen([
                 'arecord', '-q', '-D', self.capture_pcm(),
                 '-t', 'raw', '-f', 'S16_LE', '-c', '1', '-r', '24000', '-d', str(getattr(self, 'recording_seconds', 30))
             ], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        self.capture_done = done = threading.Event()
         def capture():
             try:
                 with wave.open(str(path), 'wb') as wav:
@@ -170,8 +171,20 @@ class PiMedia(Media):
             except Exception as exc:
                 self.record_error = type(exc).__name__
             finally:
-                self.capture_done.set()
-        threading.Thread(target=capture, daemon=True).start()
+                done.set()
+        try:
+            threading.Thread(target=capture, daemon=True).start()
+        except Exception:
+            # No writer owns this event if starting its thread failed.
+            done.set()
+            self.cancel_recording()
+            raise
+
+    def cancel_recording(self):
+        super().cancel_recording()
+        done = getattr(self, 'capture_done', None)
+        if done is not None and not done.wait(3):
+            raise RuntimeError('Pi microphone did not stop')
 
     def finish_recording(self, path):
         with self.audio_lock:
