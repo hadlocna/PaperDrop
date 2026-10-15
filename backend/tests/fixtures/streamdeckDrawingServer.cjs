@@ -2,15 +2,25 @@
 // database/provider boundaries replaced. No credentials or hardware are used.
 const { WebSocketServer } = require('ws');
 let transcriptions = 0, images = 0, messages = 0;
+let dropStage;
+async function drop(stage) {
+    if (dropStage !== stage && !(stage === 'transcription' && dropStage === 'expired')) return;
+    if (dropStage === 'expired') closeVoice('test-device');
+    dropStage = undefined;
+    deviceConnections.get('test-device').close();
+    await new Promise(resolve => setTimeout(resolve, 75));
+}
 const starts = [], statuses = [];
 class FakeAI {
     audio = { transcriptions: { create: async () => {
         transcriptions++;
+        await drop('transcription');
         return { text: 'A friendly snail in a garden' };
     } } };
     moderations = { create: async () => ({ results: [{ flagged: false }] }) };
     images = { generate: async () => {
         images++;
+        await drop('image');
         return { data: [{ b64_json: process.env.PAPERDROP_TEST_IMAGE }] };
     } };
 }
@@ -19,7 +29,7 @@ require.cache[require.resolve('openai')].exports = { __esModule: true, default: 
 process.env.OPENAI_API_KEY = 'integration-test-only';
 const { prisma } = require('../../dist/lib/prisma');
 const { deviceConnections } = require('../../dist/websocket/session');
-const { handleVoice, closeVoice } = require('../../dist/services/realtimeVoice');
+const { handleVoice, disconnectVoice, closeVoice } = require('../../dist/services/realtimeVoice');
 prisma.device.findUnique = async () => ({ ownerId: 'test-owner', config: '{"voiceEnabled":false}' });
 prisma.message.create = async ({ data }) => ({ ...data, id: `drawing-${++messages}` });
 const server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
@@ -31,15 +41,24 @@ server.on('connection', ws => {
             const event = JSON.parse(raw);
             if (event.type === 'test_stats') {
                 ws.send(JSON.stringify({ type: 'test_stats', transcriptions, images, messages, starts, statuses }));
+            } else if (event.type === 'test_drop') {
+                dropStage = event.stage;
+                ws.send(JSON.stringify({type:'test_drop_ready'}));
             } else if (event.type === 'print_status') {
                 statuses.push(event);
             } else {
                 if (event.type === 'voice_start') starts.push(event);
                 await handleVoice('test-device', event);
+                if (event.type === 'voice_start' && dropStage === 'upload') await drop('upload');
             }
         } catch (error) {
             ws.send(JSON.stringify({ type: 'fixture_error', error: String(error) }));
         }
     });
-    ws.on('close', () => closeVoice('test-device'));
+    ws.on('close', () => {
+        if (deviceConnections.get('test-device') === ws) {
+            deviceConnections.delete('test-device');
+            disconnectVoice('test-device');
+        }
+    });
 });

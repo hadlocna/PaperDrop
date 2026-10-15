@@ -88,27 +88,42 @@ class DrawingFlowTests(unittest.TestCase):
         cloud.stop = threading.Event()
         cloud.request = None
         cloud.ack_dir = self.root / 'cloud-status'; cloud.ack_dir.mkdir()
-        cloud.ws = connect(f'ws://127.0.0.1:{port}')
+        self.url = f'ws://127.0.0.1:{port}'
+        cloud.ws = connect(self.url)
         self.addCleanup(cloud.close)
         self.cloud = cloud
         self.stats_ready = threading.Event()
         self.stats = None
         self.transport_errors = []
+        self.drop_ready = threading.Event()
+        self.reconnects = 0
 
         def receive():
-            try:
-                for raw in cloud.ws:
-                    event = json.loads(raw)
-                    if event['type'] == 'test_stats':
-                        self.stats = event
-                        self.stats_ready.set()
-                    elif event['type'] == 'fixture_error':
-                        self.transport_errors.append(event['error'])
-                    else:
-                        cloud.event(event)
-            except Exception as error:
+            while not cloud.stop.is_set():
+                try:
+                    for raw in cloud.ws:
+                        event = json.loads(raw)
+                        if event['type'] == 'test_stats':
+                            self.stats = event
+                            self.stats_ready.set()
+                        elif event['type'] == 'test_drop_ready':
+                            self.drop_ready.set()
+                        elif event['type'] == 'fixture_error':
+                            self.transport_errors.append(event['error'])
+                        else:
+                            cloud.event(event)
+                except Exception as error:
+                    if not cloud.stop.is_set():
+                        self.transport_errors.append(str(error))
                 if not cloud.stop.is_set():
-                    self.transport_errors.append(str(error))
+                    cloud.disconnected()
+                    # Let the actual backend finish while there is no device socket.
+                    if cloud.stop.wait(.15): break
+                    with cloud.lock:
+                        cloud.ws = connect(self.url)
+                        self.reconnects += 1
+                        cloud.connected.set()
+                        if cloud.request: cloud.request['changed'].set()
         self.receiver = threading.Thread(target=receive, daemon=True)
         self.receiver.start()
         self.media = FixtureMedia(self.root, cloud)
@@ -193,6 +208,35 @@ class DrawingFlowTests(unittest.TestCase):
 
     def test_30_second_timeout_draws_reviews_and_prints_twice_with_wake_listening_off(self):
         self.exercise('timeout')
+
+    def exercise_disconnect(self, stage):
+        self.cloud.send({'type': 'test_drop', 'stage': stage})
+        self.assertTrue(self.drop_ready.wait(2))
+        self.exercise('done')
+        self.assertEqual(self.reconnects, 1)
+        stats = self.server_stats()
+        self.assertEqual((stats['transcriptions'], stats['images'], stats['messages']), (2, 2, 2))
+        self.assertTrue(any(start.get('resume') for start in stats['starts']))
+
+    def test_disconnect_before_upload_resumes_without_duplicate_generation(self):
+        self.exercise_disconnect('upload')
+
+    def test_disconnect_during_transcription_resumes_without_duplicate_generation(self):
+        self.exercise_disconnect('transcription')
+
+    def test_picture_completed_offline_returns_to_review_then_next_drawing_works(self):
+        self.exercise_disconnect('image')
+
+    def test_expired_backend_session_requires_retry_without_another_paid_call(self):
+        self.cloud.send({'type': 'test_drop', 'stage': 'expired'})
+        self.assertTrue(self.drop_ready.wait(2))
+        audio = self.root / 'request.wav'
+        audio.write_bytes(b'RIFF' + b'\0' * 4 + b'WAVE' + b'\0' * 32032)
+        with self.assertRaisesRegex(Exception, 'connection expired'):
+            self.cloud.draw(audio, self.root / 'result.png', lambda _: None)
+        stats = self.server_stats()
+        self.assertEqual((stats['transcriptions'], stats['images'], stats['messages']), (1, 0, 0))
+        self.assertFalse((self.root / 'result.png').exists())
 
 
 if __name__ == '__main__': unittest.main()

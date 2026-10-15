@@ -4,7 +4,7 @@ import OpenAI, { toFile } from 'openai';
 import { prisma } from '../lib/prisma';
 import { deviceConnections } from '../websocket/session';
 
-type Session = { id: string; ownerId?: string; buttonRecorded: boolean; busy: boolean; quality: 'low' | 'medium'; messageId?: string; timer: NodeJS.Timeout; abort: AbortController };
+type Session = { id: string; ownerId?: string; buttonRecorded: boolean; resumable: boolean; busy: boolean; quality: 'low' | 'medium'; prompt?: string; message?: any; messageId?: string; timer: NodeJS.Timeout; abort: AbortController };
 const sessions = new Map<string, Session>();
 const starts = new Map<string, number[]>();
 function send(deviceId: string, s: Session, event: any) {
@@ -12,6 +12,16 @@ function send(deviceId: string, s: Session, event: any) {
     if (ws?.readyState === 1) ws.send(JSON.stringify({ ...event, session_id: s.id }));
 }
 export function hasRecordedVoice(deviceId: string) { return sessions.has(deviceId); }
+// Only clients that negotiate resume retain their bounded session on transport loss.
+export function hasResumableRecordedVoice(deviceId: string) { return sessions.get(deviceId)?.resumable === true; }
+function ready(deviceId: string, s: Session) {
+    send(deviceId, s, { type: 'voice_ready', mode: 'recorded', resumable: s.resumable, accepts_audio: !s.busy });
+    if (s.prompt) send(deviceId, s, { type: 'voice_heard', text: s.prompt });
+    if (s.message) {
+        send(deviceId, s, { type: 'voice_print_pending', message_id: s.messageId });
+        send(deviceId, s, { type: 'new_message', message: { ...s.message, senderName: 'PaperDrop' } });
+    }
+}
 export function closeRecordedVoice(deviceId: string) {
     const s = sessions.get(deviceId);
     if (!s) return;
@@ -26,9 +36,29 @@ export function recordedPrintStatus(deviceId: string, messageId: string, status:
 }
 export async function handleRecordedVoice(deviceId: string, event: any) {
     if (event.type === 'voice_start') {
-        if (sessions.has(deviceId)) return;
+        const existing = sessions.get(deviceId);
+        if (existing) {
+            if (existing.id !== event.session_id || !existing.resumable || !existing.ownerId) return;
+            // Authentication of the socket is not enough if ownership changed offline.
+            const current = await prisma.device.findUnique({ where: { id: deviceId } });
+            if (sessions.get(deviceId) !== existing) return;
+            if (current?.ownerId !== existing.ownerId) {
+                send(deviceId, existing, { type: 'voice_error', error: 'Drawing request cancelled. Please try again.' });
+                closeRecordedVoice(deviceId);
+                return;
+            }
+            ready(deviceId, existing);
+            return;
+        }
+        if (event.resume === true) {
+            // A restart or expired session must never silently repeat a paid request.
+            const ws = deviceConnections.get(deviceId);
+            if (ws?.readyState === 1) ws.send(JSON.stringify({ type: 'voice_error', session_id: event.session_id,
+                error: 'The drawing connection expired. Please tap retry.' }));
+            return;
+        }
         const buttonRecorded = event.mode === 'recorded';
-        const s: Session = { id: event.session_id, buttonRecorded, busy: false, quality: event.quality === 'low' ? 'low' : 'medium', abort: new AbortController(), timer: setTimeout(() => {
+        const s: Session = { id: event.session_id, buttonRecorded, resumable: buttonRecorded && event.resume_supported === true, busy: false, quality: event.quality === 'low' ? 'low' : 'medium', abort: new AbortController(), timer: setTimeout(() => {
             send(deviceId, s, { type: 'voice_error', error: 'Drawing request timed out. Please try again.' });
             closeRecordedVoice(deviceId);
         }, 180000) };
@@ -42,7 +72,7 @@ export async function handleRecordedVoice(deviceId: string, event: any) {
             const config = JSON.parse(device?.config || '{}');
             if (!device?.ownerId || !process.env.OPENAI_API_KEY || (!buttonRecorded && config.voiceEnabled !== true)) throw Error('Voice listening is not enabled.');
             s.ownerId = device.ownerId;
-            send(deviceId, s, { type: 'voice_ready', mode: 'recorded' });
+            ready(deviceId, s);
         } catch (error) {
             console.error('[RecordedVoice] start failed:', error instanceof Error ? error.message : error);
             send(deviceId, s, {type:'voice_error', error:'Voice listening is unavailable.'}); closeRecordedVoice(deviceId);
@@ -64,6 +94,7 @@ export async function handleRecordedVoice(deviceId: string, event: any) {
         if (sessions.get(deviceId) !== s) return;
         const prompt = result.text.trim();
         if (prompt.length < 4 || prompt.length > 1500 || /^(thank you|thanks|you|yes|no|stop|bye|goodbye|hey paper drop)[.!?]*$/i.test(prompt)) throw Error('No drawing request');
+        s.prompt = prompt;
         send(deviceId, s, {type:'voice_heard', text:prompt});
         const moderation = await ai.moderations.create({model:'omni-moderation-latest',input:prompt}, options);
         if (moderation.results.some(r=>r.flagged)) throw Error('Choose a child-friendly picture');
@@ -83,6 +114,7 @@ export async function handleRecordedVoice(deviceId: string, event: any) {
             return;
         }
         s.messageId=message.id;
+        s.message=message;
         send(deviceId,s,{type:'voice_print_pending',message_id:message.id});
         send(deviceId,s,{type:'new_message',message:{...message,senderName:'PaperDrop'}});
         // Pencil sound continues until this exact job reports printed or failed.

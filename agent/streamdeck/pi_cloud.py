@@ -19,6 +19,9 @@ from urllib.parse import urlencode
 from PIL import Image
 from websockets.sync.client import connect
 
+CONNECT_TIMEOUT = 45
+DRAW_TIMEOUT = 155
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
 
@@ -101,6 +104,9 @@ class Cloud:
                             self.send({'type': 'pong'})
                         elif kind == 'voice_control':
                             self.connected.set()
+                            with self.lock:
+                                if self.request:
+                                    self.request['changed'].set()
                             from release_health import mark_healthy
                             mark_healthy()
                             if event.get('request_id'):
@@ -123,14 +129,20 @@ class Cloud:
             except Exception as exc:
                 logging.warning('cloud_disconnected type=%s', type(exc).__name__)
             finally:
-                self.connected.clear()
-                with self.lock:
-                    self.ws = None
-                    if self.request:
-                        self.request['error'] = 'Backend connection interrupted. Please try again.'
-                        self.request['ready'].set()
-                        self.request['done'].set()
+                self.disconnected()
             self.stop.wait(3)
+
+    def disconnected(self):
+        self.connected.clear()
+        with self.lock:
+            self.ws = None
+            req = self.request
+            if req and not req['done'].is_set():
+                req['start_sent'] = False
+                if req.get('uploaded') and not req.get('resumable'):
+                    req['error'] = 'Drawing connection interrupted. Please tap retry when PaperDrop is online.'
+                logging.info('cloud_drawing_disconnected resumable=%s', req.get('resumable', False))
+                req['changed'].set()
 
     def speaker_command(self, event):
         import asyncio
@@ -243,6 +255,8 @@ class Cloud:
                 return
             kind = event.get('type')
             if kind == 'voice_ready':
+                req['resumable'] = event.get('resumable') is True
+                req['accepts_audio'] = event.get('accepts_audio', True)
                 req['ready'].set()
             elif kind == 'voice_heard':
                 req['prompt'] = event.get('text', '')
@@ -260,11 +274,15 @@ class Cloud:
                 req['error'] = event.get('error', 'Drawing failed')
                 req['ready'].set()
                 req['done'].set()
+            if req.get('changed'):
+                req['changed'].set()
 
     def draw(self, audio, target, progress):
-        if not self.connected.wait(8):
-            raise CloudRequestError('PaperDrop backend is unavailable')
-        req = dict(session=uuid.uuid4().hex, ready=threading.Event(), done=threading.Event(), progress=progress)
+        if not self.connected.wait(CONNECT_TIMEOUT):
+            raise CloudRequestError('PaperDrop could not reconnect. Your recording is ready; please tap retry.')
+        req = dict(session=uuid.uuid4().hex, ready=threading.Event(), done=threading.Event(),
+                   changed=threading.Event(), progress=progress, start_sent=False, started=False,
+                   uploaded=False, resumable=False)
         with self.lock:
             if self.request:
                 raise RuntimeError('A drawing is already in progress')
@@ -272,14 +290,35 @@ class Cloud:
         started = time.monotonic()
         try:
             progress('Listening to your idea…')
-            self.send({'type': 'voice_start', 'mode': 'recorded', 'quality': 'low', 'session_id': req['session']})
-            if not req['ready'].wait(20):
-                raise CloudRequestError('Backend did not become ready')
-            if req.get('error'):
-                raise CloudRequestError(req['error'])
-            self.send({'type': 'voice_request', 'session_id': req['session'], 'audio': base64.b64encode(Path(audio).read_bytes()).decode()})
-            if not req['done'].wait(155):
-                raise CloudRequestError('Drawing timed out')
+            encoded_audio = base64.b64encode(Path(audio).read_bytes()).decode()
+            deadline = started + DRAW_TIMEOUT
+            while not req['done'].is_set() and not req.get('error'):
+                if self.stop.is_set():
+                    raise CloudRequestError('Drawing cancelled')
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise CloudRequestError('Drawing connection timed out. Please tap retry when PaperDrop is online.')
+                with self.lock:
+                    if self.connected.is_set() and self.ws:
+                        try:
+                            if not req['start_sent']:
+                                req['ready'].clear()
+                                if req['started']:
+                                    logging.info('cloud_drawing_resuming elapsed=%.2f', time.monotonic() - started)
+                                self.send({'type': 'voice_start', 'mode': 'recorded', 'quality': 'low',
+                                           'session_id': req['session'], 'resume_supported': True,
+                                           'resume': req['started']})
+                                req['start_sent'] = req['started'] = True
+                            if req['ready'].is_set() and req.get('accepts_audio'):
+                                # On resume, an idle acknowledgement proves the previous
+                                # upload never started. Busy sessions never receive it twice.
+                                req['accepts_audio'] = False
+                                req['uploaded'] = True
+                                self.send({'type': 'voice_request', 'session_id': req['session'], 'audio': encoded_audio})
+                        except Exception:
+                            self.disconnected()
+                req['changed'].wait(min(.25, remaining))
+                req['changed'].clear()
             if req.get('error'):
                 raise CloudRequestError(req['error'])
             with Image.open(io.BytesIO(base64.b64decode(req['content'], validate=True))) as img:

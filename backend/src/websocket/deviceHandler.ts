@@ -9,7 +9,7 @@ import { Server } from 'http';
 import crypto from 'crypto';
 import { handleHousePostcard } from '../services/housePostcards';
 import { recordedPrintStatus } from '../services/recordedVoice';
-import { handleVoice, closeVoice } from '../services/realtimeVoice';
+import { handleVoice, disconnectVoice } from '../services/realtimeVoice';
 import { deviceConnections, shellSessions } from './session';
 
 type PendingDeviceRequest = {
@@ -69,7 +69,7 @@ export const setupWebSocket = () => {
             if (deviceId) {
                 if (deviceConnections.get(deviceId) === ws) {
                     console.log(`Removing ${deviceCode} from active connections`);
-                    closeVoice(deviceId);
+                    disconnectVoice(deviceId);
                     deviceConnections.delete(deviceId);
                     try {
                         await prisma.device.update({

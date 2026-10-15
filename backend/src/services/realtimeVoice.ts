@@ -2,7 +2,7 @@ import { imagePrompt } from './thermalArtwork';
 import { generateCousinPicture } from './cousinImages';
 import WebSocket from 'ws';
 import OpenAI from 'openai';
-import { closeRecordedVoice, handleRecordedVoice, hasRecordedVoice } from './recordedVoice';
+import { closeRecordedVoice, handleRecordedVoice, hasRecordedVoice, hasResumableRecordedVoice } from './recordedVoice';
 import { prisma } from '../lib/prisma';
 import { deviceConnections } from '../websocket/session';
 
@@ -12,6 +12,9 @@ const starts = new Map<string, number[]>();
 function send(deviceId: string, event: any) {
     const ws = deviceConnections.get(deviceId);
     if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ session_id: sessions.get(deviceId)?.clientId, ...event }));
+}
+export function disconnectVoice(deviceId: string) {
+    if (!hasResumableRecordedVoice(deviceId)) closeVoice(deviceId);
 }
 export function closeVoice(deviceId: string) {
     closeRecordedVoice(deviceId);

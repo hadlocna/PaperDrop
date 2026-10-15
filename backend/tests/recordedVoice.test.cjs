@@ -12,7 +12,8 @@ class FakeAI {
 require('openai');require.cache[require.resolve('openai')].exports={__esModule:true,default:FakeAI,toFile:async a=>a};
 const {prisma}=require('../dist/lib/prisma');
 const {deviceConnections}=require('../dist/websocket/session');
-const {handleRecordedVoice,closeRecordedVoice,recordedPrintStatus}=require('../dist/services/recordedVoice');
+const {handleRecordedVoice,closeRecordedVoice,recordedPrintStatus,hasRecordedVoice}=require('../dist/services/recordedVoice');
+const {disconnectVoice}=require('../dist/services/realtimeVoice');
 beforeEach(()=>{qualities=[];imageCalls=[];transcriptions=images=0;transcript='A lizard with Theodore underneath';pause=false;process.env.OPENAI_API_KEY='test';prisma.device.findUnique=async()=>({ownerId:'owner',config:'{"voiceEnabled":true}'});prisma.message.create=async({data})=>({...data,id:'image'});});
 function fixture(id){const events=[];deviceConnections.set(id,{readyState:1,send:r=>events.push(JSON.parse(r))});const b=Buffer.alloc(32044);b.write('RIFF');b.write('WAVE',8);return {events,request:{type:'voice_request',session_id:id,audio:b.toString('base64')}};}
 test('one transcription and image; sound ends only for matching print acknowledgement',async()=>{
@@ -86,4 +87,61 @@ test('unnamed prompts use text generation and multiple named cousins use both fa
  assert.equal(imageCalls[1].kind,'edit');assert.equal(imageCalls[1].options.image.length,2);
  assert.match(imageCalls[1].options.prompt,/Image 1 is Alma\. Image 2 is Elise/);
  closeRecordedVoice('two');
+});
+
+test('a negotiated drawing resumes during transcription without a second provider request',async()=>{
+ const {request}=fixture('resume-busy');
+ await handleRecordedVoice('resume-busy',{type:'voice_start',mode:'recorded',session_id:'resume-busy',resume_supported:true});
+ pause=true;
+ const job=handleRecordedVoice('resume-busy',request);await new Promise(r=>setImmediate(r));
+ disconnectVoice('resume-busy');deviceConnections.delete('resume-busy');
+ assert.equal(hasRecordedVoice('resume-busy'),true);
+ const {events}=fixture('resume-busy');
+ await handleRecordedVoice('resume-busy',{type:'voice_start',mode:'recorded',session_id:'resume-busy',resume:true});
+ assert.equal(events.find(e=>e.type==='voice_ready').accepts_audio,false);
+ release();await job;
+ await handleRecordedVoice('resume-busy',request);
+ assert.equal(transcriptions,1);assert.equal(images,1);
+ assert.equal(events.filter(e=>e.type==='new_message').length,1);
+ closeRecordedVoice('resume-busy');
+});
+
+test('a picture completed offline is replayed with its original message and session',async()=>{
+ const {request}=fixture('resume-result');
+ await handleRecordedVoice('resume-result',{type:'voice_start',mode:'recorded',session_id:'resume-result',resume_supported:true});
+ pause=true;const job=handleRecordedVoice('resume-result',request);await new Promise(r=>setImmediate(r));
+ disconnectVoice('resume-result');deviceConnections.delete('resume-result');release();await job;
+ const {events}=fixture('resume-result');
+ await handleRecordedVoice('resume-result',{type:'voice_start',mode:'recorded',session_id:'resume-result',resume:true});
+ assert.deepEqual(events.map(e=>e.type),['voice_ready','voice_heard','voice_print_pending','new_message']);
+ assert.equal(events.at(-1).message.id,'image');
+ assert.ok(events.every(e=>e.session_id==='resume-result'));
+ assert.equal(transcriptions,1);assert.equal(images,1);
+ closeRecordedVoice('resume-result');
+});
+
+test('expired resume never starts a fresh paid request',async()=>{
+ const {events,request}=fixture('resume-expired');
+ await handleRecordedVoice('resume-expired',{type:'voice_start',mode:'recorded',session_id:'resume-expired',resume:true});
+ await handleRecordedVoice('resume-expired',request);
+ assert.match(events[0].error,/expired/);assert.equal(hasRecordedVoice('resume-expired'),false);
+ assert.equal(transcriptions,0);assert.equal(images,0);
+});
+
+test('resuming after ownership changes cancels without disclosing the original drawing',async()=>{
+ const {request}=fixture('resume-owner');
+ await handleRecordedVoice('resume-owner',{type:'voice_start',mode:'recorded',session_id:'resume-owner',resume_supported:true});
+ await handleRecordedVoice('resume-owner',request);
+ const {events}=fixture('resume-owner');prisma.device.findUnique=async()=>({ownerId:'new-owner'});
+ await handleRecordedVoice('resume-owner',{type:'voice_start',mode:'recorded',session_id:'resume-owner',resume:true});
+ assert.ok(!events.some(e=>e.type==='new_message'||e.type==='voice_heard'));
+ assert.equal(hasRecordedVoice('resume-owner'),false);
+});
+
+test('legacy clients still cancel on disconnect and explicit stop cancels resumable work',async()=>{
+ fixture('legacy-disconnect');await handleRecordedVoice('legacy-disconnect',{type:'voice_start',mode:'recorded',session_id:'legacy-disconnect'});
+ disconnectVoice('legacy-disconnect');assert.equal(hasRecordedVoice('legacy-disconnect'),false);
+ fixture('resume-stop');await handleRecordedVoice('resume-stop',{type:'voice_start',mode:'recorded',session_id:'resume-stop',resume_supported:true});
+ await handleRecordedVoice('resume-stop',{type:'voice_stop',session_id:'resume-stop'});
+ assert.equal(hasRecordedVoice('resume-stop'),false);
 });
