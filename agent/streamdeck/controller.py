@@ -761,6 +761,12 @@ class Controller:
                 logging.warning('recording_start_failed type=%s message=%s', type(exc).__name__, exc)
                 with self.lock:
                     if self.mode == 'arming' and self.draft and self.draft['id'] == token:
+                        # stop_audio only owns playback. A readiness timeout can
+                        # leave arecord alive, including while Retry opens capture.
+                        try:
+                            self.media.cancel_recording()
+                        except Exception:
+                            logging.warning('recording_cancel_failed')
                         self.media.stop_audio()
                         self.fail(getattr(exc, 'public_message', None) or str(exc) or 'The microphone did not become ready. Please try again.')
         threading.Thread(target=ready, daemon=True).start()

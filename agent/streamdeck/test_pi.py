@@ -16,6 +16,70 @@ from controller import Controller
 from store import Mailbox
 
 class PiTests(unittest.TestCase):
+    def test_failed_capture_launch_can_retry_without_runtime_restart(self):
+        from media import Media
+        media = PiMedia.__new__(PiMedia)
+        Media.__init__(media, self.root)
+        media.stop_audio = MagicMock()
+        media.capture_pcm = MagicMock(return_value='fixture')
+        capture = MagicMock()
+        with patch('pi_media.subprocess.Popen', side_effect=[OSError('Too many open files'), capture]) as launch, \
+                patch('pi_media.threading.Thread') as writer:
+            with self.assertRaises(OSError):
+                media.start_recording(self.root/'failed.wav')
+            media.start_recording(self.root/'retry.wav')
+        self.assertEqual(launch.call_count, 2)
+        writer.return_value.start.assert_called_once_with()
+        self.assertIs(media.recording, capture)
+
+    def test_failed_capture_writer_start_cleans_up_and_can_retry(self):
+        from media import Media
+        media = PiMedia.__new__(PiMedia)
+        Media.__init__(media, self.root)
+        media.stop_audio = MagicMock()
+        media.capture_pcm = MagicMock(return_value='fixture')
+        capture = MagicMock()
+        capture.poll.return_value = None
+        with patch('pi_media.subprocess.Popen', return_value=capture) as launch, \
+                patch('pi_media.threading.Thread') as writer:
+            writer.return_value.start.side_effect = [RuntimeError('thread unavailable'), None]
+            with self.assertRaisesRegex(RuntimeError, 'thread unavailable'):
+                media.start_recording(self.root/'failed.wav')
+            self.assertTrue(media.capture_done.is_set())
+            self.assertIsNone(media.recording)
+            media.start_recording(self.root/'retry.wav')
+        capture.terminate.assert_called_once_with()
+        self.assertEqual(launch.call_count, 2)
+
+    def test_cancel_capture_kills_stalled_process_and_waits_for_writer(self):
+        import subprocess
+        from media import Media
+        media = PiMedia.__new__(PiMedia)
+        Media.__init__(media, self.root)
+        capture = MagicMock()
+        capture.poll.return_value = None
+        capture.wait.side_effect = [subprocess.TimeoutExpired('arecord', 4), 0]
+        media.recording = capture
+        media.capture_done = MagicMock()
+        media.capture_done.wait.return_value = True
+        media.cancel_recording()
+        capture.terminate.assert_called_once_with()
+        capture.kill.assert_called_once_with()
+        self.assertEqual(capture.wait.call_count, 2)
+        media.capture_done.wait.assert_called_once_with(3)
+        self.assertIsNone(media.recording)
+
+    def test_retry_does_not_launch_capture_if_old_writer_cannot_stop(self):
+        from media import Media
+        media = PiMedia.__new__(PiMedia)
+        Media.__init__(media, self.root)
+        media.capture_done = MagicMock()
+        media.capture_done.wait.return_value = False
+        with patch('pi_media.subprocess.Popen') as launch:
+            with self.assertRaisesRegex(RuntimeError, 'did not stop'):
+                media.start_recording(self.root/'retry.wav')
+        launch.assert_not_called()
+
     def setUp(self):
         self.root=Path(tempfile.gettempdir())/('paperdrop-test-'+uuid.uuid4().hex)
         self.root.mkdir()

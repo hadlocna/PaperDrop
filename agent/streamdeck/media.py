@@ -164,6 +164,7 @@ class Media:
         self.wait_playback(proc)
 
     def start_recording(self, path):
+        self.cancel_recording()
         self.stop_audio()
         self.record_ready = threading.Event()
         ready = self.record_ready
@@ -190,6 +191,21 @@ class Media:
     def wait_recording_ready(self):
         if not self.record_ready.wait(6):
             raise RuntimeError('Microphone did not become ready')
+
+    def cancel_recording(self):
+        """Release capture without requiring usable audio from a failed start."""
+        with self.audio_lock:
+            proc = self.recording
+            if proc is None:
+                return
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=4)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=4)
+            self.recording = None
 
     def finish_recording(self, path):
         with self.audio_lock:
@@ -270,11 +286,7 @@ class Media:
 
     def close(self):
         self.stop_audio()
-        with self.audio_lock:
-            if self.recording and self.recording.poll() is None:
-                self.recording.terminate()
-                self.recording.wait(timeout=4)
-            self.recording = None
+        self.cancel_recording()
 
     def print_image(self, path, ident):
         from printer import print_image
