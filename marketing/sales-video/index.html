@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PaperDrop Sales Video</title>
+<style>
+@font-face { font-family: 'Nunito'; src: url(fonts/Nunito.woff2) format('woff2'); font-weight: 200 1000; }
+@font-face { font-family: 'Gloria'; src: url(fonts/GloriaHallelujah.woff2) format('woff2'); }
+:root {
+  --cream: #FAF9F6; --ink: #3D405B; --coral: #E07A5F; --mustard: #F2CC8F; --sage: #81B29A;
+  --ink-soft: rgba(61,64,91,.18);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #111; }
+body { width: 1920px; height: 1080px; overflow: hidden; }
+#stage { width: 1920px; height: 1080px; position: relative; overflow: hidden; font-family: 'Nunito', sans-serif; color: var(--ink); background: var(--cream); }
+#cam { position: absolute; inset: 0; transform-origin: 50% 50%; }
+.scene { position: absolute; inset: 0; display: none; overflow: hidden; }
+.abs { position: absolute; }
+.hand { font-family: 'Gloria', cursive; }
+.dots { background-image: radial-gradient(var(--ink-soft) 3px, transparent 3px); background-size: 46px 46px; }
+.dots-light { background-image: radial-gradient(rgba(250,249,246,.09) 3px, transparent 3px); background-size: 46px 46px; }
+.bg-cream { background-color: var(--cream); } .bg-ink { background-color: var(--ink); color: var(--cream); }
+.bg-coral { background-color: var(--coral); color: var(--cream); } .bg-mustard { background-color: var(--mustard); }
+.bg-sage { background-color: var(--sage); }
+.coral { color: var(--coral); } .mustard { color: var(--mustard); } .cream { color: var(--cream); }
+.card { background: #fff; border: 6px solid var(--ink); border-radius: 36px; box-shadow: 14px 14px 0 var(--ink); }
+.pill { display: inline-block; background: var(--mustard); color: var(--ink); border: 4px solid var(--ink); border-radius: 999px; padding: 10px 30px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; font-size: 30px; box-shadow: 5px 5px 0 var(--ink); white-space: nowrap; }
+.h1 { font-weight: 900; font-size: 140px; line-height: 1.02; letter-spacing: -.02em; }
+.h2 { font-weight: 900; font-size: 96px; line-height: 1.05; letter-spacing: -.01em; }
+.h3 { font-weight: 800; font-size: 54px; line-height: 1.15; }
+.w { display: inline-block; transform-origin: 50% 80%; }
+.ico { display: inline-block; vertical-align: middle; }
+.ico svg { width: 100%; height: 100%; display: block; }
+.paper-texture { position: absolute; inset: 0; pointer-events: none; z-index: 90; mix-blend-mode: multiply; opacity: .9;
+  background-image: url("data:image/svg+xml,%3Csvg width='220' height='220' viewBox='0 0 220 220' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.07'/%3E%3C/svg%3E"); }
+.vignette { position: absolute; inset: 0; pointer-events: none; z-index: 89; box-shadow: inset 0 0 220px rgba(30,30,50,.22); }
+
+/* Printer — the hero device from the marketing site */
+.printer { position: absolute; }
+.printer .body { position: relative; z-index: 3; background: #fff; border: 7px solid var(--ink); border-radius: 48px; box-shadow: 18px 18px 0 rgba(61,64,91,.22); display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.printer .eyes { display: flex; gap: 70px; margin-bottom: 26px; }
+.printer .eyes i { width: 30px; height: 30px; border-radius: 50%; background: var(--ink); display: block; transform-origin: 50% 50%; }
+.printer .smile { width: 70px; height: 34px; border: 8px solid var(--ink); border-top: 0; border-radius: 0 0 40px 40px; margin-bottom: 22px; }
+.printer .slot { width: 72%; height: 16px; border-radius: 99px; background: rgba(61,64,91,.14); }
+.printer .lamp { position: absolute; top: 26px; right: 34px; width: 22px; height: 22px; border-radius: 50%; border: 4px solid var(--ink); background: var(--sage); }
+.printer .wrap { position: absolute; left: 50%; transform: translateX(-50%); overflow: hidden; z-index: 2; height: 0; }
+.printer .paper { color: var(--ink); background: #fff; border: 5px solid var(--ink); border-top: 0; padding: 26px 26px 34px; position: relative; }
+.printer .paper img { width: 100%; display: block; image-rendering: pixelated; }
+.printer .paper::after { content: ''; position: absolute; left: -5px; right: -5px; bottom: -1px; height: 16px;
+  background: linear-gradient(-45deg, transparent 8px, transparent 0) , linear-gradient(45deg, var(--paperbg, #fff) 0, transparent 0);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 12' preserveAspectRatio='none'%3E%3Cpath d='M0 0 L0 12 L6 4 L12 12 L18 4 L24 12 L24 0 Z' fill='%23ffffff'/%3E%3C/svg%3E"); background-size: 32px 16px; background-repeat: repeat-x; display: none; }
+
+/* Chat bubbles */
+.bubble { position: absolute; display: flex; align-items: center; gap: 20px; padding: 18px 34px; border: 6px solid var(--ink); border-radius: 40px; font-weight: 800; font-size: 46px; white-space: nowrap; transform-origin: 0% 100%; }
+.bubble.kid { background: var(--cream); color: var(--ink); box-shadow: 10px 10px 0 var(--coral); border-bottom-left-radius: 10px; }
+.bubble.pd { background: #fff; color: var(--ink); box-shadow: 10px 10px 0 var(--mustard); border-bottom-right-radius: 10px; transform-origin: 100% 100%; }
+.bubble .av { width: 74px; height: 74px; flex: none; border-radius: 50%; border: 5px solid var(--ink); background: var(--coral); display: flex; align-items: center; justify-content: center; }
+.bubble .av.pdav { background: #fff; overflow: hidden; }
+.bubble .av.pdav img { width: 54px; }
+.wave { display: flex; gap: 8px; align-items: center; height: 56px; }
+.wave i { display: block; width: 10px; border-radius: 6px; background: var(--coral); height: 20px; }
+
+/* Word slam scene */
+.slam { position: absolute; inset: 0; display: none; align-items: center; }
+.slam .word { position: absolute; left: 150px; top: 330px; font-weight: 900; font-size: 250px; letter-spacing: -.03em; line-height: 1; }
+.slam svg.doodle { position: absolute; right: 170px; top: 230px; width: 620px; height: 620px; }
+.doodle path, .doodle rect, .doodle circle, .doodle line, .doodle polyline { fill: none; stroke: var(--ink); stroke-width: 9; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Print styles */
+.phone { position: absolute; width: 760px; background: #fff; border: 8px solid var(--ink); border-radius: 64px; box-shadow: 20px 20px 0 var(--ink); padding: 40px 36px; }
+.phone .screen { position: relative; width: 672px; height: 540px; border-radius: 26px; overflow: hidden; border: 5px solid var(--ink); background: #fff; }
+.phone .screen img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; }
+.chips { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 34px; }
+.chip { font-weight: 900; font-size: 36px; padding: 12px 26px; border: 5px solid var(--ink); border-radius: 22px; background: var(--cream); }
+.chip.on { background: var(--coral); color: #fff; box-shadow: 6px 6px 0 var(--ink); }
+
+/* Houses */
+.polaroid { position: absolute; width: 330px; padding: 18px 18px 0; background: #fff; border: 6px solid var(--ink); box-shadow: 12px 12px 0 var(--ink); border-radius: 10px; }
+.polaroid img { width: 100%; height: 280px; object-fit: cover; display: block; border: 4px solid var(--ink); border-radius: 4px; }
+.polaroid .lbl { font-family: 'Gloria'; font-size: 46px; text-align: center; padding: 6px 0 12px; }
+.env { position: absolute; width: 120px; height: 90px; margin: -45px 0 0 -60px; background: #fff; border: 6px solid var(--ink); border-radius: 14px; box-shadow: 6px 6px 0 var(--ink); z-index: 5; }
+.env::before { content: ''; position: absolute; left: 8px; right: 8px; top: 4px; height: 44px; border-bottom: 6px solid var(--ink); border-right: 6px solid var(--ink); transform: skewY(0) rotate(45deg) scale(.62); transform-origin: 50% 0; width: 70px; left: 23px; top: -6px; }
+.env .tag { position: absolute; right: -22px; top: -26px; width: 56px; height: 56px; border-radius: 50%; border: 5px solid var(--ink); background: var(--coral); display: flex; align-items: center; justify-content: center; }
+
+.inbox { position: absolute; width: 860px; background: #fff; border: 7px solid var(--ink); border-radius: 44px; box-shadow: 16px 16px 0 var(--ink); padding: 34px 40px; }
+.inbox .hd { display: flex; align-items: center; gap: 20px; font-weight: 900; font-size: 52px; margin-bottom: 18px; }
+.badge { min-width: 64px; height: 64px; border-radius: 99px; background: var(--coral); color: #fff; border: 5px solid var(--ink); font-weight: 900; font-size: 38px; display: inline-flex; align-items: center; justify-content: center; padding: 0 12px; }
+.row { display: flex; align-items: center; gap: 24px; padding: 22px 0; border-top: 4px dashed var(--ink-soft); font-size: 40px; font-weight: 800; }
+.row .ri { width: 82px; height: 82px; border-radius: 22px; border: 5px solid var(--ink); display: flex; align-items: center; justify-content: center; flex: none; }
+.row .sub { font-size: 30px; font-weight: 700; opacity: .65; }
+.row .act { margin-left: auto; font-size: 32px; font-weight: 900; padding: 10px 24px; border: 5px solid var(--ink); border-radius: 18px; background: var(--mustard); box-shadow: 5px 5px 0 var(--ink); white-space: nowrap; }
+
+/* Stream Deck */
+.deck { position: absolute; width: 860px; height: 620px; background: #2b2d40; border: 8px solid var(--ink); border-radius: 60px; box-shadow: 22px 22px 0 rgba(61,64,91,.85); padding: 56px 60px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; }
+.key { position: relative; border-radius: 34px; border: 6px solid #15161f; background: #1d1e2a; overflow: hidden; display: flex; align-items: center; justify-content: center; box-shadow: inset 0 -10px 0 rgba(0,0,0,.25); }
+.key img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.key .ico { width: 120px; height: 120px; position: relative; }
+.key .lab { position: absolute; bottom: 10px; left: 0; right: 0; text-align: center; font-weight: 900; font-size: 26px; color: #fff; text-shadow: 0 2px 0 #000, 0 0 8px #000; }
+.key .kb { position: absolute; top: 10px; right: 10px; width: 48px; height: 48px; border-radius: 50%; background: var(--coral); border: 4px solid #fff; display: flex; align-items: center; justify-content: center; }
+.callout { position: absolute; font-family: 'Gloria'; font-size: 44px; color: var(--cream); white-space: nowrap; }
+
+/* Games */
+.tile { position: absolute; width: 300px; height: 300px; background: #fff; border: 7px solid var(--ink); border-radius: 44px; box-shadow: 12px 12px 0 var(--ink); display: flex; flex-direction: column; align-items: center; justify-content: center; font-weight: 900; font-size: 42px; gap: 14px; }
+.tile .big { font-size: 110px; line-height: 1; }
+.tile .new { position: absolute; top: -26px; right: -26px; transform: rotate(10deg); }
+.qcard { position: absolute; background: #fff; border: 7px solid var(--ink); border-radius: 44px; box-shadow: 14px 14px 0 var(--ink); padding: 40px 48px; }
+.qtext { font-weight: 900; font-size: 52px; line-height: 1.15; height: 130px; }
+.answers { display: flex; gap: 30px; margin-top: 26px; }
+.ans { position: relative; width: 190px; height: 190px; border: 6px solid var(--ink); border-radius: 36px; background: var(--cream); display: flex; align-items: center; justify-content: center; }
+.ans .ico { width: 120px; height: 120px; }
+.stars { position: absolute; display: flex; gap: 22px; }
+.stars svg { width: 120px; height: 120px; overflow: visible; }
+.langs { position: absolute; display: flex; gap: 14px; }
+.lang { font-weight: 900; font-size: 30px; padding: 10px 22px; border: 5px solid var(--ink); border-radius: 18px; background: #fff; }
+.lang.on { background: var(--ink); color: var(--cream); }
+
+/* Checklist */
+.check { position: absolute; left: 150px; display: flex; align-items: center; gap: 34px; font-weight: 900; font-size: 54px; color: var(--cream); white-space: nowrap; }
+.check .ci { width: 82px; height: 82px; border-radius: 50%; background: var(--coral); border: 6px solid var(--cream); display: flex; align-items: center; justify-content: center; flex: none; }
+
+.cta { display: inline-block; padding: 32px 70px; border-radius: 34px; background: var(--ink); color: var(--cream); font-weight: 900; font-size: 64px; border: 6px solid var(--ink); box-shadow: 12px 12px 0 var(--coral); }
+.scrap { position: absolute; background: #fff; border: 4px solid var(--ink); padding: 16px 22px; font-family: 'Gloria'; font-size: 34px; box-shadow: 6px 6px 0 rgba(61,64,91,.25); white-space: nowrap; }
+
+#wipe { position: absolute; top: -20px; left: 0; width: 2400px; height: 1120px; z-index: 80; display: none; }
+#flash { position: absolute; inset: 0; background: #fff; opacity: 0; z-index: 85; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="stage">
+<div id="cam">
+
+  <!-- 1 · HOOK -->
+  <section class="scene bg-cream dots" id="s-hook">
+    <div class="abs" id="hook-tag" style="left:860px;top:270px"><span class="pill">All-new PaperDrop</span></div>
+    <div class="abs h1" id="hook-title" style="left:860px;top:360px;width:1000px">
+      <span class="w">Messages</span><br><span class="w">you can</span> <span class="w coral" id="hook-hold">hold.</span>
+    </div>
+    <svg class="abs" id="hook-squiggle" style="left:1360px;top:640px" width="420" height="60" viewBox="0 0 420 60"><path pathLength="1" d="M8 34 C 48 4, 88 60, 128 30 S 208 4, 248 30 S 328 60, 368 30 S 404 14, 414 24" fill="none" stroke="#E07A5F" stroke-width="12" stroke-linecap="round"/></svg>
+    <div class="abs h3" id="hook-sub" style="left:866px;top:740px;width:1000px;opacity:.8">Now it listens, draws, plays&nbsp;&amp;&nbsp;delivers family mail.</div>
+    <div class="printer" id="hook-printer" style="left:180px;top:190px;width:540px">
+      <div class="body" style="height:360px"><div class="lamp"></div><div class="eyes"><i></i><i></i></div><div class="smile"></div><div class="slot"></div></div>
+      <div class="wrap" style="top:336px;width:400px"><div class="paper" style="text-align:center;padding-top:50px">
+        <svg width="120" height="110" viewBox="0 0 24 22"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="#E07A5F"/></svg>
+        <div class="hand" style="font-size:64px;line-height:1.2">Love you!</div>
+        <div class="hand" style="font-size:34px;opacity:.5">- Dad</div>
+        <div style="height:30px"></div>
+      </div></div>
+    </div>
+  </section>
+
+  <!-- 2 · KICKER -->
+  <section class="scene bg-coral dots-light" id="s-kick">
+    <div class="abs" id="kick-logo" style="left:50%;top:150px;margin-left:-330px;width:660px;padding:28px 40px;background:#fff;border:7px solid var(--ink);border-radius:40px;box-shadow:14px 14px 0 var(--ink)"><img src="../../frontend/src/assets/logo-horizontal.png" style="width:100%;display:block"></div>
+    <div class="abs h1" style="left:0;right:0;top:470px;text-align:center;font-size:150px" id="kick-l1"><span class="w">just</span> <span class="w">got</span> <span class="w">a</span> <span class="w">whole</span> <span class="w">lot</span></div>
+    <div class="abs hand" id="kick-l2" style="left:0;right:0;top:640px;text-align:center;font-size:200px;line-height:1;color:var(--mustard);text-shadow:9px 9px 0 var(--ink)">more magical.</div>
+    <svg class="abs spark" id="kick-sp1" style="left:170px;top:600px" width="120" height="120" viewBox="-50 -50 100 100"><path d="M0-46 C6-8 8-6 46 0 C8 6 6 8 0 46 C-6 8-8 6-46 0 C-8-6-6-8 0-46Z" fill="#FAF9F6" stroke="#3D405B" stroke-width="6"/></svg>
+    <svg class="abs spark" id="kick-sp2" style="left:1650px;top:560px" width="160" height="160" viewBox="-50 -50 100 100"><path d="M0-46 C6-8 8-6 46 0 C8 6 6 8 0 46 C-6 8-8 6-46 0 C-8-6-6-8 0-46Z" fill="#F2CC8F" stroke="#3D405B" stroke-width="6"/></svg>
+    <svg class="abs spark" id="kick-sp3" style="left:1560px;top:900px" width="90" height="90" viewBox="-50 -50 100 100"><path d="M0-46 C6-8 8-6 46 0 C8 6 6 8 0 46 C-6 8-8 6-46 0 C-8-6-6-8 0-46Z" fill="#FAF9F6" stroke="#3D405B" stroke-width="7"/></svg>
+  </section>
+
+  <!-- 3 · VOICE -->
+  <section class="scene bg-ink dots-light" id="s-voice">
+    <div class="abs" id="v-tag" style="left:120px;top:90px"><span class="pill">New · Voice drawing</span></div>
+    <div class="abs h2 cream" id="v-title" style="left:120px;top:170px">Just <span class="hand coral" style="font-size:110px">say it.</span></div>
+    <div class="bubble kid" id="v-b1" style="left:120px;top:350px"><div class="av"><span class="ico" style="width:42px;height:42px" data-icon="Mic" data-stroke="#fff"></span></div>“Hey PaperDrop!”<div class="wave" id="v-wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+    <div class="bubble pd" id="v-b2" style="left:330px;top:475px"><div class="av pdav"><img src="../../frontend/src/assets/logo.png"></div>Hi! What should I draw?</div>
+    <div class="bubble kid" id="v-b3" style="left:120px;top:600px"><div class="av"><span class="ico" style="width:42px;height:42px" data-icon="Mic" data-stroke="#fff"></span></div><span id="v-typed"></span></div>
+    <div class="bubble pd" id="v-b4" style="left:250px;top:725px"><div class="av pdav"><img src="../../frontend/src/assets/logo.png"></div>A snail with a love letter. Print it?</div>
+    <div class="bubble kid" id="v-b5" style="left:120px;top:850px;font-size:58px"><div class="av"><span class="ico" style="width:42px;height:42px" data-icon="Mic" data-stroke="#fff"></span></div>Yes!!</div>
+    <div class="printer" id="v-printer" style="left:1300px;top:70px;width:480px">
+      <div class="body" style="height:300px"><div class="lamp"></div><div class="eyes"><i></i><i></i></div><div class="smile"></div><div class="slot"></div></div>
+      <div class="wrap" style="top:276px;width:400px"><div class="paper" style="padding:22px"><img src="../../agent/streamdeck/assets/demo/snail.png"><div class="hand" style="text-align:center;font-size:34px;margin-top:6px">for you, with love</div></div></div>
+    </div>
+    <div class="abs" id="v-stamp" style="left:1130px;top:930px;transform-origin:50% 50%"><span class="pill" style="background:var(--coral);color:#fff;font-size:34px">AI-drawn · printed in seconds</span></div>
+  </section>
+
+  <!-- 4 · ANYTHING -->
+  <section class="scene" id="s-any">
+    <div class="slam" id="slam-0" style="background:var(--coral);color:var(--cream)"><div class="word">Comics.</div>
+      <svg class="doodle" viewBox="0 0 200 200"><rect pathLength="1" x="10" y="40" width="56" height="120" rx="6"/><rect pathLength="1" x="72" y="40" width="56" height="120" rx="6"/><rect pathLength="1" x="134" y="40" width="56" height="120" rx="6"/><circle pathLength="1" cx="38" cy="120" r="14"/><path pathLength="1" d="M88 64 h26 a8 8 0 0 1 8 8 v10 a8 8 0 0 1 -8 8 h-12 l-8 8 v-8 h-6 a8 8 0 0 1 -8 -8 v-10 a8 8 0 0 1 8 -8z"/><path pathLength="1" d="M146 140 l14 -40 l14 40 M152 124 h16"/></svg></div>
+    <div class="slam" id="slam-1" style="background:var(--mustard);color:var(--ink)"><div class="word">Maps.</div>
+      <svg class="doodle" viewBox="0 0 200 200"><path pathLength="1" d="M20 170 C 50 120, 30 90, 80 90 S 120 40, 170 40" stroke-dasharray="0" /><path pathLength="1" d="M156 26 l28 28 M184 26 l-28 28"/><path pathLength="1" d="M20 70 l20 -36 l20 36 z"/><circle pathLength="1" cx="140" cy="140" r="22"/><line pathLength="1" x1="140" y1="162" x2="140" y2="186"/></svg></div>
+    <div class="slam" id="slam-2" style="background:var(--sage);color:var(--ink)"><div class="word">Mazes.</div>
+      <svg class="doodle" viewBox="0 0 200 200"><path pathLength="1" d="M20 20 h160 v160 h-130 M20 50 v130 M50 50 h100 v100 h-70 M50 80 v70 M80 80 h40 v40"/><circle pathLength="1" cx="100" cy="100" r="8"/></svg></div>
+    <div class="slam" id="slam-3" style="background:var(--cream);color:var(--ink)"><div class="word">Cards.</div>
+      <svg class="doodle" viewBox="0 0 200 200"><path pathLength="1" d="M30 40 l70 20 l70 -20 v130 l-70 20 l-70 -20 z M100 60 v130"/><path pathLength="1" d="M136 96 c0 -10 -14 -14 -18 -4 c-4 -10 -18 -6 -18 4 c0 12 18 22 18 22 s18 -10 18 -22z"/></svg></div>
+    <div class="slam" id="slam-4" style="background:var(--coral);color:var(--cream)"><div class="word">Posters.</div>
+      <svg class="doodle" viewBox="0 0 200 200"><rect pathLength="1" x="36" y="16" width="128" height="168" rx="6"/><path pathLength="1" d="M100 46 l12 28 l30 2 l-23 19 l8 29 l-27 -16 l-27 16 l8 -29 l-23 -19 l30 -2 z"/><line pathLength="1" x1="60" y1="156" x2="140" y2="156"/></svg></div>
+    <div class="slam" id="slam-5" style="background:var(--mustard);color:var(--ink)"><div class="word">Stories.</div>
+      <svg class="doodle" viewBox="0 0 200 200"><path pathLength="1" d="M100 50 C 70 30, 40 34, 16 44 v120 c 24 -10 54 -14 84 6 c 30 -20 60 -16 84 -6 v-120 c -24 -10 -54 -14 -84 6 z M100 50 v120"/><line pathLength="1" x1="36" y1="76" x2="78" y2="68"/><line pathLength="1" x1="122" y1="68" x2="164" y2="76"/></svg></div>
+    <div class="slam bg-ink dots-light" id="slam-6" style="display:none">
+      <div class="abs h2 cream" style="left:120px;top:130px;width:1750px">If they can <span class="coral">say&nbsp;it</span>,<br>PaperDrop can <span class="mustard hand" style="font-size:120px">draw it.</span></div>
+      <div class="abs" id="any-rocket" style="left:0;top:470px;width:560px;padding:20px;background:#fff;border:6px solid var(--ink);box-shadow:12px 12px 0 var(--coral)"><img src="../../frontend/src/assets/rocket-boy.png" style="width:100%;display:block"></div>
+    </div>
+  </section>
+
+  <!-- 5 · PRINT STYLES -->
+  <section class="scene bg-cream dots" id="s-style">
+    <div class="abs" style="left:120px;top:160px"><span class="pill">New · Print styles</span></div>
+    <div class="abs h2" id="st-title" style="left:120px;top:250px;width:880px">Photos that <span class="coral">pop</span> on paper.</div>
+    <div class="abs h3" id="st-sub" style="left:124px;top:520px;width:820px;opacity:.8">Five looks, tuned for thermal print. No ink, ever.</div>
+    <div class="abs hand" id="st-name" style="left:124px;top:690px;font-size:120px;color:var(--coral)">Photo</div>
+    <div class="phone" id="st-phone" style="left:1040px;top:90px">
+      <div class="screen">
+        <img class="st-i" src="../../agent/streamdeck/assets/locations/portugal.png" style="object-position:50% 4%">
+        <img class="st-i" src="assets/generated/style-photo.png">
+        <img class="st-i" src="assets/generated/style-vintage.png">
+        <img class="st-i" src="assets/generated/style-newspaper.png">
+        <img class="st-i" src="assets/generated/style-comic.png">
+        <img class="st-i" src="assets/generated/style-none.png">
+        <div id="st-scan" class="abs" style="left:0;right:0;height:10px;background:var(--coral);top:0;opacity:0"></div>
+      </div>
+      <div class="chips" id="st-chips"><span class="chip">Photo</span><span class="chip">Vintage</span><span class="chip">Newspaper</span><span class="chip">Comic</span><span class="chip">B&amp;W</span></div>
+    </div>
+  </section>
+
+  <!-- 6 · FAMILY MAIL -->
+  <section class="scene bg-mustard dots" id="s-mail">
+    <div id="mail-a" class="abs" style="inset:0">
+      <div class="abs" style="left:120px;top:150px"><span class="pill" style="background:#fff">New · Family Mail</span></div>
+      <div class="abs h2" id="mail-title" style="left:120px;top:240px;width:820px">Send love <span class="coral">across the world.</span></div>
+      <div class="abs h3" id="mail-sub" style="left:124px;top:520px;width:760px">Voice notes &amp; pictures between every PaperDrop in the family.</div>
+      <svg class="abs" style="left:0;top:0" width="1920" height="1080" id="mail-paths">
+        <path id="mp0" d="M1150 760 C 1150 520, 1240 420, 1360 330" fill="none" stroke="#3D405B" stroke-width="7" stroke-dasharray="4 22" stroke-linecap="round"/>
+        <path id="mp1" d="M1430 360 C 1560 430, 1640 560, 1660 700" fill="none" stroke="#3D405B" stroke-width="7" stroke-dasharray="4 22" stroke-linecap="round"/>
+        <path id="mp2" d="M1580 820 C 1450 900, 1320 900, 1220 840" fill="none" stroke="#3D405B" stroke-width="7" stroke-dasharray="4 22" stroke-linecap="round"/>
+      </svg>
+      <div class="polaroid" id="h-lis" style="left:960px;top:620px;transform:rotate(-4deg)"><img src="../../agent/streamdeck/assets/locations/portugal.png"><div class="lbl">Lisbon</div></div>
+      <div class="polaroid" id="h-ohi" style="left:1210px;top:90px;transform:rotate(3deg)"><img src="../../agent/streamdeck/assets/locations/ohio.png"><div class="lbl">Ohio</div></div>
+      <div class="polaroid" id="h-dus" style="left:1520px;top:560px;transform:rotate(5deg)"><img src="../../agent/streamdeck/assets/locations/dusseldorf.png"><div class="lbl">Düsseldorf</div></div>
+      <div class="env" id="env0"><div class="tag"><span class="ico" style="width:30px;height:30px" data-icon="Mic" data-stroke="#fff"></span></div></div>
+      <div class="env" id="env1"><div class="tag" style="background:var(--sage)"><span class="ico" style="width:30px;height:30px" data-icon="Pencil" data-stroke="#fff"></span></div></div>
+      <div class="env" id="env2"><div class="tag"><span class="ico" style="width:30px;height:30px" data-icon="Mic" data-stroke="#fff"></span></div></div>
+    </div>
+    <div id="mail-b" class="abs" style="inset:0;display:none">
+      <div class="inbox" id="inbox" style="left:120px;top:120px">
+        <div class="hd"><span class="ico" style="width:66px;height:66px" data-icon="Mail"></span>Mia’s mailbox <span class="badge" id="inbox-badge">3</span></div>
+        <div class="row" id="r0"><div class="ri" style="background:var(--coral)"><span class="ico" style="width:46px;height:46px" data-icon="Mic" data-stroke="#fff"></span></div><div>Voice note<div class="sub">from Grandpa · Ohio</div></div><span class="act">Play</span></div>
+        <div class="row" id="r1"><div class="ri" style="background:var(--sage)"><span class="ico" style="width:46px;height:46px" data-icon="Pencil" data-stroke="#fff"></span></div><div>Picture<div class="sub">from Grandma · Düsseldorf</div></div><span class="act" style="background:var(--sage)">Printed!</span></div>
+        <div class="row" id="r2"><div class="ri" style="background:var(--coral)"><span class="ico" style="width:46px;height:46px" data-icon="Mic" data-stroke="#fff"></span></div><div>Voice note<div class="sub">from Leo · Lisbon</div></div><span class="act">Reply</span></div>
+      </div>
+      <div class="abs" id="mail-pts" style="left:130px;top:760px">
+        <div class="h3" id="mp-0" style="font-size:46px">• Pictures print automatically, labelled To &amp; From</div>
+        <div class="h3" id="mp-1" style="font-size:46px">• Offline? Mail waits safely in the queue</div>
+      </div>
+      <div class="printer" id="mail-printer" style="left:1220px;top:50px;width:500px">
+        <div class="body" style="height:290px"><div class="lamp"></div><div class="eyes"><i></i><i></i></div><div class="smile"></div><div class="slot"></div></div>
+        <div class="wrap" style="top:266px;width:420px"><div class="paper" style="padding:16px"><img src="assets/generated/postcard.png"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 · KID DECK -->
+  <section class="scene bg-coral dots-light" id="s-deck">
+    <div class="abs" style="left:120px;top:110px"><span class="pill">New · Made for little hands</span></div>
+    <div class="abs h2 cream" id="deck-title" style="left:120px;top:200px;width:1700px">No screens. Just <span style="color:var(--ink)">six big buttons.</span></div>
+    <div class="deck" id="deck" style="left:530px;top:390px">
+      <div class="key" style="background:#f4c878" id="k0"><span class="ico" data-icon="Cat"></span><div class="kb" id="k0b"><span class="ico" style="width:26px;height:26px" data-icon="Mail" data-stroke="#fff"></span></div></div>
+      <div class="key" style="background:#90c5cb" id="k1"><span class="ico" data-icon="Dog"></span></div>
+      <div class="key" style="background:#e8a4b8" id="k2"><span class="ico" data-icon="Rabbit"></span></div>
+      <div class="key" id="k3"><img src="../../agent/streamdeck/assets/locations/ohio.png"><div class="lab">Ohio</div></div>
+      <div class="key" id="k4"><img src="../../agent/streamdeck/assets/locations/dusseldorf.png"><div class="lab">Düsseldorf</div></div>
+      <div class="key" style="background:var(--mustard)" id="k5"><span class="ico" id="k5i" data-icon="Pencil"></span><div class="lab" id="k5l">Draw &amp; Print</div></div>
+    </div>
+    <div class="callout" id="c0" style="left:90px;top:470px">Tap a face:<br>games &amp; mail</div>
+    <div class="callout" id="c1" style="left:90px;top:770px">Tap a house:<br>send a postcard</div>
+    <div class="callout" id="c2" style="left:1460px;top:780px">Tap, talk,<br>it draws &amp; prints!</div>
+    <div class="abs" id="tap" style="width:110px;height:110px;margin:-55px 0 0 -55px;border-radius:50%;border:8px solid #fff;opacity:0;z-index:9"></div>
+  </section>
+
+  <!-- 8 · GAMES -->
+  <section class="scene bg-sage dots" id="s-games">
+    <div class="abs" style="left:120px;top:90px"><span class="pill" style="background:#fff">New · Learn &amp; play</span></div>
+    <div class="abs h2" id="g-title" style="left:120px;top:170px;width:1700px">Games that <span class="cream" style="text-shadow:6px 6px 0 var(--ink)">teach.</span> Prizes that <span class="hand cream" style="font-size:110px;text-shadow:6px 6px 0 var(--ink)">print.</span></div>
+    <div id="g-tiles">
+      <div class="tile" id="gt0" style="left:150px;top:420px"><span class="ico" style="width:120px;height:120px" data-icon="Palette"></span>Colors</div>
+      <div class="tile" id="gt1" style="left:570px;top:420px"><span class="big">Aa</span>Letters</div>
+      <div class="tile" id="gt2" style="left:990px;top:420px"><span class="big">123</span>Numbers</div>
+      <div class="tile" id="gt3" style="left:1410px;top:420px"><span class="ico" style="width:120px;height:120px" data-icon="HelpCircle"></span>Riddles<span class="pill new" style="font-size:24px;background:var(--coral);color:#fff">New</span></div>
+    </div>
+    <div class="qcard" id="g-q" style="left:120px;top:340px;width:1000px;display:none">
+      <div class="qtext" id="g-qtext"></div>
+      <div class="answers"><div class="ans" id="ga0"><span class="ico" data-icon="Dog"></span></div><div class="ans" id="ga1"><span class="ico" data-icon="Cat"></span></div><div class="ans" id="ga2"><span class="ico" data-icon="Fish"></span></div><div class="ans" id="ga3"><span class="ico" data-icon="Bird"></span></div></div>
+    </div>
+    <div class="langs" id="g-langs" style="left:120px;top:900px;display:none"><span class="lang">English</span><span class="lang">Français</span><span class="lang">Deutsch</span><span class="lang">Italiano</span><span class="lang">Português</span></div>
+    <div class="stars" id="g-stars" style="left:1190px;top:400px;display:none"></div>
+    <div class="abs h2" id="g-five" style="left:1190px;top:560px;display:none;font-size:110px;color:#fff;text-shadow:7px 7px 0 var(--ink)">5 stars!</div>
+    <div id="g-prizes" class="abs" style="left:1150px;top:330px;display:none">
+      <img class="abs" id="gp2" src="assets/generated/prize-4.png" style="width:330px;left:120px;top:60px;border:5px solid var(--ink);box-shadow:10px 10px 0 var(--ink)">
+      <img class="abs" id="gp1" src="assets/generated/prize-3.png" style="width:330px;left:60px;top:30px;border:5px solid var(--ink);box-shadow:10px 10px 0 var(--ink)">
+      <img class="abs" id="gp0" src="assets/generated/prize-1.png" style="width:330px;left:0;top:0;border:5px solid var(--ink);box-shadow:10px 10px 0 var(--ink)">
+    </div>
+    <div class="abs hand" id="g-cap" style="left:120px;top:900px;font-size:50px;display:none">Collectible prize cards · space · garden · ocean · castle</div>
+  </section>
+
+  <!-- 9 · RELIABILITY -->
+  <section class="scene bg-ink dots-light" id="s-rel">
+    <div class="abs h2 cream" id="rel-title" style="left:150px;top:80px">Built to <span class="coral">just work.</span></div>
+    <div class="check" id="ck0" style="top:260px"><div class="ci"><span class="ico" style="width:46px;height:46px" data-icon="Check" data-stroke="#fff"></span></div>Never prints the same thing twice</div>
+    <div class="check" id="ck1" style="top:370px"><div class="ci"><span class="ico" style="width:46px;height:46px" data-icon="Check" data-stroke="#fff"></span></div>Mail waits when a printer’s offline</div>
+    <div class="check" id="ck2" style="top:480px"><div class="ci"><span class="ico" style="width:46px;height:46px" data-icon="Check" data-stroke="#fff"></span></div>Updates itself, safely</div>
+    <div class="check" id="ck3" style="top:590px"><div class="ci"><span class="ico" style="width:46px;height:46px" data-icon="Check" data-stroke="#fff"></span></div>Says “ready!” when family joins</div>
+    <div class="check" id="ck4" style="top:700px"><div class="ci"><span class="ico" style="width:46px;height:46px" data-icon="Check" data-stroke="#fff"></span></div>Edge-to-edge, full-width prints</div>
+    <div class="check" id="ck5" style="top:810px"><div class="ci"><span class="ico" style="width:46px;height:46px" data-icon="Check" data-stroke="#fff"></span></div>Any Bluetooth speaker, volume in the app</div>
+    <div class="printer" id="rel-printer" style="left:1360px;top:150px;width:440px">
+      <div class="body" style="height:270px"><div class="lamp"></div><div class="eyes"><i></i><i></i></div><div class="smile"></div><div class="slot"></div></div>
+      <div class="wrap" style="top:246px;width:370px"><div class="paper" style="padding:14px"><img src="assets/generated/ready-ohio.png"></div></div>
+    </div>
+  </section>
+
+  <!-- 10 · NO INK -->
+  <section class="scene bg-coral dots-light" id="s-ink">
+    <div class="abs h1 cream" id="ink-1" style="left:0;right:0;top:330px;text-align:center;font-size:230px">No ink.</div>
+    <div class="abs hand" id="ink-2" style="left:0;right:0;top:600px;text-align:center;font-size:200px;color:var(--mustard);text-shadow:9px 9px 0 var(--ink)">Ever.</div>
+  </section>
+
+  <!-- 11 · CTA -->
+  <section class="scene bg-cream dots" id="s-cta">
+    <div id="cta-scraps"></div>
+    <img class="abs" id="cta-mascot" src="../../frontend/src/assets/logo.png" style="left:180px;top:300px;width:330px">
+    <div class="abs" id="cta-logo" style="left:610px;top:150px;width:880px"><img src="../../frontend/src/assets/logo-horizontal.png" style="width:100%"></div>
+    <div class="abs h1" id="cta-h" style="left:640px;top:470px">Make their day.</div>
+    <div class="abs" id="cta-btn" style="left:650px;top:690px"><span class="cta">Get your PaperDrop</span></div>
+    <div class="abs h3" id="cta-url" style="left:660px;top:880px;font-weight:900;font-size:60px">paperdrop.me</div>
+  </section>
+
+</div>
+<div id="wipe"><svg width="2400" height="1120" viewBox="0 0 2400 1120"><path id="wipe-path" d=""/></svg></div>
+<div id="flash"></div>
+<div class="vignette"></div>
+<div class="paper-texture"></div>
+</div>
+<script src="icons.js"></script>
+<script src="video.js"></script>
+</body>
+</html>
